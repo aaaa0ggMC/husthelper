@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import hust from "../index.ts";
 import { loadConfig } from "./config.ts";
 
@@ -6,13 +5,7 @@ const config = loadConfig();
 
 const client = hust
   .auth({ user_name: config.un, password: config.pwd, account: config.account })
-  .withAiOcr({    baseURL: config.openai.baseURL,
-    apiKey: config.openai.apiKey,
-    model: config.openai.model,
-    maxTokens: config.openai.maxTokens,
-    timeout: config.openai.timeout,
-    onImage: config.saveDebugImage ? (jpg) => fs.writeFileSync("captcha.jpg", jpg) : undefined,
-  });
+  .withStdChar();
 
 try {
   const page = await client.getTransactions({ page: 1 });

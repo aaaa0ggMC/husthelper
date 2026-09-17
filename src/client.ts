@@ -20,6 +20,7 @@ import {
   type TransactionPage,
   type TransactionQuery,
 } from "./ecard.ts";
+import { parseProfile, type Profile } from "./profile.ts";
 
 export interface AuthOptions {
   user_name?: string;
@@ -180,6 +181,15 @@ export class HustClient {
     this.account = match[1];
     this.logger.info(`自动获取 account: ${this.account}`);
     return this.account;
+  }
+
+  async getEcardProfile(): Promise<Profile> {
+    const response = await this.request(`${ECARD_BASE}/service/profile.html`);
+    return parseProfile(String(response.data));
+  }
+
+  getProfile(): Promise<Profile> {
+    return this.getEcardProfile();
   }
 
   async getTransactions(query: Partial<TransactionQuery> = {}): Promise<TransactionPage> {

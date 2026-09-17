@@ -14,9 +14,10 @@
 - 验证码识别可插拔：AI（OpenAI 兼容接口）/ 内置离线模板匹配 / 完全自定义
 - `JSESSIONID` 自动续期：优先用 `CASTGC` 免密重登，失效才回退完整登录
 - 一卡通流水查询与自动翻页
+- 校园卡个人信息（profile）读取与解析
 - 日志可外部注入，默认输出到 console
 
-📖 详细文档见 [`docs/`](./docs/README.md)：[认证 auth](./docs/auth.md) · [流水查询](./docs/transactions.md)
+📖 详细文档见 [`docs/`](./docs/README.md)：[认证 auth](./docs/auth.md) · [流水查询](./docs/transactions.md) · [个人信息 profile](./docs/profile.md)
 
 ## 环境要求
 
@@ -96,6 +97,12 @@ for await (const tx of client.iterateTransactions({})) {
 - 登录后客户端持有 ecard 的 `JSESSIONID`，以及 CAS 的 `CASTGC`。
 - 请求被重定向回 `/cas/login` 时自动处理：先用 `CASTGC` 免密重登，失败再回退到完整登录（验证码 + 密码）。
 - 可手动触发：`await client.renew()`；查看会话状态：`client.sessionId` / `client.cookiesFor(host)`。
+
+## 已知限制：企业微信 MFA（二次验证）暂未处理
+
+> ⚠️ 本项目**尚未处理企业微信 MFA / 二次验证**。因为作者目前还未遇到该流程，故未实现。若你的账号登录时被要求 MFA，脚本会失败。
+
+**规避办法**：先用**浏览器**在同一网络/设备上完整登录一次（让系统认定你的 MAC/IP 等为可信设备），完成 MFA；之后再用本脚本登录，通常就不会再触发 MFA。若仍触发，则当前版本无法自动通过。
 
 ## 日志
 
