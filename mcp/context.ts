@@ -9,7 +9,18 @@ import hust, { type HustClient, type Logger } from "../index.ts";
 
 export const MCP_DIR = fileURLToPath(new URL(".", import.meta.url));
 
-export function dataDir(env: NodeJS.ProcessEnv = process.env): string {
+// 生效的环境：默认 process.env，可用配置文件覆盖后由 setActiveEnv 替换。
+let activeEnv: NodeJS.ProcessEnv = process.env;
+
+export function setActiveEnv(env: NodeJS.ProcessEnv): void {
+  activeEnv = env;
+}
+
+export function getEnv(): NodeJS.ProcessEnv {
+  return activeEnv;
+}
+
+export function dataDir(env: NodeJS.ProcessEnv = activeEnv): string {
   return env.HUST_DATA_DIR ? env.HUST_DATA_DIR : join(MCP_DIR, "data");
 }
 
@@ -46,7 +57,7 @@ export interface Credentials {
   account?: string;
 }
 
-export function readCredentials(env: NodeJS.ProcessEnv = process.env): Credentials {
+export function readCredentials(env: NodeJS.ProcessEnv = activeEnv): Credentials {
   const username = envFirst(env, ["HUST_USERNAME", "HUST_UN"]);
   const password = envFirst(env, ["HUST_PASSWORD", "HUST_PWD"]);
   const account = envFirst(env, ["HUST_ACCOUNT"]);
@@ -61,7 +72,7 @@ export function readCredentials(env: NodeJS.ProcessEnv = process.env): Credentia
 let client: HustClient | undefined;
 
 /** 惰性创建并复用 HustClient；凭据只来自进程环境变量，绝不来自工具参数 */
-export function getClient(env: NodeJS.ProcessEnv = process.env): HustClient {
+export function getClient(env: NodeJS.ProcessEnv = activeEnv): HustClient {
   if (client) return client;
 
   const credentials = readCredentials(env);

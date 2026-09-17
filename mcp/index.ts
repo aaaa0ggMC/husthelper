@@ -13,13 +13,15 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createMcpServer } from "./server.ts";
-import { dataDir } from "./context.ts";
+import { dataDir, getEnv, setActiveEnv } from "./context.ts";
+import { loadConfigFile } from "./config.ts";
 import { ensureKey, Privacy, PrivacyError } from "./privacy.ts";
 
 function parseArgs() {
   const args = process.argv.slice(2);
   let port: number | null = null;
   let host = process.env.HOST || "127.0.0.1";
+  let configPath: string | null = null;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--port" || args[i] === "-p") {
@@ -28,8 +30,14 @@ function parseArgs() {
     } else if (args[i] === "--host") {
       host = args[i + 1];
       i++;
+    } else if (args[i] === "--config" || args[i] === "-c") {
+      configPath = args[i + 1];
+      i++;
     } else if (args[i] === "--sse" || args[i] === "--http") {
       port = port || 3000;
+    } else if (!args[i].startsWith("-") && configPath === null) {
+      // 位置参数：node index.ts credential.json
+      configPath = args[i];
     }
   }
 
@@ -37,7 +45,7 @@ function parseArgs() {
     port = parseInt(process.env.PORT || process.env.MCP_PORT || "3000", 10);
   }
 
-  return { port, host };
+  return { port, host, configPath };
 }
 
 function firstHeader(value: string | string[] | undefined): string | undefined {
@@ -68,6 +76,7 @@ function extractLevel(headers: http.IncomingHttpHeaders): string | undefined {
 function buildSessionPrivacy(req: http.IncomingMessage, sessionId: string): Privacy {
   const privacy = new Privacy({
     dir: dataDir(),
+    env: getEnv(),
     suppliedKey: extractKey(req.headers) ?? null,
     maxLevel: extractLevel(req.headers) ?? null,
     transport: "http",
@@ -95,7 +104,7 @@ async function startStdio() {
   if (key.created) {
     process.stderr.write(`[hust-mcp] 已生成隐私密钥: ${key.key}\n`);
   }
-  const privacy = new Privacy({ dir: dataDir(), transport: "stdio" });
+  const privacy = new Privacy({ dir: dataDir(), env: getEnv(), transport: "stdio" });
   privacy.assertKeyConsistent();
 
   const server = createMcpServer(privacy);
@@ -267,7 +276,12 @@ async function startHttp(port: number, host: string) {
 }
 
 async function main() {
-  const { port, host } = parseArgs();
+  const { port, host, configPath } = parseArgs();
+  if (configPath) {
+    const overlay = loadConfigFile(configPath);
+    setActiveEnv({ ...process.env, ...overlay });
+    process.stderr.write(`[hust-mcp] 已加载配置文件: ${configPath}\n`);
+  }
   if (port) {
     await startHttp(port, host);
   } else {

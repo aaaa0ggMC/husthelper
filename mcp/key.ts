@@ -6,10 +6,22 @@
 //   node key.ts path    查看密钥文件路径
 //   node key.ts rotate  轮换密钥（旧的 raw 权限立即失效）
 
-import { dataDir } from "./context.ts";
+import { dataDir, setActiveEnv } from "./context.ts";
+import { loadConfigFile } from "./config.ts";
 import { ensureKey, generateKey, keyPath, readStoredKey, storeKey } from "./privacy.ts";
 
-const command = process.argv[2] ?? "show";
+const args = process.argv.slice(2);
+const rest: string[] = [];
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === "--config" || args[i] === "-c") {
+    const path = args[++i];
+    if (path) setActiveEnv({ ...process.env, ...loadConfigFile(path) });
+  } else {
+    rest.push(args[i]);
+  }
+}
+
+const command = rest[0] ?? "show";
 const dir = dataDir();
 
 switch (command) {
@@ -33,7 +45,9 @@ switch (command) {
     break;
   }
   default: {
-    process.stderr.write(`未知命令: ${command}\n用法: node key.ts [init|show|path|rotate]\n`);
+    process.stderr.write(
+      `未知命令: ${command}\n用法: node key.ts [init|show|path|rotate] [--config 配置文件]\n`,
+    );
     process.exit(1);
   }
 }

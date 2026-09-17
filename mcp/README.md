@@ -41,6 +41,39 @@ MCP 客户端配置（stdio）：
 }
 ```
 
+### 从文件加载配置
+
+不想把密码塞进 MCP 客户端的 `env`，可以给它一个 JSON 文件：
+
+```bash
+node index.ts credential.json                 # 位置参数
+node index.ts --config credential.json --port 3000
+node key.ts init --config credential.json
+```
+
+文件里出现的字段会**覆盖同名环境变量**，文件没写的仍走环境变量。兼容 examples 的
+`config.json` 形状，也认扁平写法（完整示例见 [`config.example.json`](./config.example.json)）：
+
+```jsonc
+{
+  "un": "U2025xxxxx",
+  "pwd": "your-password",
+  "account": "",
+  "ocr": "stdchar",
+  "openai": { "baseURL": "https://api.openai.com/v1", "apiKey": "sk-...", "model": "gpt-4o-mini" },
+  "sessionFile": "data/session.json",
+  "privacy": {
+    "key": "",                  // 同 HUST_PRIVACY_KEY
+    "maxLevel": "raw",          // 同 HUST_MAX_LEVEL
+    "defaultLevel": "redacted", // 同 HUST_DEFAULT_LEVEL
+    "revealBudget": 300,        // 同 HUST_REVEAL_BUDGET
+    "redactedBudget": 2000
+  }
+}
+```
+
+> 配置文件含凭据，请设成 `0600` 并加入 `.gitignore`，不要提交。
+
 HTTP / SSE（默认监听 `127.0.0.1`，没有匿名访问，必须带密钥）：
 
 ```bash

@@ -1,0 +1,19 @@
+{
+  "un": "U2025xxxxx",
+  "pwd": "your-password",
+  "account": "",
+  "ocr": "stdchar",
+  "openai": {
+    "baseURL": "https://api.openai.com/v1",
+    "apiKey": "sk-xxxxxxxxxxxxxxxx",
+    "model": "gpt-4o-mini"
+  },
+  "sessionFile": "data/session.json",
+  "privacy": {
+    "key": "",
+    "maxLevel": "raw",
+    "defaultLevel": "redacted",
+    "revealBudget": 300,
+    "redactedBudget": 2000
+  }
+}
