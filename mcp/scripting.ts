@@ -1,5 +1,5 @@
 import { getClient } from "./context.ts";
-import type { Privacy } from "./privacy.ts";
+import type { Level, Privacy } from "./privacy.ts";
 import { shapeResource } from "./shape.ts";
 
 export interface ScriptRunResult {
@@ -8,6 +8,53 @@ export interface ScriptRunResult {
   logs: string[];
   executionTimeMs: number;
   error?: string;
+}
+
+export function compileScript(
+  code: string,
+  scopeKeys: string[],
+): (...args: unknown[]) => Promise<unknown> {
+  const trimmed = code.trim();
+  try {
+    return new Function(...scopeKeys, `return (async () => (${trimmed}))()`) as (
+      ...args: unknown[]
+    ) => Promise<unknown>;
+  } catch {
+    return new Function(...scopeKeys, `return (async () => { ${trimmed} })()`) as (
+      ...args: unknown[]
+    ) => Promise<unknown>;
+  }
+}
+
+export function wrapAggregate<T extends object>(
+  aggregate: T,
+  privacy: Privacy,
+  level: Level,
+  includeSensitive: boolean,
+): T {
+  return new Proxy(aggregate, {
+    get(target, prop) {
+      const orig = Reflect.get(target, prop);
+      if (typeof orig === "function") {
+        return async (...args: any[]) => {
+          const rawData = await orig.apply(target, args);
+          const resourceName = prop === "load" ? String(args[0]) : String(prop);
+          const shaped = shapeResource(resourceName, rawData, level, { includeSensitive });
+          privacy.consume(level, shaped.count);
+          return shaped.value;
+        };
+      }
+      const thenable = orig as unknown as Promise<unknown> | undefined;
+      if (thenable && typeof thenable.then === "function") {
+        return thenable.then((rawData) => {
+          const shaped = shapeResource(String(prop), rawData, level, { includeSensitive });
+          privacy.consume(level, shaped.count);
+          return shaped.value;
+        });
+      }
+      return orig;
+    },
+  }) as T;
 }
 
 export async function runScript(privacy: Privacy, code: string, options: { level?: string, includeSensitive?: boolean } = {}): Promise<ScriptRunResult> {
@@ -29,30 +76,7 @@ export async function runScript(privacy: Privacy, code: string, options: { level
 
   // Create a wrapped client that shapes the data before returning it to the script
   const wrappedClient = {
-    aggregate: new Proxy(rawClient.aggregate, {
-      get(target, prop, receiver) {
-        const orig = Reflect.get(target, prop, receiver);
-        if (typeof orig === 'function') {
-          return async (...args: any[]) => {
-            const rawData = await orig.apply(target, args);
-            // Resource name is roughly the prop name, or 'unknown' for loads
-            const resourceName = prop === 'load' ? String(args[0]) : String(prop);
-            const shaped = shapeResource(resourceName, rawData, level, { includeSensitive });
-            privacy.consume(level, shaped.count);
-            return shaped.value;
-          };
-        }
-        // If it's a promise/getter (like aggregate.me), we evaluate and shape it
-        if (orig && typeof orig.then === 'function') {
-          return orig.then((rawData: any) => {
-            const shaped = shapeResource(String(prop), rawData, level, { includeSensitive });
-            privacy.consume(level, shaped.count);
-            return shaped.value;
-          });
-        }
-        return orig;
-      }
-    })
+    aggregate: wrapAggregate(rawClient.aggregate, privacy, level, includeSensitive),
   };
 
   const scope = {
@@ -65,18 +89,8 @@ export async function runScript(privacy: Privacy, code: string, options: { level
   const scopeKeys = Object.keys(scope);
   const scopeValues = Object.values(scope);
 
-  const trimmedCode = code.trim();
-  let fnBody: string;
-  if (!trimmedCode.includes("return ") && !trimmedCode.includes("const ") && !trimmedCode.includes("let ") && !trimmedCode.includes("var ")) {
-    fnBody = `return (async () => { return (${trimmedCode}); })()`;
-  } else if (!trimmedCode.includes("return ")) {
-    fnBody = `return (async () => { ${trimmedCode} })()`;
-  } else {
-    fnBody = `return (async () => { ${trimmedCode} })()`;
-  }
-
   try {
-    const compiledFn = new Function(...scopeKeys, fnBody);
+    const compiledFn = compileScript(code, scopeKeys);
     const rawResult = await compiledFn(...scopeValues);
     return {
       success: true,
