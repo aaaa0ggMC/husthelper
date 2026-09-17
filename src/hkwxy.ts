@@ -44,9 +44,7 @@ export function parseOnlineDevices(data: unknown): OnlineDevice[] {
               JSON.stringify(data),
           )
         : String(data);
-    throw new Error(
-      `在线设备接口返回异常: ${detail.slice(0, 200)}（该功能通常需要校园网环境）`,
-    );
+    throw new Error(`在线设备接口返回异常: ${detail.slice(0, 200)}`);
   }
 
   return data.map((entry) => {

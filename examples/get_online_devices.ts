@@ -16,6 +16,6 @@ try {
     for (const ipv6 of device.userIpv6) console.log(`    ${ipv6}`);
   }
 } catch (error) {
-  console.warn("获取在线设备失败（可能不在校园网）:", error instanceof Error ? error.message : error);
+  console.warn("获取在线设备失败:", error instanceof Error ? error.message : error);
   process.exitCode = 1;
 }

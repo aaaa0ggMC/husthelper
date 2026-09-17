@@ -528,9 +528,7 @@ export class HustClient {
       json = JSON.parse(body);
     } catch {
       const hint = /无权限|权限|forbidden|denied/i.test(body) ? "（无权限）" : "";
-      throw new Error(
-        `在线设备返回了非 JSON 数据${hint}，该功能通常需要校园网环境: ${body.slice(0, 160)}`,
-      );
+      throw new Error(`在线设备返回了非 JSON 数据${hint}: ${body.slice(0, 160)}`);
     }
     return parseOnlineDevices(json);
   }

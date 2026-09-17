@@ -1,4 +1,4 @@
-# 校园网在线设备（hkwxy）
+# 在线设备（hkwxy）
 
 数据来自 `https://hkwxy.hust.edu.cn`。
 
@@ -35,14 +35,14 @@ interface OnlineDevice {
 }
 ```
 
-## 校园网限制与异常处理
+## 异常处理
 
-该接口**通常需要校园网环境**，否则会返回无权限或非预期内容。本库会抛出带提示的错误：
+接口可能返回非预期内容（无权限、错误提示等），本库会抛出带信息的错误：
 
 - 返回 JSON 但结构不是数组（如 `{code, msg}`）：
-  `在线设备接口返回异常: <msg>（该功能通常需要校园网环境）`
+  `在线设备接口返回异常: <msg>`
 - 返回非 JSON（HTML/纯文本，含「无权限」等）：
-  `在线设备返回了非 JSON 数据（无权限），该功能通常需要校园网环境: <片段>`
+  `在线设备返回了非 JSON 数据（无权限）: <片段>`
 
 建议调用方 `try/catch`：
 
@@ -50,7 +50,7 @@ interface OnlineDevice {
 try {
   const devices = await client.getOnlineDevices();
 } catch (error) {
-  console.warn("获取在线设备失败（可能不在校园网）:", error);
+  console.warn("获取在线设备失败:", error);
 }
 ```
 
