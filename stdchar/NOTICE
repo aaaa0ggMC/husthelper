@@ -1,0 +1,27 @@
+husthelper / stdchar
+====================
+
+This directory contains LGPL-3.0 licensed code, separate from the MIT-licensed
+core of husthelper.
+
+Origin
+------
+The CAPTCHA recognition algorithm (per-frame/per-channel Otsu binarization,
+temporal averaging, 4-strip splitting and Hamming-distance template matching)
+and the bundled digit templates `char_0.npy` ... `char_9.npy` are ported from:
+
+  HUST-CAS-login-emulator
+  https://github.com/xuxinhang/HUST-CAS-login-emulator
+  License: GNU Lesser General Public License v3.0
+
+Files in this directory are therefore distributed under LGPL-3.0-or-later.
+See ./LICENSE for the full license text.
+
+Isolation from the MIT core
+---------------------------
+The MIT-licensed core never imports this directory. It talks to it only as a
+separate process over stdin/stdout (see ../src/stdchar-pipe.ts and ./cli.ts),
+so the core remains MIT while this component stays LGPLv3.
+
+If you modify files in this directory, the resulting LGPL-covered work must be
+made available under the same license (or later).

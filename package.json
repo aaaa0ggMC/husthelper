@@ -1,0 +1,33 @@
+{
+  "name": "husthelper",
+  "version": "1.0.0",
+  "description": "HUST 统一身份认证 + 一卡通流水查询的 Node.js 封装",
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "scripts": {
+    "start": "node examples/get_costs.ts",
+    "example:custom-ocr": "node examples/custom_ocr.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "hust",
+    "cas",
+    "ecard"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "^11.3.0",
+      "onFail": "download"
+    }
+  },
+  "dependencies": {
+    "axios": "^1.20.0",
+    "gifuct-js": "^2.1.2",
+    "jpeg-js": "^0.4.4"
+  }
+}

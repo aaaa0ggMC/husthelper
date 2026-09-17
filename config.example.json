@@ -1,0 +1,13 @@
+{
+  "un": "你的学号/人员编号",
+  "pwd": "你的密码",
+  "account": "一卡通账号(消费记录里的 account，如 123456)",
+  "openai": {
+    "baseURL": "https://api.openai.com/v1",
+    "apiKey": "sk-xxxxxxxxxxxxxxxx",
+    "model": "gpt-4o-mini",
+    "maxTokens": 1024,
+    "timeout": 60000
+  },
+  "saveDebugImage": true
+}
