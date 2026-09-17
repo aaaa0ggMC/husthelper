@@ -20,6 +20,8 @@
 - 会话持久化：自动保存/恢复 `CASTGC` 等 cookie，失效自动续期
 - m.hust.edu.cn（微校园）wechat 会话获取与自动重连
 - one.hust（数智华中大）OIDC 委托认证，获取 bearer token（JWT），过期自动重换
+- 智慧课程（smartcourse）cookie 认证，课表 / 通知 / 课程 / 邮件
+- 跨平台聚合（`client.aggregate`）：schema 驱动，多来源并发合并、按优先级去重回填、失败降级
 - 日志可外部注入，默认输出到 console
 
 📖 详细文档见 [`docs/`](./docs/README.md)：[认证 auth](./docs/auth.md) · [流水查询](./docs/transactions.md) · [个人信息 profile](./docs/profile.md) · [成绩查询](./docs/grades.md) · [在线设备](./docs/online-devices.md) · [one.hust](./docs/one-hust.md) · [智慧课程 smartcourse](./docs/smartcourse.md) · [聚合 aggregate](./docs/aggregate.md)
@@ -71,7 +73,8 @@ for await (const record of client.ecard.iterateTransactions({})) {
 | `client.hkwxy` | 在线设备：`getOnlineDevices` / `request` / `sessionId` |
 | `client.wechat` | 微校园：`getSession` / `getAppsCenter` / `request` / `sessionId` |
 | `client.one` | one.hust：`getAccessToken` / `accessToken` / `invalidate` / `request` |
-| `client.smartcourse` | 智慧课程平台：`request` / `sessionId` / `cookies` |
+| `client.smartcourse` | 智慧课程平台：`getLoginUser` / `getMyLessons` / `getCourseList` / `getNoticeList` / `request` / `sessionId` / `cookies` |
+| `client.aggregate` | 跨平台聚合：`me` / `balance` / `notifications` / `documents` / `courses` / `schedule` / `today` / `activities` / `email` / `term` / `grades` / `devices` / `transactions` / `overview` / `load` |
 
 任一应用会话失效时，都会自动用 `CASTGC` 免密换票（必要时完整登录）并重放请求。
 
@@ -133,6 +136,25 @@ const res = await client.one.request("/<api-path>");
 ```
 
 token 以 `accessToken` cookie 的形式存进同一个 cookie jar，因此会被 `.persistent()` **一并缓存到会话文件**，下次运行直接复用（仍受 JWT 过期时间约束）。详见 [docs/one-hust.md](./docs/one-hust.md)。
+
+## 聚合（client.aggregate）
+
+`client.aggregate` 把各子平台的信息按「资源」聚合，尽量给出最全面的结果。它**不持有任何 session/cookie/凭据**，只引用 `client.one` / `client.smartcourse` / `client.ecard` / `client.mhub` / `client.hkwxy`；读取某属性时按内置 schema **并发**调用多个来源（`Promise.allSettled`），优先高优先级来源，重复项去重、缺失字段用次优来源回填，**仅当全部来源失败/无数据时才抛 `AggregateError`**。
+
+```ts
+const me = await client.aggregate.me;
+const courses = await client.aggregate.courses;
+// { enrolled, teaching, online, all, sources, raw }
+
+const ov = await client.aggregate.overview(); // 并发取多资源，永不 reject
+// 失败的资源在 ov.errors: [{ resource, message }]
+
+await client.aggregate.load("activities", { beginDate, endDate });
+await client.aggregate.notificationsAll({ limit: 200 }); // one 门户全量遍历
+await client.aggregate.transactionsIn({ page: 2 });
+```
+
+带参数/遍历的便捷方法：`activitiesIn` / `notificationsIn` / `documentsIn` / `transactionsIn` / `gradesOf` / `notificationsAll` / `documentsAll`。每个列表项带 `source`（来源标签）与 `raw`（原始对象），对象型资源带 `sources: string[]` 与 `raw`。详见 [docs/aggregate.md](./docs/aggregate.md)。
 
 ## 会话持久化
 
@@ -206,6 +228,8 @@ src/mhub.ts              成绩：CasService 声明 + MhubApi
 src/hkwxy.ts             在线设备：CasService 声明 + HkwxyApi + 解析
 src/wechat.ts            微校园：CasService 声明 + WechatApi
 src/one.ts               one.hust：OIDC 委托认证 + OneHustApi + JWT 工具
+src/smartcourse.ts       智慧课程：CAS OAuth2 cookie 认证 + 课程/通知/课表解析
+src/aggregate.ts         跨平台聚合：schema 驱动 + 多来源并发合并
 src/captcha.ts           GIF 解码、多帧时域中位数合成 JPG
 src/openai.ts            OpenAI 兼容的验证码识别
 src/stdchar-pipe.ts      子进程调用 stdchar（MIT）
