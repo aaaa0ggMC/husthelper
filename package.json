@@ -12,6 +12,7 @@
     "example:grades": "node examples/get_grades.ts",
     "example:online-devices": "node examples/get_online_devices.ts",
     "example:custom-ocr": "node examples/custom_ocr.ts",
+    "example:export_ledger": "node --experimental-strip-types examples/export_ledger.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [

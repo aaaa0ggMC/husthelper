@@ -213,6 +213,7 @@ client.withLogger({ info: () => {} });          // 静音
 ```bash
 cp config.example.json config.json
 pnpm start                      # examples/get_costs.ts
+pnpm run example:export_ledger  # 导出完整历史校园卡账单，适配 ledger-mcp-termux
 node examples/compare_ocr.ts 12 # 对比 AI 与离线模板匹配
 ```
 

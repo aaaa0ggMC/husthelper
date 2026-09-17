@@ -14,10 +14,11 @@ const page = await client.ecard.getTransactions({ page: 1 });
 | --- | --- | --- | --- |
 | `account` | `string?` | 自动获取 | 一卡通账号；不传则用 `auth({ account })` 或自动解析 |
 | `page` | `number?` | `1` | 页码，从 1 开始 |
-| `dateStatus` | `number?` | `2` | 学校接口的日期范围参数 |
+| `dateStatus` | `number \| string?` | `2` | 学校接口的日期范围参数，支持按月份查询（见下文） |
 | `typeStatus` | `number?` | `1` | 学校接口的交易类型参数 |
 
-> `dateStatus` / `typeStatus` 是学校接口的私有参数，含义可能随学校改动。默认值（`2` / `1`）对应「近期全部」。
+> **关于 `dateStatus`：** 
+> 默认值 `2` 仅返回最近的有限条记录（约 20 条）。若需查询完整历史，必须传入形如 `"YYYY-MM-DD"`（例如 `"2025-09-01"`）的字符串按月遍历查询。传 `0` 只能查到最近 90 多条记录。
 
 ### TransactionPage
 
