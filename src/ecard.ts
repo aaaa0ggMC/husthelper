@@ -1,5 +1,21 @@
-import type { AxiosResponse } from "axios";
-import { ECARD_BASE } from "./auth.ts";
+import type { CasService } from "./cas.ts";
+import type { ClientRuntime } from "./runtime.ts";
+import { parseProfile, type Profile } from "./profile.ts";
+
+export const ECARD_HOST = "ecard.m.hust.edu.cn";
+export const ECARD_BASE = "http://ecard.m.hust.edu.cn:80/wechat-web";
+export const ECARD_SERVICE = `${ECARD_BASE}/`;
+export const ECARD_SESSION_COOKIE = "JSESSIONID";
+
+/** 一卡通（ecard）作为 CAS 应用的声明 */
+export const ecardService: CasService = {
+  name: "ecard",
+  host: ECARD_HOST,
+  base: ECARD_BASE,
+  service: ECARD_SERVICE,
+  sessionCookie: ECARD_SESSION_COOKIE,
+  bootstrapUrl: ECARD_SERVICE,
+};
 
 export interface TransactionQuery {
   account: string;
@@ -61,18 +77,75 @@ export function parseTransactionResponse(body: string): TransactionPage {
   };
 }
 
-export function isLoginRedirect(response: AxiosResponse): boolean {
-  const location = response.headers["location"];
-  if (
-    response.status >= 300 &&
-    response.status < 400 &&
-    typeof location === "string" &&
-    location.includes("/cas/login")
-  ) {
-    return true;
+/** 一卡通 API：`client.ecard` */
+export class EcardApi {
+  private readonly runtime: ClientRuntime;
+  private account?: string;
+
+  constructor(runtime: ClientRuntime) {
+    this.runtime = runtime;
   }
 
-  const contentType = String(response.headers["content-type"] ?? "");
-  const body = typeof response.data === "string" ? response.data : "";
-  return contentType.includes("text/html") && body.includes('name="_eventId"');
+  withAccount(account: string): this {
+    this.account = account;
+    return this;
+  }
+
+  get sessionId(): string | undefined {
+    return this.runtime.session()?.getCookie(ECARD_SESSION_COOKIE, ECARD_HOST);
+  }
+
+  /** 一卡通账号（不是学号）；首次调用会请求 Queryurl.html 自动解析并缓存 */
+  async getAccount(): Promise<string> {
+    if (this.account) return this.account;
+
+    const response = await this.runtime.serviceRequest(
+      ecardService,
+      `${ECARD_BASE}/QueryController/Queryurl.html`,
+    );
+    const match = String(response.data).match(/id="account"[^>]*value="([^"]*)"/i);
+    if (!match) throw new Error("未能从 Queryurl.html 解析出一卡通 account");
+
+    this.account = match[1];
+    this.runtime.logger.info(`自动获取 account: ${this.account}`);
+    return this.account;
+  }
+
+  async getProfile(): Promise<Profile> {
+    const response = await this.runtime.serviceRequest(
+      ecardService,
+      `${ECARD_BASE}/service/profile.html`,
+    );
+    return parseProfile(String(response.data));
+  }
+
+  async getTransactions(query: Partial<TransactionQuery> = {}): Promise<TransactionPage> {
+    const account = query.account ?? (await this.getAccount());
+
+    this.runtime.logger.debug(`查询流水 account=${account} page=${query.page ?? 1}`);
+    const response = await this.runtime.serviceRequest(
+      ecardService,
+      transactionUrl({ ...query, account }),
+      {
+        headers: {
+          Referer: `${ECARD_BASE}/QueryController/Queryurl.html`,
+          "X-Requested-With": "XMLHttpRequest",
+        },
+      },
+    );
+
+    return parseTransactionResponse(response.data as string);
+  }
+
+  async *iterateTransactions(
+    query: Partial<TransactionQuery> = {},
+  ): AsyncGenerator<Transaction> {
+    let page = query.page ?? 1;
+    while (true) {
+      const result = await this.getTransactions({ ...query, page });
+      for (const record of result.records) yield record;
+      if (result.nextPage === null) break;
+      page = result.nextPage;
+    }
+  }
 }

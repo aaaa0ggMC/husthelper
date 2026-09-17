@@ -2,18 +2,16 @@
 
 登录后可读取本人校园卡账户信息。
 
-## getEcardProfile()
+## client.ecard.getProfile()
 
 ```ts
-const profile = await client.getEcardProfile();
+const profile = await client.ecard.getProfile();
 
 profile.name;            // 姓名
 profile.cardBalance;     // 校园卡余额，如 "485.8"
 profile.get("校园卡余额"); // 按页面原文标签取，等价
 profile.rawHtml;         // 原始 HTML，自己解析
 ```
-
-> `getProfile()` 是 `getEcardProfile()` 的别名，两者等价。
 
 请求 `http://ecard.m.hust.edu.cn/wechat-web/service/profile.html` 并解析 HTML。
 
@@ -81,7 +79,7 @@ interface Profile {
 ## 示例
 
 ```ts
-const profile = await client.getEcardProfile();
+const profile = await client.ecard.getProfile();
 
 for (const section of profile.sections) {
   console.log(`# ${section.title}`);

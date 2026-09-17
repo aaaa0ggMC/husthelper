@@ -19,6 +19,7 @@
 - 在线设备查询（hkwxy）
 - 会话持久化：自动保存/恢复 `CASTGC` 等 cookie，失效自动续期
 - m.hust.edu.cn（微校园）wechat 会话获取与自动重连
+- one.hust（数智华中大）OIDC 委托认证，获取 bearer token（JWT），过期自动重换
 - 日志可外部注入，默认输出到 console
 
 📖 详细文档见 [`docs/`](./docs/README.md)：[认证 auth](./docs/auth.md) · [流水查询](./docs/transactions.md) · [个人信息 profile](./docs/profile.md) · [成绩查询](./docs/grades.md) · [在线设备](./docs/online-devices.md)
@@ -48,15 +49,30 @@ const client = hust
     model: "gpt-4o-mini",
   });
 
-const page = await client.getTransactions({ page: 1 });
+const page = await client.ecard.getTransactions({ page: 1 });
 console.log(page.records, page.total, page.nextPage);
 
-for await (const record of client.iterateTransactions({})) {
+for await (const record of client.ecard.iterateTransactions({})) {
   console.log(record.occtime, record.mercname, record.sign_tranamt);
 }
 ```
 
-`account` 会**自动获取**（登录后从 `Queryurl.html` 里解析），通常无需填写；也可用 `auth({ account })` 或 `client.getAccount()` 显式指定/读取。它不是学号。
+`account` 会**自动获取**（登录后从 `Queryurl.html` 里解析），通常无需填写；也可用 `auth({ account })` 或 `client.ecard.getAccount()` 显式指定/读取。它不是学号。
+
+## 客户端 API：按应用分命名空间
+
+`client` 顶层是配置/会话入口（`.auth()` / `.withXxx()` / `.persistent()` / `.renew()`），
+各业务按受 CAS 保护的应用分组：
+
+| 命名空间 | 说明 |
+| --- | --- |
+| `client.ecard` | 一卡通：`getTransactions` / `iterateTransactions` / `getProfile` / `getAccount` / `sessionId` |
+| `client.mhub` | 成绩：`getTerms` / `getGrades` / `request` / `sessionId` |
+| `client.hkwxy` | 在线设备：`getOnlineDevices` / `request` / `sessionId` |
+| `client.wechat` | 微校园：`getSession` / `getAppsCenter` / `request` / `sessionId` |
+| `client.one` | one.hust：`getAccessToken` / `accessToken` / `invalidate` / `request` |
+
+任一应用会话失效时，都会自动用 `CASTGC` 免密换票（必要时完整登录）并重放请求。
 
 ## 验证码识别方式（任选其一）
 
@@ -84,12 +100,12 @@ interface TransactionQuery {
   typeStatus?: number; // 默认 1
 }
 
-const page = await client.getTransactions({ page: 1 });
+const page = await client.ecard.getTransactions({ page: 1 });
 // { records, total, pageSize, nextPage }
 
-const account = await client.getAccount(); // 自动获取一卡通 account
+const account = await client.ecard.getAccount(); // 自动获取一卡通 account
 
-for await (const tx of client.iterateTransactions({})) {
+for await (const tx of client.ecard.iterateTransactions({})) {
   // 内部自动按 nextPage 翻页
 }
 ```
@@ -98,9 +114,24 @@ for await (const tx of client.iterateTransactions({})) {
 
 ## 会话与自动续期
 
-- 登录后客户端持有 ecard 的 `JSESSIONID`，以及 CAS 的 `CASTGC`。
-- 请求被重定向回 `/cas/login` 时自动处理：先用 `CASTGC` 免密重登，失败再回退到完整登录（验证码 + 密码）。
-- 可手动触发：`await client.renew()`；查看会话状态：`client.sessionId` / `client.cookiesFor(host)`。
+- 登录后客户端持有 CAS 的 `CASTGC`，以及各应用自己的会话 cookie（ecard `JSESSIONID`、`wechat_session_id` 等）。
+- 任一应用的请求被重定向回 `/cas/login` 时自动处理：先用 `CASTGC` 免密换该应用的 ticket，失败再回退到完整登录（验证码 + 密码），然后重放请求。
+- 可手动触发：`await client.renew()`；查看会话状态：`client.ecard.sessionId` / `client.cookiesFor(host)`。
+
+## one.hust（数智华中大）
+
+`client.one` 通过 CAS 的 OAuth2/OIDC 委托流程换取 one.hust 的 bearer token（OIDC JWT，约 2 小时有效；响应里的 `expiresIn` 为 7200）：
+
+```ts
+const token = await client.one.getAccessToken(); // 自动换取并缓存，过期自动重换
+client.one.accessToken;                          // 同步读取缓存（未过期才有值）
+client.one.invalidate();                         // 主动作废，下次重新换取
+
+// 自带 Authorization: Bearer <token>，401 时自动重换一次
+const res = await client.one.request("/<api-path>");
+```
+
+token 以 `accessToken` cookie 的形式存进同一个 cookie jar，因此会被 `.persistent()` **一并缓存到会话文件**，下次运行直接复用（仍受 JWT 过期时间约束）。详见 [docs/one-hust.md](./docs/one-hust.md)。
 
 ## 会话持久化
 
@@ -166,8 +197,14 @@ node examples/compare_ocr.ts 12 # 对比 AI 与离线模板匹配
 
 ```
 index.ts                 默认导出 { auth }
-src/client.ts            HustClient：链式配置 + 流水 API + 自动续期
-src/auth.ts              CAS 登录 / ticket 兑换 / CASTGC 续期
+src/client.ts            HustClient：链式配置 + 命名空间装配 + 会话/持久化
+src/runtime.ts           命名空间 API 依赖的内部能力接口
+src/cas.ts               CAS 门面：登录 / 换票 / CASTGC 续期 / CasService 抽象
+src/ecard.ts             一卡通：CasService 声明 + EcardApi + 流水解析
+src/mhub.ts              成绩：CasService 声明 + MhubApi
+src/hkwxy.ts             在线设备：CasService 声明 + HkwxyApi + 解析
+src/wechat.ts            微校园：CasService 声明 + WechatApi
+src/one.ts               one.hust：OIDC 委托认证 + OneHustApi + JWT 工具
 src/captcha.ts           GIF 解码、多帧时域中位数合成 JPG
 src/openai.ts            OpenAI 兼容的验证码识别
 src/stdchar-pipe.ts      子进程调用 stdchar（MIT）
@@ -175,6 +212,20 @@ src/http.ts              Session：axios + 分域名 cookie jar
 stdchar/                 离线模板匹配识别（LGPL-3.0，独立子进程）
 examples/                使用示例
 ```
+
+### 架构：CAS 是唯一门面，其余都是「应用」
+
+`pass.hust.edu.cn`（CAS）是 HUST 登录的唯一入口，登录后签发长期票据 `CASTGC`。
+一卡通（ecard）、成绩（mhub）、在线设备（hkwxy）、微校园（wechat）等都是受 CAS
+保护的**应用**：各自用自己的入口 URL 作为 CAS 的 `service` 参数换 ticket，再兑换
+自己的会话 cookie（多为 `JSESSIONID`）。one.hust 稍特殊：它的 `service` 是 CAS 的
+OAuth2 authorize 端点，走委托流程换到 OIDC JWT（见 [docs/one-hust.md](./docs/one-hust.md)）。
+
+- 所有应用共用同一个 `Session`（分域名 cookie jar）和同一个 `CASTGC`。
+- 获取任意应用会话都是同一个流程：`CASTGC` 免密换票 → 兑换应用会话；`CASTGC`
+  失效才回退完整登录（RSA + 验证码）。
+- 各应用 API 只依赖 `ClientRuntime`（`src/runtime.ts`），因此可以独立成文件；
+  新增普通应用只需声明一个 `CasService`（见 `src/ecard.ts`）并复用一个 `XxxApi` 类。
 
 ## License
 

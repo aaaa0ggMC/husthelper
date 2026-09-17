@@ -13,10 +13,10 @@ GET hkwxy /tp_up/v2?m=up
 
 复用已有 `CASTGC` 即可免密换票，兑换 hkwxy 的 `JSESSIONID`。客户端自动处理，过期自动重连。
 
-## getOnlineDevices()
+## client.hkwxy.getOnlineDevices()
 
 ```ts
-const devices = await client.getOnlineDevices();
+const devices = await client.hkwxy.getOnlineDevices();
 for (const device of devices) {
   console.log(device.onlineTime, device.userIpv4, device.userIpv6.join(", "));
 }
@@ -48,7 +48,7 @@ interface OnlineDevice {
 
 ```ts
 try {
-  const devices = await client.getOnlineDevices();
+  const devices = await client.hkwxy.getOnlineDevices();
 } catch (error) {
   console.warn("获取在线设备失败:", error);
 }

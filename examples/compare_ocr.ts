@@ -3,13 +3,14 @@ import { Session } from "../src/http.ts";
 import { fetchCaptchaGif, gifToJpeg } from "../src/captcha.ts";
 import { recognizeStdCharPipe } from "../src/stdchar-pipe.ts";
 import { recognizeCaptcha } from "../src/openai.ts";
-import { CAS_CODE, LOGIN_URL } from "../src/auth.ts";
+import { CAS_CODE, casLoginUrl } from "../src/cas.ts";
+import { ECARD_SERVICE } from "../src/ecard.ts";
 import { loadConfig } from "./config.ts";
 
 const config = loadConfig();
 const count = Number(process.argv[2] ?? 5);
 const session = new Session();
-await session.get(LOGIN_URL);
+await session.get(casLoginUrl(ECARD_SERVICE));
 
 for (let i = 0; i < count; i++) {
   const gif = await fetchCaptchaGif(session, CAS_CODE);

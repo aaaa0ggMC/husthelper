@@ -8,10 +8,10 @@ const client = hust
   .withStdChar()
   .persistent(".hust-session.json");
 
-const terms = await client.getGradeTerms();
+const terms = await client.mhub.getTerms();
 console.log("可选学年:", terms.map((t) => `${t.XNMC}(${t.XN})`).join(", "));
 
-const grades = await client.getGrades({ xn: terms[0]?.XN, xq: 0 });
+const grades = await client.mhub.getGrades({ xn: terms[0]?.XN, xq: 0 });
 
 console.log(`共 ${grades.courses.length} 门课`);
 for (const course of grades.courses) {

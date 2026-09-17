@@ -9,12 +9,12 @@ const client = hust
   .persistent(".hust-session.json");
 
 try {
-  const page = await client.getTransactions({ page: 1 });
+  const page = await client.ecard.getTransactions({ page: 1 });
   console.log(`第 1 页: ${page.records.length}/${page.total} 条，下一页: ${page.nextPage}`);
   console.log(page.records[0]);
 
   let count = 0;
-  for await (const record of client.iterateTransactions({})) {
+  for await (const record of client.ecard.iterateTransactions({})) {
     count++;
     console.log(`${count}. ${record.occtime} ${record.mercname} ${record.sign_tranamt}`);
   }

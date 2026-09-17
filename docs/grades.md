@@ -15,10 +15,18 @@ GET mhub /CjcxController/fianCjInfo
 
 因此复用已有的 `CASTGC` 就能**免密**换到 mhub 的 ticket，再兑换 mhub 的 `JSESSIONID`，无需验证码。客户端自动处理，过期自动重连（同 wechat/ecard）。
 
-## getGrades(options)
+## client.mhub.getTerms()
+
+返回可选学年列表，用于给 `getGrades` 传 `xn`：
 
 ```ts
-const grades = await client.getGrades({ xn: "2025", xq: 0 });
+const terms = await client.mhub.getTerms(); // GradeTerm[]
+```
+
+## client.mhub.getGrades(options)
+
+```ts
+const grades = await client.mhub.getGrades({ xn: "2025", xq: 0 });
 ```
 
 | 参数 | 类型 | 默认 | 说明 |

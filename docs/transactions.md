@@ -2,10 +2,10 @@
 
 登录后即可查询本人一卡通消费/交易流水。
 
-## getTransactions(query)
+## client.ecard.getTransactions(query)
 
 ```ts
-const page = await client.getTransactions({ page: 1 });
+const page = await client.ecard.getTransactions({ page: 1 });
 ```
 
 ### TransactionQuery
@@ -30,12 +30,12 @@ interface TransactionPage {
 }
 ```
 
-## iterateTransactions(query)
+## client.ecard.iterateTransactions(query)
 
 自动按 `nextPage` 翻页的异步迭代器：
 
 ```ts
-for await (const record of client.iterateTransactions({})) {
+for await (const record of client.ecard.iterateTransactions({})) {
   console.log(record.occtime, record.mercname, record.sign_tranamt);
 }
 ```
@@ -90,7 +90,7 @@ const client = hust
 
 let count = 0;
 let sum = 0;
-for await (const tx of client.iterateTransactions({})) {
+for await (const tx of client.ecard.iterateTransactions({})) {
   count++;
   sum += Number(tx.sign_tranamt) / 100;
 }

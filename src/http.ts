@@ -85,6 +85,14 @@ export class Session {
     }
   }
 
+  deleteCookie(name: string, urlOrHost: string): void {
+    const host = this.resolveHost(urlOrHost);
+    for (const [domain, jar] of this.cookies) {
+      if (this.matches(host, domain)) jar.delete(name);
+    }
+    this.onUpdate?.();
+  }
+
   setOnUpdate(onUpdate?: () => void): void {
     this.onUpdate = onUpdate;
   }

@@ -7,7 +7,7 @@ const client = hust
   .auth({ user_name: config.un, password: config.pwd })
   .withStdChar();
 
-const profile = await client.getEcardProfile();
+const profile = await client.ecard.getProfile();
 
 console.log("姓名:", profile.name);
 console.log("编号:", profile.id);

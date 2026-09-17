@@ -1,13 +1,19 @@
 # 认证（auth）
 
-`husthelper` 的认证基于 HUST 统一身份认证（CAS）：
+`husthelper` 的认证基于 HUST 统一身份认证（CAS）。`pass.hust.edu.cn` 是唯一登录门面：
+ecard（一卡通）/ mhub（成绩）/ hkwxy（在线设备）/ wechat（微校园）等都是受 CAS 保护的
+**应用**，各自用自己的入口 URL 作为 `service` 参数换 ticket，再兑换自己的会话 cookie。
+
+完整登录（仅当没有可用的 `CASTGC` 时执行）：
 
 1. `GET` CAS 登录页，解析 `lt` / `execution`
 2. `POST /cas/rsa` 取 RSA 公钥，加密 `un` / `pwd`
 3. 拉取并识别验证码
 4. `POST` 登录表单，拿到带 ticket 的 `Location`
-5. `GET` ticket 兑换一卡通 `JSESSIONID`
-6. 之后所有一卡通请求都只需 `JSESSIONID`
+5. `GET` ticket 兑换目标应用的会话 cookie（如 ecard 的 `JSESSIONID`）
+
+后续获取其他应用会话无需重新输入密码：带 `CASTGC` `GET /cas/login?service=...` 免密拿到
+新 ticket，再兑换对应应用的 cookie。所有应用共用同一个 cookie jar 与 `CASTGC`。
 
 ## 快速开始
 
@@ -23,7 +29,10 @@ const client = hust
   });
 ```
 
-`auth()` 只保存配置，**不会立即登录**；第一次真正发请求（如 `getTransactions`）时才登录。
+`auth()` 只保存配置，**不会立即登录**；第一次真正发请求（如 `client.ecard.getTransactions`）时才登录。
+
+> 客户端按应用分为命名空间：`client.ecard` / `client.mhub` / `client.hkwxy` / `client.wechat` / `client.one`，
+> 顶层只保留配置与会话入口（`.auth()` / `.withXxx()` / `.persistent()` / `.renew()` / `.cookiesFor()`）。
 
 ## auth(options)
 
@@ -87,20 +96,23 @@ client.withLogger((msg) => sink(msg)); // 注入日志，见 README「日志」
 
 登录成功后客户端同时持有：
 
-- 一卡通 `JSESSIONID`（用于业务请求）
-- CAS `CASTGC`（长期票据，用于免密重登）
+- CAS `CASTGC`（长期票据，所有应用共用的登录门面）
+- 各应用自己的会话 cookie（如一卡通 `JSESSIONID`、`wechat_session_id`）
 
-当业务请求被重定向回 `/cas/login`（会话过期）时，客户端会自动：
+当某个应用的业务请求被重定向回 `/cas/login`（该应用会话过期）时，客户端会自动：
 
-1. 带上 `CASTGC` `GET` 登录页 → 直接拿到新 ticket（**无需验证码、无需密码**）
-2. 用 ticket 换新 `JSESSIONID`，重放刚才失败的请求
+1. 带上 `CASTGC` 访问该应用的 `service` → 直接拿到新 ticket（**无需验证码、无需密码**）
+2. 用 ticket 换该应用的新会话，重放刚才失败的请求
 
-若 `CASTGC` 也失效，则回退到完整登录（验证码 + 密码）。
+若 `CASTGC` 也失效，则回退到完整登录（验证码 + 密码）。每个应用独立管理自己的会话，
+互不影响；ecard 是默认用于手动续期的应用。
 
 ```ts
-await client.renew();          // 手动触发续期，返回新的 JSESSIONID
-client.sessionId;              // 当前 JSESSIONID
-client.httpSession;            // 底层 Session（高级用法）
+await client.renew();                  // 手动触发 ecard 续期，返回新的 JSESSIONID
+client.ecard.sessionId;                // 当前一卡通 JSESSIONID
+client.mhub.sessionId;                 // 当前 mhub JSESSIONID
+client.wechat.sessionId;               // 当前微校园会话
+client.httpSession;                    // 底层 Session（高级用法）
 client.cookiesFor("pass.hust.edu.cn"); // 查看某域下的 cookie
 ```
 
@@ -140,8 +152,8 @@ client.persistent(".hust-session.json", { maxAgeMs: 2 * 60 * 60 * 1000 });
 
 一卡通账号（如 `123456`）不是学号，登录后可从页面自动解析：
 
-- `client.getAccount()` 首次调用会请求 `Queryurl.html` 并解析 `<input id="account" ... value="...">`，之后缓存。
-- 优先级：`getTransactions({ account })` > `auth({ account })` > 自动获取。
+- `client.ecard.getAccount()` 首次调用会请求 `Queryurl.html` 并解析 `<input id="account" ... value="...">`，之后缓存。
+- 优先级：`client.ecard.getTransactions({ account })` > `auth({ account })` > 自动获取。
 - 显式指定 `account` 时**不会**发起 `Queryurl.html` 请求。
 
 ## 错误处理

@@ -9,7 +9,7 @@ const client = hust
   .persistent(".hust-session.json");
 
 try {
-  const devices = await client.getOnlineDevices();
+  const devices = await client.hkwxy.getOnlineDevices();
   console.log(`在线设备 ${devices.length} 台`);
   for (const [index, device] of devices.entries()) {
     console.log(`#${index + 1} ${device.onlineTime} ${device.userIpv4}`);

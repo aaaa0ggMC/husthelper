@@ -1,11 +1,21 @@
-import { CAS_LOGIN } from "./auth.ts";
-import { Session } from "./http.ts";
-import type { Logger } from "./logger.ts";
+import type { AxiosResponse } from "axios";
+import type { CasService } from "./cas.ts";
+import type { RequestOptions } from "./http.ts";
+import type { ClientRuntime } from "./runtime.ts";
 
 export const HKWXY_HOST = "hkwxy.hust.edu.cn";
 export const HKWXY_BASE = "https://hkwxy.hust.edu.cn/tp_up";
 export const HKWXY_SERVICE = `${HKWXY_BASE}/v2?m=up`;
 export const HKWXY_SESSION_COOKIE = "JSESSIONID";
+
+/** 智慧校园（hkwxy）作为 CAS 应用的声明 */
+export const hkwxyService: CasService = {
+  name: "hkwxy",
+  host: HKWXY_HOST,
+  base: HKWXY_BASE,
+  service: HKWXY_SERVICE,
+  sessionCookie: HKWXY_SESSION_COOKIE,
+};
 
 export interface OnlineDevice {
   userIpv4: string;
@@ -17,19 +27,6 @@ export interface OnlineDevice {
 export function hkwxyUrl(path: string): string {
   if (path.startsWith("http")) return path;
   return `${HKWXY_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
-}
-
-export function isHkwxyLoginRedirect(response: {
-  status: number;
-  headers: Record<string, unknown>;
-}): boolean {
-  const location = response.headers["location"];
-  return (
-    response.status >= 300 &&
-    response.status < 400 &&
-    typeof location === "string" &&
-    location.includes("/cas/login")
-  );
 }
 
 export function parseOnlineDevices(data: unknown): OnlineDevice[] {
@@ -64,31 +61,39 @@ export function parseOnlineDevices(data: unknown): OnlineDevice[] {
   });
 }
 
-export async function acquireHkwxySession(session: Session, logger?: Logger): Promise<void> {
-  const loginUrl = `${CAS_LOGIN}?service=${encodeURIComponent(HKWXY_SERVICE)}`;
-  let response = await session.get<string>(loginUrl, { responseType: "text" });
+/** 智慧校园（在线设备）API：`client.hkwxy` */
+export class HkwxyApi {
+  private readonly runtime: ClientRuntime;
 
-  const ticket = response.headers["location"] as string | undefined;
-  if (!(response.status >= 300 && response.status < 400 && ticket?.includes("ticket="))) {
-    throw new Error("hkwxy: CAS 未返回 ticket，CASTGC 可能已失效");
+  constructor(runtime: ClientRuntime) {
+    this.runtime = runtime;
   }
 
-  let current = new URL(ticket, HKWXY_BASE).toString();
-  for (let hop = 0; hop < 8 && current; hop++) {
-    response = await session.get<string>(current, {
-      responseType: "text",
-      omitCookies: hop === 0,
+  get sessionId(): string | undefined {
+    return this.runtime.session()?.getCookie(HKWXY_SESSION_COOKIE, HKWXY_HOST);
+  }
+
+  request<T = string>(path: string, config: RequestOptions = {}): Promise<AxiosResponse<T>> {
+    return this.runtime.serviceRequest<T>(hkwxyService, hkwxyUrl(path), config);
+  }
+
+  async getOnlineDevices(): Promise<OnlineDevice[]> {
+    const response = await this.request<string>("/apps/campusNetwork/onlineDevices", {
+      method: "POST",
+      headers: {
+        "X-Requested-With": "XMLHttpRequest",
+        Referer: hkwxyUrl("/apps/campusNetwork/onlineDevices?item_id=undefined"),
+      },
     });
-    const next = response.headers["location"] as string | undefined;
-    if (response.status >= 300 && response.status < 400 && next) {
-      current = new URL(next, current).toString();
-      continue;
-    }
-    break;
-  }
 
-  if (!session.getCookie(HKWXY_SESSION_COOKIE, HKWXY_HOST)) {
-    throw new Error("hkwxy: 未拿到 JSESSIONID");
+    const body = String(response.data);
+    let json: unknown;
+    try {
+      json = JSON.parse(body);
+    } catch {
+      const hint = /无权限|权限|forbidden|denied/i.test(body) ? "（无权限）" : "";
+      throw new Error(`在线设备返回了非 JSON 数据${hint}: ${body.slice(0, 160)}`);
+    }
+    return parseOnlineDevices(json);
   }
-  logger?.info("hkwxy 会话获取成功");
 }

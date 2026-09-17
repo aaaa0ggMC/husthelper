@@ -5,5 +5,6 @@
 - [个人信息 profile](./profile.md) — 校园卡账户信息读取与解析
 - [成绩查询 grades](./grades.md) — mhub/HUB 成绩、学年学期、加权成绩修正
 - [在线设备 online-devices](./online-devices.md) — hkwxy 在线设备查询
+- [one.hust one-hust](./one-hust.md) — one.hust OIDC 委托认证、bearer token 获取与缓存
 
 返回字段与接口参数可能随学校系统更新而变化，请以实际返回为准。
