@@ -17,6 +17,14 @@ export {
   wechatUrl,
 } from "./src/wechat.ts";
 export { MHUB_HOST, MHUB_BASE, MHUB_SERVICE, mhubUrl } from "./src/mhub.ts";
+export {
+  HKWXY_HOST,
+  HKWXY_BASE,
+  HKWXY_SERVICE,
+  hkwxyUrl,
+  parseOnlineDevices,
+} from "./src/hkwxy.ts";
+export type { OnlineDevice } from "./src/hkwxy.ts";
 export { parseGrades, parseGradeTerms, computeWeighted } from "./src/grades.ts";
 export type {
   Grades,

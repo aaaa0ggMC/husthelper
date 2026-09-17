@@ -38,6 +38,16 @@ import {
   type Grades,
 } from "./grades.ts";
 import {
+  acquireHkwxySession,
+  hkwxyUrl,
+  isHkwxyLoginRedirect,
+  parseOnlineDevices,
+  HKWXY_HOST,
+  HKWXY_BASE,
+  HKWXY_SESSION_COOKIE,
+  type OnlineDevice,
+} from "./hkwxy.ts";
+import {
   acquireWechatSession,
   isWechatLoginRedirect,
   wechatUrl,
@@ -89,6 +99,7 @@ export class HustClient {
   private jsessionId?: string;
   private wechatAcquired = false;
   private mhubAcquired = false;
+  private hkwxyAcquired = false;
   private gradeTerms?: GradeTerm[];
   private logger: Logger = defaultLogger;
   private persistPath?: string;
@@ -146,6 +157,7 @@ export class HustClient {
       this.jsessionId = session.getCookie("JSESSIONID", ECARD_HOST);
       this.wechatAcquired = !!session.getCookie(WECHAT_SESSION_COOKIE, WECHAT_HOST);
       this.mhubAcquired = !!session.getCookie(MHUB_SESSION_COOKIE, MHUB_HOST);
+      this.hkwxyAcquired = !!session.getCookie(HKWXY_SESSION_COOKIE, HKWXY_HOST);
       this.persistedAtValue = data.savedAt;
 
       const age = Date.now() - Date.parse(data.savedAt);
@@ -228,6 +240,7 @@ export class HustClient {
     this.jsessionId = jsessionId;
     this.wechatAcquired = false;
     this.mhubAcquired = false;
+    this.hkwxyAcquired = false;
     this.attachPersistence(session);
     this.save();
   }
@@ -451,5 +464,74 @@ export class HustClient {
       { headers: { Referer: `${MHUB_BASE}/CjcxController/fianCjInfo?xn=${xn}&xq=1` } },
     );
     return parseGrades(String(response.data), xn, xq);
+  }
+
+  get hkwxySessionId(): string | undefined {
+    return this.session?.getCookie(HKWXY_SESSION_COOKIE, HKWXY_HOST);
+  }
+
+  private async acquireHkwxy(): Promise<void> {
+    const session = this.session!;
+    try {
+      await acquireHkwxySession(session, this.logger);
+    } catch (error) {
+      this.logger.warn("hkwxy: CASTGC 续期失败，回退完整登录");
+      this.logger.debug(error instanceof Error ? error.message : String(error));
+      await this.renew();
+      await acquireHkwxySession(this.session!, this.logger);
+    }
+    this.hkwxyAcquired = true;
+  }
+
+  private async ensureHkwxy(): Promise<Session> {
+    await this.ensureSession();
+    if (!this.hkwxyAcquired) await this.acquireHkwxy();
+    return this.session!;
+  }
+
+  async hkwxyRequest<T = string>(
+    path: string,
+    config: RequestOptions = {},
+  ): Promise<AxiosResponse<T>> {
+    await this.ensureHkwxy();
+    const url = hkwxyUrl(path);
+    const { method, data, ...rest } = config;
+    const send = (): Promise<AxiosResponse<T>> =>
+      method && method.toUpperCase() === "POST"
+        ? this.session!.post<T>(url, data, { responseType: "text", ...rest })
+        : this.session!.get<T>(url, { responseType: "text", ...rest });
+
+    let response = await send();
+    if (isHkwxyLoginRedirect(response)) {
+      this.logger.warn("hkwxy 会话已失效，重新获取");
+      await this.acquireHkwxy();
+      response = await send();
+    }
+    if (isHkwxyLoginRedirect(response)) {
+      throw new Error("hkwxy 重新获取会话后仍被重定向到 CAS 登录");
+    }
+    return response;
+  }
+
+  async getOnlineDevices(): Promise<OnlineDevice[]> {
+    const response = await this.hkwxyRequest<string>("/apps/campusNetwork/onlineDevices", {
+      method: "POST",
+      headers: {
+        "X-Requested-With": "XMLHttpRequest",
+        Referer: `${HKWXY_BASE}/apps/campusNetwork/onlineDevices?item_id=undefined`,
+      },
+    });
+
+    const body = String(response.data);
+    let json: unknown;
+    try {
+      json = JSON.parse(body);
+    } catch {
+      const hint = /无权限|权限|forbidden|denied/i.test(body) ? "（无权限）" : "";
+      throw new Error(
+        `在线设备返回了非 JSON 数据${hint}，该功能通常需要校园网环境: ${body.slice(0, 160)}`,
+      );
+    }
+    return parseOnlineDevices(json);
   }
 }

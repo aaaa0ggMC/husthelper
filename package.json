@@ -10,6 +10,7 @@
     "start": "node examples/get_costs.ts",
     "example:profile": "node examples/get_profile.ts",
     "example:grades": "node examples/get_grades.ts",
+    "example:online-devices": "node examples/get_online_devices.ts",
     "example:custom-ocr": "node examples/custom_ocr.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

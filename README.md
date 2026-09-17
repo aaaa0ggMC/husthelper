@@ -16,11 +16,12 @@
 - 一卡通流水查询与自动翻页
 - 校园卡个人信息（profile）读取与解析
 - 成绩查询（mhub/HUB），含加权成绩修正（排除缓考/缺考等）
+- 校园网在线设备查询（hkwxy，需校园网环境）
 - 会话持久化：自动保存/恢复 `CASTGC` 等 cookie，失效自动续期
 - m.hust.edu.cn（微校园）wechat 会话获取与自动重连
 - 日志可外部注入，默认输出到 console
 
-📖 详细文档见 [`docs/`](./docs/README.md)：[认证 auth](./docs/auth.md) · [流水查询](./docs/transactions.md) · [个人信息 profile](./docs/profile.md) · [成绩查询](./docs/grades.md)
+📖 详细文档见 [`docs/`](./docs/README.md)：[认证 auth](./docs/auth.md) · [流水查询](./docs/transactions.md) · [个人信息 profile](./docs/profile.md) · [成绩查询](./docs/grades.md) · [在线设备](./docs/online-devices.md)
 
 ## 环境要求
 
