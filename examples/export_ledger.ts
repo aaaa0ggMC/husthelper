@@ -13,7 +13,7 @@ try {
   let count = 0;
   const entries: any[] = [];
   
-  for await (const record of client.ecard.iterateTransactions({})) {
+  for await (const record of client.ecard.iterateTransactions({ dateStatus: 0 })) {
     count++;
     
     // occtime format is YYYYMMDDHHmmss
