@@ -73,7 +73,7 @@ export function parseTransactionResponse(body: string): TransactionPage {
     records: data.total ?? [],
     total: Number(data.rowcount ?? 0),
     pageSize: Number(data.pagesize ?? 0),
-    nextPage: data.nextpage ? Number(data.nextpage) : null,
+    nextPage: data.nextpage && data.nextpage !== "0" ? Number(data.nextpage) : null,
   };
 }
 
