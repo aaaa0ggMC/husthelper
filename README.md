@@ -16,6 +16,8 @@
 - 一卡通流水查询与自动翻页
 - 日志可外部注入，默认输出到 console
 
+📖 详细文档见 [`docs/`](./docs/README.md)：[认证 auth](./docs/auth.md) · [流水查询](./docs/transactions.md)
+
 ## 环境要求
 
 Node.js 22+（依赖内置 TypeScript 类型剥离直接运行 `.ts`；22.x 需 `--experimental-strip-types`，23+ 默认开启）。
