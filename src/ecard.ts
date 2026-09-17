@@ -20,7 +20,7 @@ export const ecardService: CasService = {
 export interface TransactionQuery {
   account: string;
   page?: number;
-  dateStatus?: number;
+  dateStatus?: number | string;
   typeStatus?: number;
 }
 
