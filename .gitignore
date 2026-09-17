@@ -1,6 +1,11 @@
 node_modules/
 config.json
+credential.json
+*.credential.json
 captcha.jpg
 *.log
 .DS_Store
 .hust-session.json
+privacy.key
+session.json
+audit.jsonl

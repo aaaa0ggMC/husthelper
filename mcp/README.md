@@ -52,7 +52,7 @@ node key.ts init --config credential.json
 ```
 
 文件里出现的字段会**覆盖同名环境变量**，文件没写的仍走环境变量。兼容 examples 的
-`config.json` 形状，也认扁平写法（完整示例见 [`config.example.json`](./config.example.json)）：
+`config.json` 形状，也认扁平写法（完整示例见 [`credential.example.json`](./credential.example.json)）：
 
 ```jsonc
 {
