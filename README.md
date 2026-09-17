@@ -264,6 +264,13 @@ examples/                使用示例
 
 请务必遵守学校相关规定，仅访问本人数据。
 
+## MCP 服务
+
+本仓库自带一个 MCP 服务端（[`mcp/`](./mcp/README.md)），把上面的**聚合层**（`client.aggregate`）
+按 `count` / `redacted` / `raw` 三级隐私分层暴露给支持 MCP 的客户端，支持 stdio 与
+Streamable HTTP / SSE，默认 `redacted` 打码、`raw` 需要一把模型拿不到的密钥。
+详见 [mcp/README.md](./mcp/README.md)。
+
 ## License
 
 - 除 `stdchar/` 外，本项目采用 **MIT**，见 [LICENSE](./LICENSE)。

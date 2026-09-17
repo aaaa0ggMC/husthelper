@@ -95,7 +95,7 @@ function upscaleNearest(
 }
 
 export function decodeGifFrames(gif: Buffer): RgbaFrame[] {
-  const parsed = parseGIF(gif);
+  const parsed = parseGIF(gif as unknown as ArrayBuffer);
   const frames = decompressFrames(parsed, true) as unknown as GifFrame[];
   const width = parsed.lsd.width;
   const height = parsed.lsd.height;

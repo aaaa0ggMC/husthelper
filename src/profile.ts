@@ -106,7 +106,7 @@ export function parseProfile(html: string): Profile {
 
   for (const [label, key] of Object.entries(FIELD_KEYS)) {
     const value = fields[label];
-    if (value !== undefined) (profile as Record<string, unknown>)[key] = value;
+    if (value !== undefined) (profile as unknown as Record<string, unknown>)[key] = value;
   }
 
   return profile;

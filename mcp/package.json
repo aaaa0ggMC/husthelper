@@ -1,0 +1,32 @@
+{
+  "name": "husthelper-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "HUST 聚合数据 MCP 服务端：husthelper + count/redacted/raw 隐私分层",
+  "bin": {
+    "hust-mcp": "./index.ts"
+  },
+  "scripts": {
+    "start": "node index.ts",
+    "http": "node index.ts --port 3000",
+    "key": "node key.ts",
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "hust",
+    "mcp",
+    "model-context-protocol",
+    "husthelper"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}
