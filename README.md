@@ -34,7 +34,7 @@ npm i husthelper
 import hust from "husthelper";
 
 const client = hust
-  .auth({ user_name: "U2025xxxxx", password: "your-password", account: "123456" })
+  .auth({ user_name: "U2025xxxxx", password: "your-password" })
   .withAiOcr({
     baseURL: "https://api.openai.com/v1",
     apiKey: "sk-...",
@@ -49,7 +49,7 @@ for await (const record of client.iterateTransactions({})) {
 }
 ```
 
-`account` 是一卡通账号（出现在流水记录里的 `account` 字段），不是学号。
+`account` 会**自动获取**（登录后从 `Queryurl.html` 里解析），通常无需填写；也可用 `auth({ account })` 或 `client.getAccount()` 显式指定/读取。它不是学号。
 
 ## 验证码识别方式（任选其一）
 
@@ -79,6 +79,8 @@ interface TransactionQuery {
 
 const page = await client.getTransactions({ page: 1 });
 // { records, total, pageSize, nextPage }
+
+const account = await client.getAccount(); // 自动获取一卡通 account
 
 for await (const tx of client.iterateTransactions({})) {
   // 内部自动按 nextPage 翻页
@@ -116,7 +118,7 @@ client.withLogger({ info: () => {} });          // 静音
 {
   "un": "U2025xxxxx",
   "pwd": "your-password",
-  "account": "123456",
+  "account": "",
   "openai": {
     "baseURL": "http://127.0.0.1:1145/v1",
     "apiKey": "sk-...",

@@ -170,11 +170,20 @@ export class HustClient {
     return response;
   }
 
+  async getAccount(): Promise<string> {
+    if (this.account) return this.account;
+
+    const response = await this.request(`${ECARD_BASE}/QueryController/Queryurl.html`);
+    const match = String(response.data).match(/id="account"[^>]*value="([^"]*)"/i);
+    if (!match) throw new Error("未能从 Queryurl.html 解析出一卡通 account");
+
+    this.account = match[1];
+    this.logger.info(`自动获取 account: ${this.account}`);
+    return this.account;
+  }
+
   async getTransactions(query: Partial<TransactionQuery> = {}): Promise<TransactionPage> {
-    const account = query.account ?? this.account;
-    if (!account) {
-      throw new Error("缺少 account，请在 auth({ account }) 或查询参数中提供");
-    }
+    const account = query.account ?? (await this.getAccount());
 
     this.logger.debug(`查询流水 account=${account} page=${query.page ?? 1}`);
     const response = await this.request(transactionUrl({ ...query, account }), {

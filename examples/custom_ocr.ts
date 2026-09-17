@@ -3,7 +3,7 @@ import hust from "../index.ts";
 declare function yourOcr(gif: Buffer): Promise<string>;
 
 const client = hust
-  .auth({ user_name: "U2025...", password: "your-password", account: "123456" })
+  .auth({ user_name: "U2025...", password: "your-password" })
   .withRawOcr((gif) => yourOcr(gif))
   .withLogger((message) => console.log(message));
 

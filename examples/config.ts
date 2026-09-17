@@ -5,7 +5,7 @@ import type { AIConfig } from "../index.ts";
 export interface ExampleConfig {
   un: string;
   pwd: string;
-  account: string;
+  account?: string;
   openai: AIConfig;
   saveDebugImage?: boolean;
 }

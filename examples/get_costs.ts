@@ -6,8 +6,7 @@ const config = loadConfig();
 
 const client = hust
   .auth({ user_name: config.un, password: config.pwd, account: config.account })
-  .withAiOcr({
-    baseURL: config.openai.baseURL,
+  .withAiOcr({    baseURL: config.openai.baseURL,
     apiKey: config.openai.apiKey,
     model: config.openai.model,
     maxTokens: config.openai.maxTokens,
