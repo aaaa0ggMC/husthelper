@@ -5,6 +5,7 @@ import { defaultLogger, resolveLogger, type Logger, type LoggerInput } from "./l
 import type { StdCharOptions } from "./stdchar-pipe.ts";
 import {
   ECARD_BASE,
+  ECARD_HOST,
   fullLogin,
   tryCasRenew,
   type Credentials,
@@ -21,11 +22,37 @@ import {
   type TransactionQuery,
 } from "./ecard.ts";
 import { parseProfile, type Profile } from "./profile.ts";
+import { loadPersist, savePersist } from "./persist.ts";
+import {
+  acquireMhubSession,
+  isMhubLoginRedirect,
+  mhubUrl,
+  MHUB_HOST,
+  MHUB_BASE,
+  MHUB_SESSION_COOKIE,
+} from "./mhub.ts";
+import {
+  parseGradeTerms,
+  parseGrades,
+  type GradeTerm,
+  type Grades,
+} from "./grades.ts";
+import {
+  acquireWechatSession,
+  isWechatLoginRedirect,
+  wechatUrl,
+  WECHAT_HOST,
+  WECHAT_SESSION_COOKIE,
+} from "./wechat.ts";
 
 export interface AuthOptions {
   user_name?: string;
   password?: string;
   account?: string;
+}
+
+export interface PersistOptions {
+  maxAgeMs?: number;
 }
 
 export interface AiOcrOptions {
@@ -60,7 +87,15 @@ export class HustClient {
   private ocr?: OcrStrategy;
   private session?: Session;
   private jsessionId?: string;
+  private wechatAcquired = false;
+  private mhubAcquired = false;
+  private gradeTerms?: GradeTerm[];
   private logger: Logger = defaultLogger;
+  private persistPath?: string;
+  private persistMaxAgeMs?: number;
+  private persistedAtValue?: string;
+  private needsRefresh = false;
+  private saveTimer?: ReturnType<typeof setTimeout>;
 
   constructor(options: AuthOptions = {}) {
     this.un = options.user_name;
@@ -98,8 +133,68 @@ export class HustClient {
     return this;
   }
 
+  persistent(file: string, options: PersistOptions = {}): this {
+    this.persistPath = file;
+    this.persistMaxAgeMs = options.maxAgeMs;
+
+    const data = loadPersist(file);
+    if (data) {
+      const session = new Session();
+      session.importCookies(data.hosts);
+      this.session = session;
+      this.attachPersistence(session);
+      this.jsessionId = session.getCookie("JSESSIONID", ECARD_HOST);
+      this.wechatAcquired = !!session.getCookie(WECHAT_SESSION_COOKIE, WECHAT_HOST);
+      this.mhubAcquired = !!session.getCookie(MHUB_SESSION_COOKIE, MHUB_HOST);
+      this.persistedAtValue = data.savedAt;
+
+      const age = Date.now() - Date.parse(data.savedAt);
+      if (
+        this.persistMaxAgeMs !== undefined &&
+        Number.isFinite(age) &&
+        age > this.persistMaxAgeMs
+      ) {
+        this.needsRefresh = true;
+        this.logger.info(
+          `持久化会话已 ${Math.round(age / 1000)}s（超过 maxAgeMs），将主动续期`,
+        );
+      }
+      this.logger.info(`已从 ${file} 恢复会话 (savedAt=${data.savedAt})`);
+    }
+
+    return this;
+  }
+
+  private attachPersistence(session: Session): void {
+    session.setOnUpdate(() => this.scheduleSave());
+  }
+
+  private scheduleSave(): void {
+    if (!this.persistPath || this.saveTimer) return;
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = undefined;
+      this.save();
+    }, 50);
+  }
+
+  private save(): void {
+    if (!this.persistPath || !this.session) return;
+    try {
+      const data = savePersist(this.persistPath, this.session.exportCookies());
+      this.persistedAtValue = data.savedAt;
+    } catch (error) {
+      this.logger.warn(
+        `持久化失败: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
   get sessionId(): string | undefined {
     return this.jsessionId;
+  }
+
+  get persistedAt(): string | undefined {
+    return this.persistedAtValue;
   }
 
   get httpSession(): Session | undefined {
@@ -131,9 +226,18 @@ export class HustClient {
     });
     this.session = session;
     this.jsessionId = jsessionId;
+    this.wechatAcquired = false;
+    this.mhubAcquired = false;
+    this.attachPersistence(session);
+    this.save();
   }
 
   private async ensureSession(): Promise<Session> {
+    if (this.needsRefresh && this.session) {
+      this.needsRefresh = false;
+      this.logger.info("主动续期持久化会话...");
+      await this.renew();
+    }
     if (!this.session) await this.login();
     return this.session!;
   }
@@ -214,5 +318,138 @@ export class HustClient {
       if (result.nextPage === null) break;
       page = result.nextPage;
     }
+  }
+
+  get wechatSessionId(): string | undefined {
+    return this.session?.getCookie(WECHAT_SESSION_COOKIE, WECHAT_HOST);
+  }
+
+  private async acquireWechat(): Promise<void> {
+    const session = this.session!;
+    try {
+      await acquireWechatSession(session, this.logger);
+    } catch (error) {
+      this.logger.warn("wechat: CASTGC 续期失败，回退完整登录");
+      this.logger.debug(error instanceof Error ? error.message : String(error));
+      await this.renew();
+      await acquireWechatSession(this.session!, this.logger);
+    }
+    this.wechatAcquired = true;
+  }
+
+  private async ensureWechat(): Promise<Session> {
+    await this.ensureSession();
+    if (!this.wechatAcquired) await this.acquireWechat();
+    return this.session!;
+  }
+
+  async getWechatSession(): Promise<{ sessionId: string; cookies: Record<string, string> }> {
+    await this.ensureWechat();
+    return {
+      sessionId: this.wechatSessionId!,
+      cookies: this.cookiesFor(WECHAT_HOST),
+    };
+  }
+
+  async wechatRequest<T = string>(
+    path: string,
+    config: RequestOptions = {},
+  ): Promise<AxiosResponse<T>> {
+    await this.ensureWechat();
+    let response = await this.session!.get<T>(wechatUrl(path), {
+      responseType: "text",
+      ...config,
+    });
+
+    if (isWechatLoginRedirect(response)) {
+      this.logger.warn("wechat 会话已失效，重新获取");
+      await this.acquireWechat();
+      response = await this.session!.get<T>(wechatUrl(path), {
+        responseType: "text",
+        ...config,
+      });
+    }
+
+    if (isWechatLoginRedirect(response)) {
+      throw new Error("wechat 重新获取会话后仍被重定向到 CAS 登录");
+    }
+    return response;
+  }
+
+  async getAppsCenter(): Promise<string> {
+    const response = await this.wechatRequest<string>("/wechat/apps_center.jsp");
+    return String(response.data);
+  }
+
+  get mhubSessionId(): string | undefined {
+    return this.session?.getCookie(MHUB_SESSION_COOKIE, MHUB_HOST);
+  }
+
+  private async acquireMhub(): Promise<void> {
+    const session = this.session!;
+    try {
+      await acquireMhubSession(session, this.logger);
+    } catch (error) {
+      this.logger.warn("mhub: CASTGC 续期失败，回退完整登录");
+      this.logger.debug(error instanceof Error ? error.message : String(error));
+      await this.renew();
+      await acquireMhubSession(this.session!, this.logger);
+    }
+    this.mhubAcquired = true;
+  }
+
+  private async ensureMhub(): Promise<Session> {
+    await this.ensureSession();
+    if (!this.mhubAcquired) await this.acquireMhub();
+    return this.session!;
+  }
+
+  async mhubRequest<T = string>(
+    path: string,
+    config: RequestOptions = {},
+  ): Promise<AxiosResponse<T>> {
+    await this.ensureMhub();
+    let response = await this.session!.get<T>(mhubUrl(path), {
+      responseType: "text",
+      ...config,
+    });
+
+    if (isMhubLoginRedirect(response)) {
+      this.logger.warn("mhub 会话已失效，重新获取");
+      await this.acquireMhub();
+      response = await this.session!.get<T>(mhubUrl(path), {
+        responseType: "text",
+        ...config,
+      });
+    }
+
+    if (isMhubLoginRedirect(response)) {
+      throw new Error("mhub 重新获取会话后仍被重定向到 CAS 登录");
+    }
+    return response;
+  }
+
+  async getGradeTerms(): Promise<GradeTerm[]> {
+    if (!this.gradeTerms) {
+      const response = await this.mhubRequest<string>("/CjcxController/fianCjInfo");
+      this.gradeTerms = parseGradeTerms(String(response.data));
+    }
+    return this.gradeTerms;
+  }
+
+  async getGrades(options: { xn?: string; xq?: number } = {}): Promise<Grades> {
+    let xn = options.xn;
+    if (!xn) {
+      const terms = await this.getGradeTerms();
+      xn = terms[0]?.XN;
+    }
+    if (!xn) throw new Error("无法确定学年 xn，请显式传入 getGrades({ xn })");
+
+    const xq = options.xq ?? 0;
+    const response = await this.mhubRequest<string>(
+      `/CjcxController/fianCjInfo?xn=${encodeURIComponent(xn)}&xq=${xq}`,
+      { headers: { Referer: `${MHUB_BASE}/CjcxController/fianCjInfo?xn=${xn}&xq=1` } },
+    );
+    return parseGrades(String(response.data), xn, xq);
   }
 }

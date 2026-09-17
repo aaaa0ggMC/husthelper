@@ -5,7 +5,8 @@ const config = loadConfig();
 
 const client = hust
   .auth({ user_name: config.un, password: config.pwd, account: config.account })
-  .withStdChar();
+  .withStdChar()
+  .persistent(".hust-session.json");
 
 try {
   const page = await client.getTransactions({ page: 1 });

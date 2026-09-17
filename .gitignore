@@ -3,3 +3,4 @@ config.json
 captcha.jpg
 *.log
 .DS_Store
+.hust-session.json

@@ -15,9 +15,12 @@
 - `JSESSIONID` 自动续期：优先用 `CASTGC` 免密重登，失效才回退完整登录
 - 一卡通流水查询与自动翻页
 - 校园卡个人信息（profile）读取与解析
+- 成绩查询（mhub/HUB），含加权成绩修正（排除缓考/缺考等）
+- 会话持久化：自动保存/恢复 `CASTGC` 等 cookie，失效自动续期
+- m.hust.edu.cn（微校园）wechat 会话获取与自动重连
 - 日志可外部注入，默认输出到 console
 
-📖 详细文档见 [`docs/`](./docs/README.md)：[认证 auth](./docs/auth.md) · [流水查询](./docs/transactions.md) · [个人信息 profile](./docs/profile.md)
+📖 详细文档见 [`docs/`](./docs/README.md)：[认证 auth](./docs/auth.md) · [流水查询](./docs/transactions.md) · [个人信息 profile](./docs/profile.md) · [成绩查询](./docs/grades.md)
 
 ## 环境要求
 
@@ -97,6 +100,21 @@ for await (const tx of client.iterateTransactions({})) {
 - 登录后客户端持有 ecard 的 `JSESSIONID`，以及 CAS 的 `CASTGC`。
 - 请求被重定向回 `/cas/login` 时自动处理：先用 `CASTGC` 免密重登，失败再回退到完整登录（验证码 + 密码）。
 - 可手动触发：`await client.renew()`；查看会话状态：`client.sessionId` / `client.cookiesFor(host)`。
+
+## 会话持久化
+
+```ts
+const client = hust
+  .auth({ user_name, password })
+  .withStdChar()
+  .persistent(".hust-session.json", { maxAgeMs: 2 * 60 * 60 * 1000 });
+```
+
+- 自动保存 `CASTGC`、ecard 的 `JSESSIONID`、`wechat_session_id` 等 cookie（含 `expires`/`path`；服务端未给 `expires` 的会话 cookie 标记为 `session: true`）。
+- 下次运行自动恢复，**无需重新登录/验证码**；被服务端判定失效时自动续期。
+- `maxAgeMs`（可选）：若距上次保存超过该时长，恢复后**主动续期一次**（先用 `CASTGC` 免密，失败再完整登录），避免「先失败再续期」的往返。
+- `client.persistedAt` 返回最近保存时间（ISO 字符串）。
+- 文件含会话凭据，以 `0600` 权限写入，已加入 `.gitignore`，**请勿提交或分享**。
 
 ## 已知限制：企业微信 MFA（二次验证）暂未处理
 

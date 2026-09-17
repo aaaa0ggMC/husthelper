@@ -106,6 +106,36 @@ client.cookiesFor("pass.hust.edu.cn"); // 查看某域下的 cookie
 
 `Session` 内的 cookie 按域名隔离，CAS 与 ecard 的 `JSESSIONID` 不会互相覆盖。
 
+## 会话持久化
+
+```ts
+client.persistent(".hust-session.json", { maxAgeMs: 2 * 60 * 60 * 1000 });
+```
+
+- 自动将各域 cookie（`CASTGC`、ecard `JSESSIONID`、`wechat_session_id` 等）写入文件；cookie 会连同 `expiresAt`/`path` 一起保存，服务端未给 `expires` 的会话 cookie 标记 `session: true`。
+- 下次构造客户端时自动恢复；恢复出的 cookie 若已过期（有 `expiresAt` 且已过）会被丢弃。
+- `maxAgeMs`：距上次保存超过该时长时，恢复后**主动续期一次**（先 `CASTGC`，失败再完整登录）。不传则直接复用，等被服务端拒绝时再续期。
+- `client.persistedAt`：最近保存时间（ISO）。
+- 文件以 `0600` 权限写入，内含会话凭据，**请勿提交或分享**（已加入 `.gitignore`）。
+
+持久化文件格式（v2）：
+
+```jsonc
+{
+  "version": 2,
+  "savedAt": "2026-09-17T03:54:43.633Z",
+  "hosts": {
+    "pass.hust.edu.cn": {
+      "CASTGC": { "value": "...", "expiresAt": null, "session": true, "path": "/cas/", "domain": "pass.hust.edu.cn" }
+    },
+    "ecard.m.hust.edu.cn": { "JSESSIONID": { "value": "...", "session": true } },
+    "m.hust.edu.cn": { "wechat_session_id": { "value": "...", "session": true } }
+  }
+}
+```
+
+> 旧版（v1，值为纯字符串）文件仍可读取。
+
 ## 账号（account）自动获取
 
 一卡通账号（如 `123456`）不是学号，登录后可从页面自动解析：
