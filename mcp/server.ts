@@ -245,5 +245,33 @@ export function createMcpServer(privacy: Privacy): McpServer {
     () => formatToolResponse(privacy.policy()),
   );
 
+  server.tool(
+    "hust_scripting_run",
+    "Execute arbitrary Javascript against the husthelper aggregate API with privacy enforcement. Code is wrapped in async. Pre-injected variables: client (alias hust), console.",
+    { 
+      code: z.string().describe("Javascript code to execute"),
+      level: levelField,
+      includeSensitive: z.boolean().optional().describe("Include sensitive items (only allowed in raw level)")
+    },
+    async (args) => {
+      const { runScript } = await import("./scripting.ts");
+      const result = await runScript(privacy, args.code, { level: args.level, includeSensitive: args.includeSensitive });
+      return formatToolResponse({ result });
+    }
+  );
+
+  server.tool(
+    "hust_scripting_man",
+    "View documentation for the husthelper aggregate API methods available in scripting.",
+    { 
+      query: z.string().optional().describe("Search query"),
+      method: z.string().optional().describe("Specific method to inspect")
+    },
+    async (args) => {
+      const { scriptingMan } = await import("./scripting.ts");
+      return formatToolResponse(scriptingMan(args));
+    }
+  );
+
   return server;
 }
