@@ -128,6 +128,80 @@ export type {
   MyInfo,
 } from "./src/one.ts";
 export type { ClientRuntime } from "./src/runtime.ts";
+
+/* -------------------------------- aggregate ------------------------------- */
+export {
+  AggregateApi,
+  AGGREGATE_SCHEMA,
+  AGGREGATE_LIMITS,
+  dayRange,
+  weekRange,
+} from "./src/aggregate.ts";
+export type {
+  AggregateRoot,
+  AggregateMe,
+  AggregateBalance,
+  AggregateNotification,
+  AggregateDocument,
+  AggregateCourse,
+  AggregateCourseRole,
+  AggregateCourses,
+  AggregateSchedule,
+  AggregateActivity,
+  AggregateToday,
+  AggregateEmail,
+  AggregateTerm,
+  AggregateGrades,
+  AggregateDevices,
+  AggregateTransactions,
+  AggregateOverview,
+  AggregateResource,
+  AggregateResourceName,
+  AggregateResources,
+  AggregateSource,
+  AggregatePart,
+  AggregateLoadContext,
+  AggregateMergeContext,
+} from "./src/aggregate.ts";
+
+/* ------------------------------ smartcourse ------------------------------ */
+export {
+  SMARTCOURSE_HOST,
+  SMARTCOURSE_BASE,
+  SMARTCOURSE_CLIENT_ID,
+  SMARTCOURSE_WEB_ID,
+  SMARTCOURSE_SESSION_COOKIE,
+  SMARTCOURSE_REDIRECT_URI,
+  SMARTCOURSE_SERVICE,
+  SMARTCOURSE_LESSONS_PATH,
+  SMARTCOURSE_LOGIN_USER_PATH,
+  SMARTCOURSE_NOTICE_LIST_PATH,
+  SMARTCOURSE_ONE_DAY_LESSONS_PATH,
+  SMARTCOURSE_COURSE_LIST_PATH,
+  SMARTCOURSE_STUDY_COURSE_PATH,
+  SMARTCOURSE_ENC_SALT,
+  NOTICE_TYPE,
+  smartcourseEnc,
+  smartcourseService,
+  smartcourseUrl,
+  SmartCourseApi,
+  noticeItems,
+  parseStudyCourses,
+} from "./src/smartcourse.ts";
+export type {
+  LessonQuery,
+  Curriculum,
+  Lesson,
+  MyLessons,
+  OneDayLessons,
+  SmartCourseItem,
+  CourseListResult,
+  StudyCourse,
+  StudyCourseQuery,
+  LoginUser,
+  Notice,
+  NoticeListResult,
+} from "./src/smartcourse.ts";
 export type { OnlineDevice } from "./src/hkwxy.ts";
 export { parseGrades, parseGradeTerms, computeWeighted } from "./src/grades.ts";
 export type {

@@ -22,7 +22,7 @@
 - one.hust（数智华中大）OIDC 委托认证，获取 bearer token（JWT），过期自动重换
 - 日志可外部注入，默认输出到 console
 
-📖 详细文档见 [`docs/`](./docs/README.md)：[认证 auth](./docs/auth.md) · [流水查询](./docs/transactions.md) · [个人信息 profile](./docs/profile.md) · [成绩查询](./docs/grades.md) · [在线设备](./docs/online-devices.md)
+📖 详细文档见 [`docs/`](./docs/README.md)：[认证 auth](./docs/auth.md) · [流水查询](./docs/transactions.md) · [个人信息 profile](./docs/profile.md) · [成绩查询](./docs/grades.md) · [在线设备](./docs/online-devices.md) · [one.hust](./docs/one-hust.md) · [智慧课程 smartcourse](./docs/smartcourse.md) · [聚合 aggregate](./docs/aggregate.md)
 
 ## 环境要求
 
@@ -71,6 +71,7 @@ for await (const record of client.ecard.iterateTransactions({})) {
 | `client.hkwxy` | 在线设备：`getOnlineDevices` / `request` / `sessionId` |
 | `client.wechat` | 微校园：`getSession` / `getAppsCenter` / `request` / `sessionId` |
 | `client.one` | one.hust：`getAccessToken` / `accessToken` / `invalidate` / `request` |
+| `client.smartcourse` | 智慧课程平台：`request` / `sessionId` / `cookies` |
 
 任一应用会话失效时，都会自动用 `CASTGC` 免密换票（必要时完整登录）并重放请求。
 
@@ -218,14 +219,26 @@ examples/                使用示例
 `pass.hust.edu.cn`（CAS）是 HUST 登录的唯一入口，登录后签发长期票据 `CASTGC`。
 一卡通（ecard）、成绩（mhub）、在线设备（hkwxy）、微校园（wechat）等都是受 CAS
 保护的**应用**：各自用自己的入口 URL 作为 CAS 的 `service` 参数换 ticket，再兑换
-自己的会话 cookie（多为 `JSESSIONID`）。one.hust 稍特殊：它的 `service` 是 CAS 的
-OAuth2 authorize 端点，走委托流程换到 OIDC JWT（见 [docs/one-hust.md](./docs/one-hust.md)）。
+自己的会话 cookie（多为 `JSESSIONID`）。one.hust / smartcourse 稍特殊：它们的 `service`
+是 CAS 的 OAuth2 authorize 端点，走委托流程——one.hust 换到 OIDC JWT（见
+[docs/one-hust.md](./docs/one-hust.md)），smartcourse 则在下发一堆 `.hust.edu.cn` 会话 cookie。
 
 - 所有应用共用同一个 `Session`（分域名 cookie jar）和同一个 `CASTGC`。
 - 获取任意应用会话都是同一个流程：`CASTGC` 免密换票 → 兑换应用会话；`CASTGC`
   失效才回退完整登录（RSA + 验证码）。
 - 各应用 API 只依赖 `ClientRuntime`（`src/runtime.ts`），因此可以独立成文件；
   新增普通应用只需声明一个 `CasService`（见 `src/ecard.ts`）并复用一个 `XxxApi` 类。
+
+## 范围声明：只读不写
+
+> **本库封装的全部接口均为「读取类」**：查询余额/流水/成绩/课表/通知/公文/日程/在线设备等，
+> **不提供任何写入、修改、删除、提交、发送类操作**（不改密码、不提交作业、不发通知、不选退课等）。
+
+用户当然可以借用本库的**认证过程**（CAS `CASTGC`、one.hust 的 bearer token、smartcourse 的会话 cookie 等）
+自行去调用学校系统的写接口——本库也确实把 token/会话暴露了出来。**但那是你自己的行为，与本仓库无关**：
+作者不实现、不提供、不背书任何写操作，由此产生的一切后果由使用者自行承担。
+
+请务必遵守学校相关规定，仅访问本人数据。
 
 ## License
 

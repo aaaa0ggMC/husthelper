@@ -20,6 +20,8 @@ import { MhubApi } from "./mhub.ts";
 import { HkwxyApi } from "./hkwxy.ts";
 import { WechatApi } from "./wechat.ts";
 import { OneHustApi } from "./one.ts";
+import { SmartCourseApi } from "./smartcourse.ts";
+import { AggregateApi } from "./aggregate.ts";
 import type { ClientRuntime } from "./runtime.ts";
 
 export interface AuthOptions {
@@ -65,6 +67,8 @@ function normalizeAi(options: AiOcrOptions): AIConfig {
  * - `client.hkwxy`   在线设备
  * - `client.wechat`  微校园会话
  * - `client.one`     one.hust OIDC bearer token
+ * - `client.smartcourse`  智慧课程平台
+ * - `client.aggregate`    跨平台聚合（不持有 session，只引用上面各命名空间）
  */
 export class HustClient {
   readonly ecard: EcardApi;
@@ -72,6 +76,8 @@ export class HustClient {
   readonly hkwxy: HkwxyApi;
   readonly wechat: WechatApi;
   readonly one: OneHustApi;
+  readonly smartcourse: SmartCourseApi;
+  readonly aggregate: AggregateApi;
 
   private un?: string;
   private pwd?: string;
@@ -94,6 +100,8 @@ export class HustClient {
     this.hkwxy = new HkwxyApi(runtime);
     this.wechat = new WechatApi(runtime);
     this.one = new OneHustApi(runtime);
+    this.smartcourse = new SmartCourseApi(runtime);
+    this.aggregate = new AggregateApi(this);
 
     if (options.account) this.ecard.withAccount(options.account);
   }
