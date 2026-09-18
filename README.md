@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/logo.svg" alt="husthelper logo" height="110" />
+  <img src="./assets/logo-card.svg" alt="husthelper logo" height="110" />
 </p>
 
 <h1 align="center">husthelper</h1>
