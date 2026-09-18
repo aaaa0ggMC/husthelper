@@ -26,6 +26,7 @@
     "example:fitness": "node examples/get_fitness.ts",
     "example:custom-ocr": "node examples/custom_ocr.ts",
     "example:login-qrcode": "node examples/login_qrcode.ts",
+    "example:electricity": "node examples/get_electricity.ts",
     "example:export_ledger": "node --experimental-strip-types examples/export_ledger.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -45,11 +46,14 @@
   },
   "dependencies": {
     "axios": "^1.20.0",
+    "fast-xml-parser": "^4.5.7",
     "gifuct-js": "^2.1.2",
-    "jpeg-js": "^0.4.4"
+    "jpeg-js": "^0.4.4",
+    "sm-crypto": "^0.5.7"
   },
   "devDependencies": {
     "@types/qrcode": "^1.5.6",
+    "@types/sm-crypto": "^0.3.4",
     "qrcode": "^1.5.4"
   }
 }

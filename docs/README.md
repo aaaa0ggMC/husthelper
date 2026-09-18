@@ -10,6 +10,7 @@
 - [微校园服务大厅 service-center](./service-center.md) — hkwxy/tp_wp 服务大厅主界面与 JSESSIONID 换取点
 - [学期注册 register](./registration.md) — 注册状态、当前学期与注册通知
 - [第二课堂 ihuster](./ihuster.md) — CAS→JWT（OAuth）、二课学分汇总与用户信息
+- [宿舍电费 electricity](./electricity.md) — sdhq 移动后勤：CAS 会话 + SM2/SM3 鉴权、电表与剩余电量
 - [one.hust one-hust](./one-hust.md) — one.hust OIDC 委托认证、bearer token 获取与缓存
 - [智慧课程 smartcourse](./smartcourse.md) — 课程平台 cookie 认证、课表/通知接口、enc 签名盐来源
 - [体育教学管理 pejxgl](./pejxgl.md) — CAS 认证、学期列表、课外锻炼次数与已修/已选体育课

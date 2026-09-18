@@ -30,6 +30,13 @@
 - [x] `client.loginByQrCode()`：便捷入口，同样持久化优先，失效才扫码。
 - [x] 子 SSO 流程（`one.hust` / `pecg` / `petyxy` / `ihuster`）统一走 `runtime.loginFallback()`，
   `CASTGC` 失效时也能降级到扫码等已配置的登录方式（不再只回退密码）。
+
+### 宿舍电费（electricity）
+
+- [x] `client.electricity`：校区 / 楼栋 / 房间 / 电表枚举与剩余电量查询
+  （`sdhq` 移动后勤，CAS 会话 + SM2/SM3 请求头），见 `docs/electricity.md`。
+- [ ] 在真机验证 SM2 密文字节格式（C1C3C2 + `0x04` 前缀）与 `X-Signature`，必要时调整。
+- [ ] 视需要接入 `client.aggregate`（需要房间/电表配置）。
 - [x] `examples/login_qrcode.ts`：终端支持图片协议（iTerm2/WezTerm、Kitty/Ghostty、Konsole）时内联显示二维码，
   否则写入 PNG；`--file` / `--image` / `--refresh` 可指定。
 

@@ -244,6 +244,26 @@ export {
 } from "./src/ihuster.ts";
 export type { IhusterTokenPayload, CreditSummary, CreditSummaryRecord, IhusterUserInfo } from "./src/ihuster.ts";
 
+/* ------------------------------- electricity ------------------------------ */
+export {
+  ELECTRICITY_HOST,
+  ELECTRICITY_BASE,
+  ELECTRICITY_SERVICE,
+  ELECTRICITY_SESSION_COOKIE,
+  ELECTRICITY_REFERER,
+  electricityService,
+  electricityAuthHeaders,
+  ElectricityApi,
+} from "./src/electricity.ts";
+export type {
+  ElectricityArea,
+  ElectricityBuilding,
+  ElectricityRoom,
+  ElectricityMeter,
+  ElectricityBalance,
+  ElectricityRoomBalance,
+} from "./src/electricity.ts";
+
 /* -------------------------------- aggregate ------------------------------- */
 export {
   AggregateApi,
