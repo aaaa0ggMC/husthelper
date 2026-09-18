@@ -23,6 +23,16 @@ else
   fi
 fi
 
+# 覆盖前：若目标已存在且非本工具生成，先备份，避免误覆盖
+if [ -e "${TARGET_BIN}" ] && ! grep -q "examples/net_cli.ts" "${TARGET_BIN}" 2>/dev/null; then
+  BACKUP="${TARGET_BIN}.bak.$(date +%s)"
+  cp -p -- "${TARGET_BIN}" "${BACKUP}"
+  echo "注意: ${TARGET_BIN} 已存在且非本工具生成，已备份到 ${BACKUP}"
+fi
+
+# 先移除旧文件（含符号链接，避免 cat 跟随链接覆盖到别处），再写入
+rm -f -- "${TARGET_BIN}"
+
 # 生成可执行包装脚本
 cat <<EOF > "${TARGET_BIN}"
 #!/usr/bin/env bash

@@ -9,6 +9,16 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoDir = (Resolve-Path "$ScriptDir\..").Path
 $EntryFile = Join-Path $RepoDir "examples\net_cli.ts"
 
+# 覆盖前：若目标已存在且非本工具生成，先备份，避免误覆盖
+function Backup-IfForeign([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    $existing = Get-Content -LiteralPath $Path -Raw -ErrorAction SilentlyContinue
+    if ($existing -match "net_cli\.ts") { return }
+    $backup = "$Path.bak.$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
+    Copy-Item -LiteralPath $Path -Destination $backup -Force
+    Write-Host "==> 已备份原有文件: $Path -> $backup" -ForegroundColor Yellow
+}
+
 Write-Host "==> 正在为 Windows 安装 hustnet CLI 到 $InstallDir ..." -ForegroundColor Cyan
 
 if (-not (Test-Path $InstallDir)) {
@@ -27,6 +37,7 @@ $CmdContent = @"
 setlocal
 node --experimental-strip-types "$EntryFile" %*
 "@
+Backup-IfForeign $CmdPath
 [System.IO.File]::WriteAllText($CmdPath, $CmdContent, [System.Text.Encoding]::UTF8)
 
 # 2. 生成 PowerShell 包装脚本 (hustnet.ps1)
@@ -34,6 +45,7 @@ $Ps1Path = Join-Path $InstallDir "hustnet.ps1"
 $Ps1Content = @"
 & node --experimental-strip-types "$EntryFile" @args
 "@
+Backup-IfForeign $Ps1Path
 [System.IO.File]::WriteAllText($Ps1Path, $Ps1Content, [System.Text.Encoding]::UTF8)
 
 Write-Host "==> 已生成执行文件：" -ForegroundColor Green
