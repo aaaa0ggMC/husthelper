@@ -48,3 +48,8 @@
 | `mcp` | 把 `hustpass` 聚合层包成 MCP 服务端 | [mcp/README.md](./mcp/README.md) |
 
 设计与接口文档见 [`docs/`](./docs/README.md)。
+
+## 写在最后
+会有人懂我的logo设计思路吗？
+会吧？
+我又开始幻想了。
