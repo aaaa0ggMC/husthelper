@@ -24,6 +24,8 @@ import { SmartCourseApi } from "./smartcourse.ts";
 import { PejxglApi } from "./pejxgl.ts";
 import { PecgApi } from "./pecg.ts";
 import { PetyxyApi } from "./petyxy.ts";
+import { RegisterApi } from "./register.ts";
+import { IhusterApi } from "./ihuster.ts";
 import { AggregateApi } from "./aggregate.ts";
 import type { ClientRuntime } from "./runtime.ts";
 
@@ -74,6 +76,8 @@ function normalizeAi(options: AiOcrOptions): AIConfig {
  * - `client.pejxgl`  体育教学管理系统（课外锻炼次数）
  * - `client.pecg`    场馆服务（预约记录，经 petyxy SSO 登录）
  * - `client.petyxy`  华中大体育（体质测试成绩，petyxy SSO）
+ * - `client.register`  学期注册（注册状态、学期与通知）
+ * - `client.ihuster`  IHuster 第二课堂（二课学分、用户信息，OAuth/JWT）
  * - `client.aggregate`    跨平台聚合（不持有 session，只引用上面各命名空间）
  */
 export class HustClient {
@@ -86,6 +90,8 @@ export class HustClient {
   readonly pejxgl: PejxglApi;
   readonly pecg: PecgApi;
   readonly petyxy: PetyxyApi;
+  readonly register: RegisterApi;
+  readonly ihuster: IhusterApi;
   readonly aggregate: AggregateApi;
 
   private un?: string;
@@ -113,6 +119,8 @@ export class HustClient {
     this.pejxgl = new PejxglApi(runtime);
     this.pecg = new PecgApi(runtime);
     this.petyxy = new PetyxyApi(runtime);
+    this.register = new RegisterApi(runtime);
+    this.ihuster = new IhusterApi(runtime);
     this.aggregate = new AggregateApi(this);
 
     if (options.account) this.ecard.withAccount(options.account);

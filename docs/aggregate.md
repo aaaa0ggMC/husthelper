@@ -24,6 +24,14 @@
 | `grades` | `mhub.grades` | 可选学年 + 当前学期成绩 |
 | `devices` | `hkwxy.onlineDevices` | 在线设备 |
 | `transactions` | `ecard.transactions` | 一卡通流水首页 |
+| `exams` | `mhub.exams` | 学业考试安排（默认当前学期） |
+| `freeRooms` | `mhub.freeRooms` | 空闲教室（需 `building`，日期默认今天） |
+| `fitness` | `petyxy.fitness` | 体质测试成绩（默认当前学期） |
+| `credit` | `ihuster.credit` | 第二课堂学分汇总 |
+| `registration` | `register.registration` | 学期注册状态与当前学期 |
+| `reserves` | `pecg.reserves` | 场馆预约记录 |
+| `peCourses` | `pejxgl.coursesTaken` | 已修 / 已选体育课 |
+| `exercise` | `pejxgl.exercise` | 课外锻炼次数（默认最新学期） |
 
 每个列表项都带 `source`（来源标签）与 `raw`（该来源的原始对象）；对象型资源带 `sources: string[]` 与 `raw: Record<来源, 原始对象>`。
 
@@ -51,6 +59,21 @@ await client.aggregate.gradesOf({ xn: "2025", xq: 1 });
 
 await client.aggregate.notificationsAll({ limit: 200 }); // 全量遍历（one 门户）
 await client.aggregate.documentsAll({ limit: 200 });
+```
+
+### 新增资源（体育 / 注册 / 二课）
+
+```ts
+await client.aggregate.exams;                          // 当前学期考试
+await client.aggregate.examsOf({ xqh: "20252", kslx: 0 }); // 补(缓)考
+await client.aggregate.freeRoomsOf({ building: "C050" });  // 今天西五楼 1-2 节
+await client.aggregate.fitness;                        // 当前学期体测
+await client.aggregate.fitnessOf("20252");
+await client.aggregate.credit;                         // 二课学分汇总
+await client.aggregate.registration;                   // 注册状态 + 当前学期
+await client.aggregate.reserves;                       // 场馆预约记录
+await client.aggregate.peCourses;                      // 已修/已选体育课
+await client.aggregate.exerciseOf({ xqh: "20252" });   // 课外锻炼次数
 ```
 
 ## 扩展

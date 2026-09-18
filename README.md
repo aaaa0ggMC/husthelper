@@ -170,6 +170,8 @@ console.log(`姓名: ${profile.basic?.name}，院系: ${profile.basic?.departmen
 | `client.pejxgl` | 体育教学管理系统 | 学期列表、课外锻炼次数（学期末汇总）、已修/已选体育课 |
 | `client.pecg` | 场馆服务（场馆预约） | 经 petyxy SSO 登录，查询本人预约记录 |
 | `client.petyxy` | 华中大体育 | petyxy SSO，体质测试成绩与学期列表 |
+| `client.register` | 学期注册系统 | 注册状态、当前学期起止、注册通知 |
+| `client.ihuster` | IHuster 微平台 / 第二课堂 | CAS→JWT(OAuth)、二课学分汇总、用户信息 |
 | `client.hkwxy` | 网络中心设备管理 | 在线物理终端与 MAC 信息、微校园服务大厅服务目录 |
 | `client.wechat` | 微信/企业微信微校园 | 微校园 `wechat_session_id` 获取与应用中心调用 |
 | `client.aggregate` | 跨平台统一聚合层 | 整合上述多源数据，提供 `me` / `schedule` / `balance` 等统一实体 |
@@ -218,6 +220,7 @@ client.withRawOcr(async (rawGif: Buffer) => {
 
 详细开发与数据结构文档可参阅：
 
+- [各平台认证逻辑总览 (docs/platform_auth/README.md)](./docs/platform_auth/README.md)
 - [认证流程与原理解析 (docs/auth.md)](./docs/auth.md)
 - [一卡通流水与账户文档 (docs/transactions.md)](./docs/transactions.md)
 - [个人档案解析文档 (docs/profile.md)](./docs/profile.md)
@@ -231,6 +234,8 @@ client.withRawOcr(async (rawGif: Buffer) => {
 - [体育教学管理：锻炼次数与已修课程 (docs/pejxgl.md)](./docs/pejxgl.md)
 - [场馆服务：预约记录 (docs/pecg.md)](./docs/pecg.md)
 - [华中大体育：体质测试成绩 (docs/petyxy.md)](./docs/petyxy.md)
+- [学期注册 (docs/registration.md)](./docs/registration.md)
+- [第二课堂：二课学分 (docs/ihuster.md)](./docs/ihuster.md)
 - [统一数据聚合器 (docs/aggregate.md)](./docs/aggregate.md)
 
 ---

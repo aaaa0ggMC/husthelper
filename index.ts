@@ -196,6 +196,41 @@ export {
 } from "./src/petyxy.ts";
 export type { FitnessPeriod, FitnessItem, FitnessResult } from "./src/petyxy.ts";
 
+/* -------------------------------- register -------------------------------- */
+export {
+  REGISTER_HOST,
+  REGISTER_BASE,
+  REGISTER_SERVICE,
+  REGISTER_SESSION_COOKIE,
+  registerService,
+  registerUrl,
+  isRegisterLoginRedirect,
+  RegisterApi,
+} from "./src/register.ts";
+export type {
+  RegistrationSemester,
+  RegistrationStatus,
+  RegistrationNotice,
+  RegistrationNoticePage,
+  RegistrationNoticeQuery,
+} from "./src/register.ts";
+
+/* --------------------------------- ihuster -------------------------------- */
+export {
+  IHUSTER_HOST,
+  IHUSTER_PORTAL,
+  IHUSTER_WEB,
+  IHUSTER_TARGET_URL,
+  IHUSTER_SERVICE,
+  IHUSTER_TOKEN_COOKIE,
+  ihusterUrl,
+  decodeIhusterToken,
+  extractIhusterToken,
+  acquireIhusterToken,
+  IhusterApi,
+} from "./src/ihuster.ts";
+export type { IhusterTokenPayload, CreditSummary, CreditSummaryRecord, IhusterUserInfo } from "./src/ihuster.ts";
+
 /* -------------------------------- aggregate ------------------------------- */
 export {
   AggregateApi,
@@ -221,6 +256,14 @@ export type {
   AggregateGrades,
   AggregateDevices,
   AggregateTransactions,
+  AggregateExams,
+  AggregateFreeRooms,
+  AggregateFitness,
+  AggregateCredit,
+  AggregateRegistration,
+  AggregateReserves,
+  AggregatePeCourses,
+  AggregateExercise,
   AggregateOverview,
   AggregateResource,
   AggregateResourceName,

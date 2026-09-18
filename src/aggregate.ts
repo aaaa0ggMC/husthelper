@@ -13,11 +13,22 @@ import {
   type CourseListResult,
 } from "./smartcourse.ts";
 import type { EcardApi, Transaction, TransactionPage, TransactionQuery } from "./ecard.ts";
-import type { MhubApi } from "./mhub.ts";
+import type {
+  MhubApi,
+  ExamSchedule,
+  ExamPage,
+  FreeRoom,
+  FreeRoomResult,
+} from "./mhub.ts";
 import type { HkwxyApi, OnlineDevice } from "./hkwxy.ts";
 import type { WechatApi } from "./wechat.ts";
 import type { Profile } from "./profile.ts";
 import type { Grades, GradeTerm } from "./grades.ts";
+import type { PejxglApi, ExerciseEngagement, TakenCourse } from "./pejxgl.ts";
+import type { PecgApi, VenueReserve } from "./pecg.ts";
+import type { PetyxyApi, FitnessResult, FitnessItem } from "./petyxy.ts";
+import type { RegisterApi, RegistrationSemester } from "./register.ts";
+import type { IhusterApi, CreditSummaryRecord } from "./ihuster.ts";
 
 /**
  * 聚合层 `client.aggregate`。
@@ -36,6 +47,11 @@ export interface AggregateRoot {
   readonly mhub: MhubApi;
   readonly hkwxy: HkwxyApi;
   readonly wechat: WechatApi;
+  readonly pejxgl: PejxglApi;
+  readonly pecg: PecgApi;
+  readonly petyxy: PetyxyApi;
+  readonly register: RegisterApi;
+  readonly ihuster: IhusterApi;
 }
 
 /* ------------------------------- 聚合输出类型 ------------------------------ */
@@ -195,6 +211,72 @@ export interface AggregateTransactions {
   total: number;
   pageSize: number;
   nextPage: number | null;
+  sources: string[];
+  raw: Record<string, unknown>;
+}
+
+export interface AggregateExams {
+  /** 学期号，如 "20261" */
+  semester?: string;
+  exams: ExamSchedule[];
+  total: number;
+  sources: string[];
+  raw: Record<string, unknown>;
+}
+
+export interface AggregateFreeRooms {
+  date?: string;
+  /** 教学楼编号 */
+  building?: string;
+  rooms: FreeRoom[];
+  sources: string[];
+  raw: Record<string, unknown>;
+}
+
+export interface AggregateFitness {
+  periodName?: string;
+  status?: string;
+  totalScore?: number;
+  totalGrade?: string;
+  items: FitnessItem[];
+  sources: string[];
+  raw: Record<string, unknown>;
+}
+
+export interface AggregateCredit {
+  /** 总学分 */
+  sumCredit?: string;
+  /** 总次数 */
+  sumCount?: string;
+  records: CreditSummaryRecord[];
+  sources: string[];
+  raw: Record<string, unknown>;
+}
+
+export interface AggregateRegistration {
+  registered?: boolean;
+  status?: string;
+  semester?: RegistrationSemester;
+  sources: string[];
+  raw: Record<string, unknown>;
+}
+
+export interface AggregateReserves {
+  reserves: VenueReserve[];
+  sources: string[];
+  raw: Record<string, unknown>;
+}
+
+export interface AggregatePeCourses {
+  courses: TakenCourse[];
+  sources: string[];
+  raw: Record<string, unknown>;
+}
+
+export interface AggregateExercise {
+  /** 学期号 */
+  semester?: string;
+  engagements: ExerciseEngagement[];
   sources: string[];
   raw: Record<string, unknown>;
 }
@@ -692,6 +774,109 @@ function mergeTransactions(parts: readonly AggregatePart[]): AggregateTransactio
   return out;
 }
 
+function mergeExams(parts: readonly AggregatePart[]): AggregateExams {
+  const out: AggregateExams = { exams: [], total: 0, sources: [], raw: {} };
+  for (const part of parts) {
+    out.sources.push(part.source);
+    out.raw[part.source] = part.value;
+    const value = part.value as { semester?: string; page?: ExamPage };
+    fill(out, "semester", value.semester);
+    out.exams = value.page?.list ?? [];
+    out.total = value.page?.total ?? out.exams.length;
+  }
+  return out;
+}
+
+function mergeFreeRooms(parts: readonly AggregatePart[]): AggregateFreeRooms {
+  const out: AggregateFreeRooms = { rooms: [], sources: [], raw: {} };
+  for (const part of parts) {
+    out.sources.push(part.source);
+    out.raw[part.source] = part.value;
+    const value = part.value as FreeRoomResult;
+    fill(out, "date", value.borrowDate);
+    fill(out, "building", value.jxlbh ?? value.building);
+    out.rooms = value.dataList ?? [];
+  }
+  return out;
+}
+
+function mergeFitness(parts: readonly AggregatePart[]): AggregateFitness {
+  const out: AggregateFitness = { items: [], sources: [], raw: {} };
+  for (const part of parts) {
+    out.sources.push(part.source);
+    out.raw[part.source] = part.value;
+    const value = part.value as FitnessResult;
+    fill(out, "periodName", value.periodName);
+    fill(out, "status", value.status);
+    if (present(value.totalScore) && !present(out.totalScore)) out.totalScore = value.totalScore;
+    fill(out, "totalGrade", value.totalGrade);
+    out.items = value.items ?? [];
+  }
+  return out;
+}
+
+function mergeCredit(parts: readonly AggregatePart[]): AggregateCredit {
+  const out: AggregateCredit = { records: [], sources: [], raw: {} };
+  for (const part of parts) {
+    out.sources.push(part.source);
+    out.raw[part.source] = part.value;
+    const value = part.value as { sumCredit?: string; sumCount?: string; record?: CreditSummaryRecord[] };
+    fill(out, "sumCredit", value.sumCredit);
+    fill(out, "sumCount", value.sumCount);
+    out.records = value.record ?? [];
+  }
+  return out;
+}
+
+function mergeRegistration(parts: readonly AggregatePart[]): AggregateRegistration {
+  const out: AggregateRegistration = { sources: [], raw: {} };
+  for (const part of parts) {
+    out.sources.push(part.source);
+    out.raw[part.source] = part.value;
+    const value = part.value as {
+      registered?: boolean;
+      status?: string;
+      semester?: RegistrationSemester;
+    };
+    if (value.registered !== undefined && out.registered === undefined) out.registered = value.registered;
+    fill(out, "status", value.status);
+    if (value.semester) out.semester = value.semester;
+  }
+  return out;
+}
+
+function mergeReserves(parts: readonly AggregatePart[]): AggregateReserves {
+  const out: AggregateReserves = { reserves: [], sources: [], raw: {} };
+  for (const part of parts) {
+    out.sources.push(part.source);
+    out.raw[part.source] = part.value;
+    if (Array.isArray(part.value)) out.reserves = part.value as VenueReserve[];
+  }
+  return out;
+}
+
+function mergePeCourses(parts: readonly AggregatePart[]): AggregatePeCourses {
+  const out: AggregatePeCourses = { courses: [], sources: [], raw: {} };
+  for (const part of parts) {
+    out.sources.push(part.source);
+    out.raw[part.source] = part.value;
+    if (Array.isArray(part.value)) out.courses = part.value as TakenCourse[];
+  }
+  return out;
+}
+
+function mergeExercise(parts: readonly AggregatePart[]): AggregateExercise {
+  const out: AggregateExercise = { engagements: [], sources: [], raw: {} };
+  for (const part of parts) {
+    out.sources.push(part.source);
+    out.raw[part.source] = part.value;
+    const value = part.value as { semester?: string; list?: ExerciseEngagement[] };
+    fill(out, "semester", value.semester);
+    out.engagements = value.list ?? [];
+  }
+  return out;
+}
+
 /* -------------------------------- schema 表 ------------------------------- */
 
 export const AGGREGATE_SCHEMA = {
@@ -820,6 +1005,93 @@ export const AGGREGATE_SCHEMA = {
     ],
     merge: mergeTransactions,
   },
+  exams: {
+    sources: [
+      {
+        name: "mhub.exams",
+        load: async ({ root, args }) => {
+          const semester = (args.xqh as string | undefined) ?? (await root.mhub.getExamCurrentSemester()).XQH;
+          if (!semester) return undefined;
+          const page = await root.mhub.getStudentExams({
+            xqh: semester,
+            kslx: args.kslx as number | string | undefined,
+            kcmc: args.kcmc as string | undefined,
+            pageSize: Number(args.pageSize ?? 100),
+          });
+          return { semester, page };
+        },
+      },
+    ],
+    merge: mergeExams,
+  },
+  freeRooms: {
+    defaultArgs: (now) => ({ date: formatBeijingDate(now).slice(0, 10), startPeriod: 1, endPeriod: 2 }),
+    sources: [
+      {
+        name: "mhub.freeRooms",
+        load: async ({ root, args }) => {
+          if (!args.building) return undefined;
+          return root.mhub.getFreeClassrooms({
+            date: String(args.date),
+            building: String(args.building),
+            startPeriod: Number(args.startPeriod ?? 1),
+            endPeriod: Number(args.endPeriod ?? 2),
+          });
+        },
+      },
+    ],
+    merge: mergeFreeRooms,
+  },
+  fitness: {
+    sources: [
+      {
+        name: "petyxy.fitness",
+        load: ({ root, args }) => root.petyxy.getFitnessResult(args.periodId as string | undefined),
+      },
+    ],
+    merge: mergeFitness,
+  },
+  credit: {
+    sources: [{ name: "ihuster.credit", load: ({ root }) => root.ihuster.getCreditSummary() }],
+    merge: mergeCredit,
+  },
+  registration: {
+    sources: [
+      {
+        name: "register.registration",
+        load: async ({ root }) => {
+          const [status, semester] = await Promise.all([
+            root.register.getStatus(),
+            root.register.getSemester(),
+          ]);
+          return { registered: status.registered, status: status.status, semester };
+        },
+      },
+    ],
+    merge: mergeRegistration,
+  },
+  reserves: {
+    sources: [{ name: "pecg.reserves", load: ({ root }) => root.pecg.getMyReserveList() }],
+    merge: mergeReserves,
+  },
+  peCourses: {
+    sources: [{ name: "pejxgl.coursesTaken", load: ({ root }) => root.pejxgl.getCoursesTaken() }],
+    merge: mergePeCourses,
+  },
+  exercise: {
+    sources: [
+      {
+        name: "pejxgl.exercise",
+        load: async ({ root, args }) => {
+          const semester =
+            (args.xqh as string | undefined) ?? (await root.pejxgl.getSemesters())[0]?.xqh;
+          if (!semester) return undefined;
+          return { semester, list: await root.pejxgl.getNumberOfEngagements(semester) };
+        },
+      },
+    ],
+    merge: mergeExercise,
+  },
 } satisfies Record<string, AggregateResource<unknown>>;
 
 export type AggregateResourceName = keyof typeof AGGREGATE_SCHEMA;
@@ -838,6 +1110,14 @@ export interface AggregateResources {
   grades: AggregateGrades;
   devices: AggregateDevices;
   transactions: AggregateTransactions;
+  exams: AggregateExams;
+  freeRooms: AggregateFreeRooms;
+  fitness: AggregateFitness;
+  credit: AggregateCredit;
+  registration: AggregateRegistration;
+  reserves: AggregateReserves;
+  peCourses: AggregatePeCourses;
+  exercise: AggregateExercise;
 }
 
 /* -------------------------------- 执行器 -------------------------------- */
@@ -960,6 +1240,34 @@ export class AggregateApi {
     return this.load("transactions");
   }
 
+  get exams(): Promise<AggregateExams> {
+    return this.load("exams");
+  }
+
+  get fitness(): Promise<AggregateFitness> {
+    return this.load("fitness");
+  }
+
+  get credit(): Promise<AggregateCredit> {
+    return this.load("credit");
+  }
+
+  get registration(): Promise<AggregateRegistration> {
+    return this.load("registration");
+  }
+
+  get reserves(): Promise<AggregateReserves> {
+    return this.load("reserves");
+  }
+
+  get peCourses(): Promise<AggregatePeCourses> {
+    return this.load("peCourses");
+  }
+
+  get exercise(): Promise<AggregateExercise> {
+    return this.load("exercise");
+  }
+
   /* ---------------------------- 带参数的便捷方法 ---------------------------- */
 
   activitiesIn(query: ActivityQuery): Promise<AggregateActivity[]> {
@@ -980,6 +1288,31 @@ export class AggregateApi {
 
   gradesOf(options: { xn?: string; xq?: number }): Promise<AggregateGrades> {
     return this.load("grades", options as unknown as Record<string, unknown>);
+  }
+
+  /** 指定学期 / 类型的考试安排 */
+  examsOf(options: { xqh?: string; kslx?: number | string; kcmc?: string } = {}): Promise<AggregateExams> {
+    return this.load("exams", options as unknown as Record<string, unknown>);
+  }
+
+  /** 指定日期 / 教学楼 / 节次的空闲教室 */
+  freeRoomsOf(options: {
+    building: string;
+    date?: string;
+    startPeriod?: number;
+    endPeriod?: number;
+  }): Promise<AggregateFreeRooms> {
+    return this.load("freeRooms", options as unknown as Record<string, unknown>);
+  }
+
+  /** 指定学期的体测成绩（不传取当前学期） */
+  fitnessOf(periodId?: string | number): Promise<AggregateFitness> {
+    return this.load("fitness", periodId !== undefined ? { periodId } : {});
+  }
+
+  /** 指定学期的课外锻炼次数（不传取最新学期） */
+  exerciseOf(options: { xqh?: string } = {}): Promise<AggregateExercise> {
+    return this.load("exercise", options as unknown as Record<string, unknown>);
   }
 
   /** 遍历全部通知（仅 one.hust 门户，按 limit 截断） */

@@ -124,6 +124,17 @@ export function scriptingMan(options: { query?: string, method?: string } = {}) 
     { method: "client.aggregate.devices", desc: "获取当前在线的校园网设备" },
     { method: "client.aggregate.load('transactions', { page })", desc: "获取一卡通流水（分页）" },
     { method: "client.aggregate.email", desc: "获取校园邮箱信息" },
+    { method: "client.aggregate.exams", desc: "获取考试安排（当前学期）" },
+    { method: "client.aggregate.load('exams', { xqh, kslx, kcmc })", desc: "考试安排，kslx: 0补(缓)考/1普通" },
+    { method: "client.aggregate.load('freeRooms', { building, date, startPeriod, endPeriod })", desc: "查询空闲教室，building 为教学楼编号如 C050" },
+    { method: "client.aggregate.fitness", desc: "获取体质测试成绩" },
+    { method: "client.aggregate.load('fitness', { periodId })", desc: "指定学期的体测成绩" },
+    { method: "client.aggregate.credit", desc: "获取第二课堂学分汇总" },
+    { method: "client.aggregate.registration", desc: "获取学期注册状态与当前学期" },
+    { method: "client.aggregate.reserves", desc: "获取场馆预约记录" },
+    { method: "client.aggregate.peCourses", desc: "获取已修/已选体育课" },
+    { method: "client.aggregate.exercise", desc: "获取课外锻炼次数（最新学期）" },
+    { method: "client.aggregate.load('exercise', { xqh })", desc: "指定学期的课外锻炼次数" },
   ];
 
   if (options.method) {

@@ -1,5 +1,6 @@
 # husthelper 文档
 
+- [各平台认证总览 platform_auth](./platform_auth/README.md) — 所有对接平台的认证方式、CAS service 与会话对照
 - [认证 auth](./auth.md) — 登录流程、验证码识别策略、会话与自动续期、account 获取
 - [流水查询 transactions](./transactions.md) — 查询参数、分页、返回对象字段
 - [个人信息 profile](./profile.md) — 校园卡账户信息读取与解析
@@ -8,6 +9,8 @@
 - [空闲教室 free-room](./free-room.md) — mhub/HUB 教学楼、教学周与空闲教室查询
 - [在线设备 online-devices](./online-devices.md) — hkwxy 在线设备查询
 - [微校园服务大厅 service-center](./service-center.md) — hkwxy/tp_wp 服务大厅主界面与 JSESSIONID 换取点
+- [学期注册 register](./registration.md) — 注册状态、当前学期与注册通知
+- [第二课堂 ihuster](./ihuster.md) — CAS→JWT（OAuth）、二课学分汇总与用户信息
 - [one.hust one-hust](./one-hust.md) — one.hust OIDC 委托认证、bearer token 获取与缓存
 - [智慧课程 smartcourse](./smartcourse.md) — 课程平台 cookie 认证、课表/通知接口、enc 签名盐来源
 - [体育教学管理 pejxgl](./pejxgl.md) — CAS 认证、学期列表、课外锻炼次数与已修/已选体育课

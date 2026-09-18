@@ -401,6 +401,69 @@ function shapeOverview(value: unknown, level: Level, options: ShapeOptions): Sha
   return { value: out, count, hiddenSensitive };
 }
 
+/* ------------------------- 新增资源（体育/注册/二课） ------------------------- */
+
+function redactExam(item: unknown): unknown {
+  if (!isRecord(item)) return item;
+  const clean = deepOmit(item, DROP_KEYS) as Record<string, unknown>;
+  if (clean.XM !== undefined) clean.XM = maskText(clean.XM);
+  if (clean.SFID !== undefined) clean.SFID = maskId(clean.SFID);
+  return clean;
+}
+
+function redactCreditRecord(item: unknown): unknown {
+  if (!isRecord(item)) return item;
+  const clean = deepOmit(item, DROP_KEYS) as Record<string, unknown>;
+  if (clean.userName !== undefined) clean.userName = maskText(clean.userName);
+  if (clean.userId !== undefined) clean.userId = maskId(clean.userId);
+  return clean;
+}
+
+function redactExercise(item: unknown): unknown {
+  if (!isRecord(item)) return item;
+  const clean = deepOmit(item, DROP_KEYS) as Record<string, unknown>;
+  if (clean.sfid !== undefined) clean.sfid = maskId(clean.sfid);
+  return clean;
+}
+
+function shapeNamedList(
+  value: unknown,
+  level: Level,
+  field: string,
+  summary: (record: Record<string, unknown>, list: unknown[]) => Record<string, unknown>,
+  mapper?: (item: unknown) => unknown,
+): ShapeResult {
+  const record = isRecord(value) ? value : {};
+  const list = asArray(record[field]);
+  if (level === "count") {
+    return { value: summary(record, list), count: 0, hiddenSensitive: 0 };
+  }
+  const shaped = deepOmit(record, DROP_KEYS) as Record<string, unknown>;
+  shaped[field] = level === "raw" ? list : mapper ? list.map(mapper) : list;
+  return { value: shaped, count: list.length, hiddenSensitive: 0 };
+}
+
+function shapeRegistration(value: unknown, level: Level): ShapeResult {
+  if (!isRecord(value)) return { value, count: 0, hiddenSensitive: 0 };
+  if (level === "count") {
+    return {
+      value: {
+        registered: value.registered,
+        status: value.status,
+        hasSemester: Boolean(value.semester),
+        sources: value.sources ?? [],
+      },
+      count: 0,
+      hiddenSensitive: 0,
+    };
+  }
+  return {
+    value: level === "raw" ? value : (deepOmit(value, DROP_KEYS) as Record<string, unknown>),
+    count: 0,
+    hiddenSensitive: 0,
+  };
+}
+
 /* -------------------------------- 入口 -------------------------------- */
 
 export type AggregateToolResource =
@@ -417,7 +480,15 @@ export type AggregateToolResource =
   | "activities"
   | "devices"
   | "email"
-  | "transactions";
+  | "transactions"
+  | "exams"
+  | "freeRooms"
+  | "fitness"
+  | "credit"
+  | "registration"
+  | "reserves"
+  | "peCourses"
+  | "exercise";
 
 export function shapeResource(
   resource: string,
@@ -450,6 +521,71 @@ export function shapeResource(
       return shapeEmail(value, level);
     case "overview":
       return shapeOverview(value, level, options);
+    case "exams":
+      return shapeNamedList(
+        value,
+        level,
+        "exams",
+        (record, list) => ({
+          semester: record.semester,
+          count: list.length,
+          sources: record.sources ?? [],
+        }),
+        redactExam,
+      );
+    case "freeRooms":
+      return shapeNamedList(value, level, "rooms", (record, list) => ({
+        date: record.date,
+        building: record.building,
+        count: list.length,
+        sources: record.sources ?? [],
+      }));
+    case "fitness":
+      return shapeNamedList(value, level, "items", (record, list) => ({
+        periodName: record.periodName,
+        status: record.status,
+        totalScore: record.totalScore,
+        totalGrade: record.totalGrade,
+        itemCount: list.length,
+        sources: record.sources ?? [],
+      }));
+    case "credit":
+      return shapeNamedList(
+        value,
+        level,
+        "records",
+        (record, list) => ({
+          sumCredit: record.sumCredit,
+          sumCount: record.sumCount,
+          count: list.length,
+          sources: record.sources ?? [],
+        }),
+        redactCreditRecord,
+      );
+    case "registration":
+      return shapeRegistration(value, level);
+    case "reserves":
+      return shapeNamedList(value, level, "reserves", (record, list) => ({
+        count: list.length,
+        sources: record.sources ?? [],
+      }));
+    case "peCourses":
+      return shapeNamedList(value, level, "courses", (record, list) => ({
+        count: list.length,
+        sources: record.sources ?? [],
+      }));
+    case "exercise":
+      return shapeNamedList(
+        value,
+        level,
+        "engagements",
+        (record, list) => ({
+          semester: record.semester,
+          count: list.length,
+          sources: record.sources ?? [],
+        }),
+        redactExercise,
+      );
     case "balance":
     case "term":
     default:

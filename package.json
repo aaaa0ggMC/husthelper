@@ -17,6 +17,8 @@
     "example:grades": "node examples/get_grades.ts",
     "example:exams": "node examples/get_exams.ts",
     "example:free-rooms": "node examples/get_free_rooms.ts",
+    "example:registration": "node examples/get_registration.ts",
+    "example:credit-summary": "node examples/get_credit_summary.ts",
     "example:online-devices": "node examples/get_online_devices.ts",
     "example:service-center": "node examples/get_service_center.ts",
     "example:exercise": "node examples/get_exercise_engagements.ts",

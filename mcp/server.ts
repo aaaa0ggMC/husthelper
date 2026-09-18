@@ -232,6 +232,117 @@ export function createMcpServer(privacy: Privacy): McpServer {
   );
 
   server.tool(
+    "hust_exams",
+    `获取学业考试安排（可选学期 xqh，默认当前学期；kslx：0 补(缓)考、1 普通）。${CREDENTIAL_HINT}`,
+    {
+      xqh: z.string().optional().describe("学期号，如 '20261'；不传取当前学期"),
+      kslx: z.number().int().optional().describe("考试类型：0 补(缓)考，1 普通（默认）"),
+      kcmc: z.string().optional().describe("课程名模糊筛选"),
+      level: levelField,
+    },
+    (args) =>
+      run(
+        "hust_exams",
+        "exams",
+        () =>
+          getClient().aggregate.load(
+            "exams",
+            compact({ xqh: args.xqh, kslx: args.kslx, kcmc: args.kcmc }),
+          ),
+        args,
+      ),
+  );
+
+  server.tool(
+    "hust_free_rooms",
+    `查询空闲教室（需教学楼编号 building，日期 date 默认今天）。${CREDENTIAL_HINT}`,
+    {
+      building: z.string().describe("教学楼编号 JXLBH，如 'C050'（西五楼）"),
+      date: z.string().optional().describe("日期 'YYYY-MM-DD'，默认今天"),
+      startPeriod: z.number().int().optional().describe("起始节次，默认 1"),
+      endPeriod: z.number().int().optional().describe("结束节次，默认 2"),
+      level: levelField,
+    },
+    (args) =>
+      run(
+        "hust_free_rooms",
+        "freeRooms",
+        () =>
+          getClient().aggregate.load(
+            "freeRooms",
+            compact({
+              building: args.building,
+              date: args.date,
+              startPeriod: args.startPeriod,
+              endPeriod: args.endPeriod,
+            }),
+          ),
+        args,
+      ),
+  );
+
+  server.tool(
+    "hust_fitness",
+    `获取体质测试成绩（含各单项与总分；可选学期 periodId，不传取当前学期）。${CREDENTIAL_HINT}`,
+    {
+      periodId: z.string().optional().describe("体测学期号，如 '20252'；不传取当前学期"),
+      level: levelField,
+    },
+    (args) =>
+      run(
+        "hust_fitness",
+        "fitness",
+        () => getClient().aggregate.load("fitness", compact({ periodId: args.periodId })),
+        args,
+      ),
+  );
+
+  server.tool(
+    "hust_credit",
+    `获取第二课堂学分汇总（总学分、总次数、分类明细）。${CREDENTIAL_HINT}`,
+    { level: levelField },
+    (args) => run("hust_credit", "credit", () => getClient().aggregate.credit, args),
+  );
+
+  server.tool(
+    "hust_registration",
+    `获取学期注册状态与当前学期起止（如「已注册」）。${CREDENTIAL_HINT}`,
+    { level: levelField },
+    (args) =>
+      run("hust_registration", "registration", () => getClient().aggregate.registration, args),
+  );
+
+  server.tool(
+    "hust_reserves",
+    `获取本人场馆预约记录（时间、场地、金额、支付状态）。${CREDENTIAL_HINT}`,
+    { level: levelField },
+    (args) => run("hust_reserves", "reserves", () => getClient().aggregate.reserves, args),
+  );
+
+  server.tool(
+    "hust_pe_courses",
+    `获取已修 / 已选体育课列表（成绩、学分、教师）。${CREDENTIAL_HINT}`,
+    { level: levelField },
+    (args) => run("hust_pe_courses", "peCourses", () => getClient().aggregate.peCourses, args),
+  );
+
+  server.tool(
+    "hust_exercise",
+    `获取课外锻炼次数（可选学期 xqh，默认最新学期；当前学期通常学期末才有数据）。${CREDENTIAL_HINT}`,
+    {
+      xqh: z.string().optional().describe("学期号，如 '20261'；不传取最新学期"),
+      level: levelField,
+    },
+    (args) =>
+      run(
+        "hust_exercise",
+        "exercise",
+        () => getClient().aggregate.load("exercise", compact({ xqh: args.xqh })),
+        args,
+      ),
+  );
+
+  server.tool(
     "hust_email",
     `获取校园邮箱信息（地址、别名、未读数量）。${CREDENTIAL_HINT}`,
     { level: levelField },
