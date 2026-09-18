@@ -40,7 +40,28 @@
 - [x] `examples/login_qrcode.ts`：终端支持图片协议（iTerm2/WezTerm、Kitty/Ghostty、Konsole）时内联显示二维码，
   否则写入 PNG；`--file` / `--image` / `--refresh` 可指定。
 
+### 报告文档（hustreport）
+
+基于 `docx-edit` 的「保格式」报告自动化，整链路：`analyze → template / ai-template → render`。详见 [`hustreport/README.md`](./hustreport/README.md)。
+
+- [x] **分析**：按「段落 + run 样式」切分 segment、去重成 `XML Style ID`，导出带稳定 ref 的 `segments.csv`；多媒体以 `img_xxxx` handle 表示。
+- [x] **稳定 ref**：`w14:paraId` + 段内 segment 序号，改写文本后重新分析 ref 不变。
+- [x] **无损编辑**：`applyEdits` / `DocumentEditor` 直接操作 OOXML（只改 `w:t`、克隆已有 `w:r/w:p` 元素），不新建样式、不走虚拟树 patch。
+- [x] **会话 anchor**：`AnchorRegistry`（ref 形如 `a21`），跨多次 `commit()` 稳定，无需往文档写任何东西。
+- [x] **持久锚点**：`stampAnchors / readAnchors / stripAnchors`（core OOXML 书签，跨 Word/WPS/LibreOffice），产出成稿前剥离。
+- [x] **模板 DSL**：`rules / styles / profiles / StyleRef`（anchor 优先，自包含）；悬空引用重映射与清理。
+- [x] **AI 抽模板**：`ai-template` + `prompts/template.md`、`prompts/lab-report.md`（skill 文档，可 `--preset` / `--system-prompt` / `--extra` 覆盖）；AI 输出 `edits` 规范化删除引导内容并裁剪锚点表，输出 `skeleton.md` 填字稿。
+- [x] **渲染器**：填空 + 标题/正文/代码/列表（嵌套、任务列表）/引用/分隔线/行内格式（粗斜删代码链接）；支持 `use:` 覆盖样式、`padding:` 分组等宽对齐、`align:` 组内对齐。
+- [x] **沙盒**：`runEditSandbox`（`node:vm`）+ `EDITOR_API_DOC`，可执行 AI 生成的编辑代码。
+- [x] CLI：`analyze / template / ai-template / render / edit`；单测 32 个。
+
 ## 待办
+
+- [ ] **hustreport 表格渲染**（`w:tbl`）：解析出的 table block 目前渲染时告警跳过；需要克隆/构造表格 + 单元格填充。
+- [ ] **hustreport 图片插入**：`![alt](ref:锚点)` 目前按填空处理，未生成 `w:drawing` + 关系。
+- [ ] **hustreport 段落级对齐**：`align` 现为「padding 组内空格对齐」，可补 `pAlign` 作用于 `w:jc`。
+- [ ] **报告模板库**：把抽卡得到的好模板沉淀、分发（模板 + `template.json` 版本化）。
+- [ ] `ai-template` 生成质量评估：对同一文档多跑几次对比产物，挑最优模板。
 
 - [ ] **公选课全量课表获取（只读，`client.zxq`）**：公选课为抽签分配，**只抓全量课程数据供分析课标冲突，不做选/退课**。
   - 状态：**未实现**。选课系统（`wsxk.hust.edu.cn`）非选课季时 `zxqremian.action` 仅返回「本次选课安排还未公布」，无任何课程行，

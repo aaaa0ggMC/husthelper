@@ -31,8 +31,9 @@
 原本是想做一个流水获取软件用于[ledger](https://github.com/aaaa0ggMC/ledger-mcp-termux)的，不知不觉就做大了（多亏了AI辅助，我只需要打开浏览器把route大致讲解给AI再做一个简单的axios第一版就可以不断滚雪球了），加上名字都叫 HustHelper 了不进行一下 help 确实说不过去，因此我就想到啥做啥了。
 
 ## 大方向 TODO
-- [] md2report ， 这个已经有人做了 (md2report)[https://github.com/woolen-sheep/md2report]，但是一是因为其为 python，二则是我也想自己做出适合自己的架构，因此这是一个选题。
-- 
+- [x] md2report：以 [`hustreport`](./hustreport/README.md) 模块落地——不重复造 md2html，而是「保格式」地把 Markdown 填进已有 Word 模板：AI 只负责抽模板（`ai-template`），之后 `render` 完全确定性。
+- [ ] 报告模板库：把抽卡抽出的好模板（`template.docx` + `template.json`）沉淀成可复用、可直接分发的模板。
+- [ ] `hustreport` 表格渲染（`w:tbl`）。
 
 ## 模块
 
@@ -43,7 +44,7 @@
 | `hustcore` | 共享核心：分域名 Cookie jar 与日志 | [hustcore/README.md](./hustcore/README.md) |
 | `hustnet` | 校园网（eportal）认证 SDK + `hustnet` CLI | [hustnet/README.md](./hustnet/README.md) |
 | `hustpass` | CAS 统一身份认证 + 一卡通/HUB/one.hust 等下游业务 SDK | [hustpass/README.md](./hustpass/README.md) |
-| `hustreport` | 报告文档处理：docx 样式分段、路径索引与 CSV 导出（基于 docx-edit） | [hustreport/README.md](./hustreport/README.md) |
+| `hustreport` | 报告文档：docx 样式分段与稳定 ref、模板 DSL、AI 抽模板、Markdown 保格式渲染（基于 docx-edit） | [hustreport/README.md](./hustreport/README.md) |
 | `mcp` | 把 `hustpass` 聚合层包成 MCP 服务端 | [mcp/README.md](./mcp/README.md) |
 
 设计与接口文档见 [`docs/`](./docs/README.md)。

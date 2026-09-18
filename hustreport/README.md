@@ -1,34 +1,66 @@
 # hustreport
 
-基于 [`docx-edit`](https://github.com/CZ600/docxEdit) 的报告文档处理模块。
+基于 [`docx-edit`](https://github.com/CZ600/docxEdit) 的报告文档处理模块。核心目标：**保格式**地把 Markdown 内容填进已有的 Word 模板，不新建样式、不改乱排版。
 
-- **Part 1（已完成）**：读取 `.docx` → 按“段落样式 + run 样式”切分内容 → 把不同样式去重成数字 `XML Style ID` → 导出带**路径索引**的 CSV（多媒体以 `img_xxxx` handle 表示）。
-- **Part 2 / 3（接口已预留）**：把 CSV 与样式表发给 AI，AI 返回 `StyleInstruction[]`，引擎按指令复制/改写样式并回写 docx。
+整条链路（AI 只在抽模板时用一次，之后完全确定性）：
+
+```
+原始 docx
+  │ analyze            按样式切分 segment，算 XML Style ID，导出带稳定 ref 的 CSV
+  ▼
+segments / styles
+  │ ai-template        把样式表+锚点表交给 AI：出 rules / 配方 / 规范化 edits / skeleton.md
+  ▼
+template.docx + template.json + skeleton.md
+  │ （人填 skeleton.md → fill.md）
+  ▼
+render  ──────────────►  final.docx
+```
 
 ## 快速开始
 
 ```bash
-# 在仓库根目录
 pnpm install
 
-# 解析并导出到 ./report-out
-pnpm report analyze /path/to/report.docx
+# 1) 只读分析：切分 + 样式表 + CSV
+node hustreport/bin/hustreport.ts analyze 任务书.docx --out ./out
 
-# 或指定输出目录 / 只看 CSV
-node hustreport/bin/hustreport.ts analyze /path/to/report.docx --out ./tmp/report
-node hustreport/bin/hustreport.ts analyze /path/to/report.docx --stdout
+# 2) 无 AI 的模板（打隐藏书签锚点 + 推断默认 DSL）
+node hustreport/bin/hustreport.ts template 任务书.docx --out ./tpl
+
+# 3) 有 AI：生成模板 + 规范化 + 填字稿（读 config.json 的 openai 段或环境变量）
+node hustreport/bin/hustreport.ts ai-template 任务书.docx --out ./tpl --task "生成实验报告模板"
+#   可选：--preset generic|labReport  --system-prompt my.md  --extra "附加要求"
+
+# 4) 渲染：模板 + 填字稿 → 成稿
+node hustreport/bin/hustreport.ts render ./tpl/template.docx \
+  --info ./tpl/template.json --md ./tpl/fill.md --out ./final.docx
 ```
 
-产物：
+AI 配置（环境变量优先）：
 
-| 文件 | 内容 |
+```bash
+export HUST_AI_BASE_URL=http://127.0.0.1:1145/v1
+export HUST_AI_API_KEY=sk-xxxx
+export HUST_AI_MODEL=deepseek/deepseek-flash
+export HUST_AI_MAX_TOKENS=32768      # 推理模型需要更大的输出预算
+```
+
+## CLI 一览
+
+| 命令 | 作用 |
 | :-- | :-- |
-| `segments.csv` | 核心产物，`Index , Segments , XML Style ID , Ref` |
-| `media.csv` | 媒体清单：`Handle , Ref , Filename , Content-Type , Width , Height , Alt` |
-| `styles.json` | 每个 `XML Style ID` 的段落/run 直接格式、有效样式与摘要 |
-| `analysis.json` | 完整分析结果（segments + styles + media + meta） |
+| `analyze <docx>` | 切分 segment、样式表、`segments.csv / media.csv / styles.json / analysis.json` |
+| `template <docx>` | 注入持久锚点 + 推断默认 DSL，产出 `template.docx / template.json` |
+| `ai-template <docx>` | 在 template 基础上调用 AI，产出模板 + `skeleton.md`，并应用规范化 `edits` |
+| `render <template.docx>` | 按 `template.json` + 填字稿渲染出成稿 |
+| `edit <docx>` | 直接对文档做 set/insert/delete（见下） |
 
-## CSV 格式
+---
+
+## Part 1 · 分析（analyze）
+
+按「段落样式 + run 样式」切分内容，去重成数字 `XML Style ID`，导出 CSV。
 
 ```
 Index , Segments , XML Style ID , Ref
@@ -37,137 +69,158 @@ Index , Segments , XML Style ID , Ref
 3 , "img_0001" , 2 , body#0/p@5E6F7A8B/s0
 ```
 
-- `Index`：segment 全局序号（文档顺序）。
-- `Segments`：内容文本；多媒体以 handle 表示（见下）。
-- `XML Style ID`：数字样式 ID，含义见 `styles.json`。同一个 ID 表示“段落样式 + run 样式”完全一致；段落内**连续同样式**的 run 会合并成一个 segment，不同段落不跨段合并。
-- `Ref`：稳定路径索引（见下）。
+- `Index`：全局序号；`Segments`：文本（多媒体是 `img_xxxx` handle）；`XML Style ID`：含义见 `styles.json`；`Ref`：稳定定位。
+- 段落内**连续同样式**的 run 合并；不同段落不跨段合并。
+- 转义：文本字段始终 `"` 包裹，`\`→`\\`、`"`→`\"`、换行→`\n`、Tab→`\t`。
 
-转义规则：文本字段始终用 `"` 包裹，内部 `\` → `\\`、`"` → `\"`、换行 → `\n`、Tab → `\t`；分隔符 `,` 两侧允许空格，如 `a , b`。
-
-## 稳定路径索引 `Ref`
+### 稳定 Ref
 
 ```
 body#0/p@4E2EFCDF/s1
- │    │   │          └─ 段内第几个 segment（按样式切分后的序号）
- │    │   └──────────── Word 稳定段落 ID w14:paraId
- └────┴──────────────── part 类型 # 同类型 part 序号
+ │    │   │          └─ 段内第几个 segment
+ │    │   └──────────── Word 稳定段落 ID（w14:paraId）
+ └────┴──────────────── part 类型 # 序号
 ```
 
-**为什么不用 run 下标**：run 序号会随文本改写、插入、删除而漂移，导致旧 ref 失效。现在段落身份取自 Word 的 `w14:paraId`（每段唯一、跨保存不变），段内用 segment 序号定位，因此：
+ref 用 `w14:paraId` 而非 run 下标，**改写文本后重新分析 ref 不变**；文档没有 paraId 时退化为 `body#0/p12/s1`。
 
-- 改写文本后重新分析，同一个 segment 的 `Ref` **保持不变**；
-- 插入 / 删除其它段落不会影响已有段落的 `Ref`；
-- 插入的新段落会自动补一个 `w14:paraId`，下次分析即可寻址。
+### 多媒体
 
-段落没有 `paraId` 时退化为 `body#0/p12/s1`（part 内序号）。可用 `walkParagraphs()` 复现同一套遍历顺序。
+图片不塞二进制，分配 handle（`img_0001`），元数据（relId/filename/contentType/尺寸/所在 Ref）写入 `media.csv` 与 `analysis.json`。
 
-## 多媒体
+---
 
-图片等媒体不会把二进制塞进 CSV，而是分配一个稳定 handle：
+## Part 2 · 模板（template / ai-template）
 
-- 文本里出现 `img_0001`；
-- 详细元数据（`relId` / `filename` / `contentType` / 尺寸 / 所在 `Ref`）写入 `media.csv` 与 `analysis.json`。
+### 模板 DSL（`template.json`）
+
+```jsonc
+{
+  "version": 2,
+  "kind": "hustreport/template",
+  "anchors": {
+    "hrseg0003": { "kind": "slot", "label": "学号", "styleId": 8, "style": { "anchor": "hrseg0003" } }
+  },
+  "defaultProfile": "default",
+  "profiles": {
+    "default": {
+      "styles": { "body": { "anchor": "hrseg0012" }, "code": { "anchor": "hrseg0042" } },
+      "rules": [
+        { "match": { "type": "heading", "level": 1 }, "style": { "anchor": "hrseg0007" } },
+        { "match": { "type": "paragraph" }, "style": { "recipe": "body" } },
+        { "match": { "type": "code" }, "style": { "recipe": "code" } }
+      ]
+    },
+    "compact": { "extends": "default", "rules": [] }
+  }
+}
+```
+
+- **Anchor**：模板里的隐藏书签（core OOXML，Word/WPS/LibreOffice 都保留）。渲染前注入、产出成稿时剥离。
+- **StyleRef**：`{anchor}`（首选，自包含）/ `{recipe}` / `{styleName}` / `{ooxmlStyleId}` / `{inline}`。全部指向已有样式，**不新建 `styles.xml` 条目**。
+- **rules**：`match`（type/level/lang/ref）→ `style`，first-match-wins。
+- **profiles**：一篇文章可挂多套模板（`extends` 继承覆盖）。
+
+### AI 生成模板
+
+提示词以 skill 文档形式维护，运行时读取（改文本即生效）：
+
+```
+hustreport/prompts/
+├── template.md      # 通用：JSON schema / rules / skeleton 语法 / 约束
+└── lab-report.md    # 实验报告类：逐段判断删除还是保留
+```
+
+`ai-template` 让 AI 输出 `rules / styles / anchors / edits / skeleton`：
+
+- **`edits`（规范化）**：删除面向写作者的指令/格式要求/占位符（如「实验任务 1、2 的源程序（单倍行距，5号宋体字）」），保留标题/章节/任务描述等正文；应用后自动裁剪锚点表、重映射悬空样式引用。
+- **`skeleton`（填字稿）**：只写需要填写或新增的内容，其余从模板原样保留。
+
+三个开关精确控制提示词：`--preset generic|labReport`、`--system-prompt my.md`（完全替换内置）、`--extra "..."`（追加要求）。优先级：`systemPrompt` > `preset` > 默认 `labReport`。
+
+---
+
+## Part 3 · 渲染（render）
+
+### 填字稿语法
+
+```md
+---
+profile: default
+---
+
+[张三](ref:hrseg0024)                                    # 填空（原地替换）
+[计算机2201班](ref:hrseg0020 | padding=cover)             # 同组补齐到等宽
+[U202212345](ref:hrseg0022 | padding=cover align=center) # 组内居中
+[正文内容](ref:hrseg0092 | use:body)                      # 覆盖锚点原有格式
+
+# 六、参考文献 {ref:hrseg0095}                            # 章节插入（块）
+
+其后段落 / 列表 / 代码块会按顺序插到该锚点之后。
+```
+
+- `[值](ref:锚点)`：**填空**，保留锚点 run 的格式。
+- `# 标题 {ref:锚点}`：**块插入**，用 `rules` 的 heading 规则套样式；标题文字与锚点原文相同时不重复插入。
+- 块属性还可带 `pos:before/after`、`profile:xxx`。
+- 填字选项：`use:<recipe|锚点>`、`padding:<组名>`（**分组，不是长度**）、`align:left|center|right`、`profile:<名>`。
+
+### 支持的内容
+
+- 标题 / 段落 / 代码块 / 列表（含嵌套、任务列表 `- [x]`）/ 引用 / 分隔线；
+- 行内：`**粗**`、`*斜*`、`~~删除~~`、`` `代码` ``、`[链接](url)`（外链自动注册关系）、链接内嵌强调；
+- 全部通过克隆模板已有元素实现，字体/字号/下划线等 `w:rPr` 原样复用。
+
+### 尚未支持
+
+表格（会解析出 table block 但渲染时告警跳过）、图片插入、段落级对齐（`pAlign`）。
+
+---
 
 ## API
 
 ```ts
-import { analyzeDocx, formatSegmentsCsv, parseSegmentsCsv, formatMediaCsv } from "hustreport";
+import { analyzeDocx, createTemplate, buildTemplateWithAi, renderTemplateFile } from "hustreport";
 
-const { doc, analysis } = await analyzeDocx("./report.docx", {
-  partTypes: ["body", "header", "footer"], // 可选，默认全部
-  includeEmptyParagraphs: false,           // 可选
-});
-
-console.log(analysis.meta);                 // { segmentCount, styleCount, charCount, partParagraphCounts }
+const { doc, analysis } = await analyzeDocx("./任务书.docx");
 const csv = formatSegmentsCsv(analysis.segments);
-const rows = parseSegmentsCsv(csv);         // 往返解析
-await writeFile("media.csv", formatMediaCsv(analysis.media));
+
+// 无 AI 模板
+await createTemplate("./任务书.docx", "tpl/template.docx", "tpl/template.json");
+
+// 有 AI 模板
+await buildTemplateWithAi({ input: "./任务书.docx", outDir: "tpl", task: "...", chat: myChat });
+
+// 渲染
+await renderTemplateFile("tpl/template.docx", "tpl/template.json", "tpl/fill.md", "final.docx");
 ```
 
-数据结构（详见 `src/types.ts`）：
-
-- `Segment { index, ref, text, styleId }`
-- `SegmentRef { part, partIndex, paragraph, paraId, segment, runStart, runEnd, id }`
-- `StyleEntry { id, key, paragraph, run, segmentCount, examples, summary }`
-- `StyleSnapshot { ooxmlStyleId, direct, effective, headingLevel? }`
-- `MediaEntry { handle, relId, filename, contentType, mediaPath, width, height, alt, ... }`
-
-`StyleSnapshot.direct` 是文档里真实写入的 `w:pPr` / `w:rPr`（可原样复制）；`effective` 是 `docDefaults → 命名样式继承链 → 直接格式` 合并后的结果（用于理解“看起来是什么样”）。
-
-## 改写 / 插入 / 删除（无损）
-
-统一入口 `applyEdits(doc, { set, insert, delete })`，直接操作底层 OOXML，不经过虚拟树 patch。
+### 编辑器（会话内精确定位）
 
 ```ts
-import { openDocx, applyEdits } from "hustreport";
+import { createEditor } from "hustreport";
 
-const doc = await openDocx("./任务书.docx");
-const result = applyEdits(doc, {
-  // 改写：只换 w:t，rPr/pPr 不动
-  set: [
-    { ref: "body#0/p@5F753281/s1", text: "计算机科学与技术学院" },
-    { index: 21, text: "U202612345" },
-    { styleId: 8, text: "王五", match: { contains: "  " } },
-  ],
-  // 插入：必须指定已存在的 useStyleId，深拷贝其 run/段落元素，不新建样式
-  insert: [
-    { ref: "body#0/p@B48EA131/s0", text: "1. 参考文献条目", useStyleId: 12, as: "paragraph", position: "after" },
-    { ref: "body#0/p@B48EA131/s0", text: "（补充）", useStyleId: 12, as: "run", position: "after" },
-  ],
-  // 删除：run=删内容，paragraph=删整段
-  delete: [{ ref: "body#0/p@5B99D6D3/s0", as: "run" }],
-});
-await doc.saveAs("./任务书.edited.docx");
-console.log(result.applied, result.inserted, result.deleted);
+const editor = await createEditor("./任务书.docx");
+editor.set({ styleId: 8 }, "U202612345");                 // 选择器
+editor.insertAfter(seg, "六、参考文献");                    // 默认复用目标样式
+editor.insertManyAfter(anchor, [{ text: "1. ..." }, { text: "2. ..." }]);
+editor.remove({ match: { contains: "占位" } }, { as: "run" });
+await editor.save("./out.docx");
 ```
 
-CLI：
+编辑用**会话 anchor**（`AnchorRegistry`，ref 形如 `a21`），跨多次 `commit()` 稳定；插入/删除只操作 OOXML 元素，不经过虚拟树 patch。
 
-```bash
-hustreport edit 任务书.docx --out edited.docx --edits plan.json
-hustreport edit 任务书.docx --out edited.docx --set "body#0/p@031C48C2/s1=U202612345"
-```
+### 低级原语
 
-`plan.json`：
+- `applyEdits(doc, { set, insert, delete })`：无损改写/插入/删除，未命中的选择器只记 `warnings` 不抛错；
+- `stampAnchors / readAnchors / stripAnchors`：持久书签锚点的注入/解析/剥离；
+- `runEditSandbox(editor, code)`：`node:vm` 沙盒执行 AI 生成的编辑代码（`EDITOR_API_DOC` 是给 AI 的 API 说明）。
 
-```json
-{
-  "set":    [ { "ref": "body#0/p@5F753281/s1", "text": "计算机科学与技术学院" } ],
-  "insert": [ { "ref": "body#0/p@B48EA131/s0", "text": "六、参考文献", "useStyleId": 26, "as": "paragraph", "position": "after" } ],
-  "delete": [ { "ref": "body#0/p@5B99D6D3/s0", "as": "run" } ]
-}
-```
+---
 
-**选择器**：`ref` / `index` / `styleId` 任选其一，`match: { contains | regex }` 可再过滤。
+## 已知说明
 
-**无损性**：
-
-- 改写只改目标 run 的 `w:t`，字体 / 字号 / 下划线等 `w:rPr` 原样保留；
-- 插入通过**深拷贝已有样式的 `w:r` / `w:p` 元素**实现，所以 `w:rStyle` / `w:pStyle` 引用被原样复用，**不会新增任何样式**（重新分析后新 segment 落在原有 `XML Style ID` 上）；
-- 删除直接摘除 XML 元素。
-
-> 已知副作用（来自 `docx-edit` 本身，与本模块逻辑无关）：其解析空段落时会补一个空 `<w:r><w:t/></w:r>`，因此另存后空段落会多出一个不可见的空 run，语义上无影响。
-
-## 后续接口预留（Part 2 / 3）
-
-计划中的 AI 契约（尚未实现，先约定形状）：
-
-```ts
-type StyleInstructionAction = "copy" | "set" | "keep" | "clear";
-
-interface StyleInstruction {
-  styleId: number;                       // 目标 XML Style ID
-  action: StyleInstructionAction;
-  scope?: "run" | "paragraph" | "both";   // 默认 both
-  sourceStyleId?: number;                // action = copy 时的来源样式
-  paragraphStyle?: Record<string, any>;  // action = set
-  runStyle?: Record<string, any>;
-  match?: { contains?: string; regex?: string }; // 只作用于匹配的 segment
-  reason?: string;
-}
-```
-
-引擎将按 `Ref` 定位虚拟树节点，把来源样式的 `direct` 对象复制到目标 segment 的 run/段落上，再 `doc.patch()` 回写。
+- `docx-edit` 解析空段落时会补一个空 `<w:r><w:t/></w:r>`，属其自身行为，语义无影响。
+- `edit` 的插入**不新建样式**：默认复用目标 segment 自己的样式，`useStyleId` 可显式指定。
 
 ## 测试
 
