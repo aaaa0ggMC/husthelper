@@ -43,6 +43,7 @@
 | `hustcore` | 共享核心：分域名 Cookie jar 与日志 | [hustcore/README.md](./hustcore/README.md) |
 | `hustnet` | 校园网（eportal）认证 SDK + `hustnet` CLI | [hustnet/README.md](./hustnet/README.md) |
 | `hustpass` | CAS 统一身份认证 + 一卡通/HUB/one.hust 等下游业务 SDK | [hustpass/README.md](./hustpass/README.md) |
+| `hustreport` | 报告文档处理：docx 样式分段、路径索引与 CSV 导出（基于 docx-edit） | [hustreport/README.md](./hustreport/README.md) |
 | `mcp` | 把 `hustpass` 聚合层包成 MCP 服务端 | [mcp/README.md](./mcp/README.md) |
 
 设计与接口文档见 [`docs/`](./docs/README.md)。

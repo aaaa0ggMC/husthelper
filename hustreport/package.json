@@ -1,0 +1,36 @@
+{
+  "name": "hustreport",
+  "version": "0.1.0",
+  "description": "HUST 报告文档处理：基于 docx-edit 的样式分段、路径索引与 CSV 导出",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.ts",
+      "default": "./index.ts"
+    }
+  },
+  "types": "./index.ts",
+  "bin": {
+    "hustreport": "./bin/hustreport.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.ts"
+  },
+  "keywords": [
+    "hust",
+    "docx",
+    "report",
+    "docx-edit",
+    "ooxml"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.20.0",
+    "docx-edit": "^0.3.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}

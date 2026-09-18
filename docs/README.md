@@ -32,6 +32,10 @@
 - [场馆服务 pecg](./academic/pecg.md) — 经 petyxy SSO 登录、预约记录（服务端渲染 HTML 解析）
 - [华中大体育 petyxy](./academic/petyxy.md) — petyxy SSO、体质测试成绩（服务端渲染 HTML 解析）
 
+## 报告处理（hustreport）
+
+- [报告文档 hustreport](../hustreport/README.md) — docx 样式分段、路径索引 `Ref` 与 CSV 导出，多媒体以 `img_xxxx` handle 表示
+
 ## 聚合
 
 - [聚合 aggregate](./aggregate.md) — 跨平台聚合资源（schema 驱动、并发合并、失败降级）

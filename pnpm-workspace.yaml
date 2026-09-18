@@ -2,4 +2,5 @@ packages:
   - hustcore
   - hustnet
   - hustpass
+  - hustreport
   - mcp

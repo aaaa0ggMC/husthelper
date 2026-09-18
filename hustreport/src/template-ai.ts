@@ -1,0 +1,394 @@
+import { readFileSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { openDocx } from "./docx.ts";
+import { analyzeDocument } from "./analyze.ts";
+import {
+  buildTemplate,
+  inferTemplate,
+  pruneTemplateRefs,
+  remapDanglingAnchors,
+  type StyleRef,
+  type StampedAnchorLike,
+  type TemplateInfo,
+  type TemplateProfile,
+  type TemplateRule,
+} from "./template.ts";
+import { extractJson, type ChatFn, type ChatMessage } from "./ai.ts";
+import { parseDocument } from "./render.ts";
+import { readAnchors } from "./stamp.ts";
+import { writeRunElements } from "./edits.ts";
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+type XmlElement = any;
+
+/**
+ * AI 生成模板（MVP）：
+ *   原始 docx → 打锚点 + 推断默认 DSL → 把样式表/锚点表喂给 AI
+ *   → AI 返回 { rules, anchors, skeleton } → 校验合并 → 产出
+ *     template.docx / template.json / skeleton.md
+ *
+ * AI 只能引用已有锚点作为样式来源，不能新建样式、不能编造 ref。
+ */
+
+/** 规范化操作：把原始 docx 清理成标准模板（例如删掉“请在此填写”之类的引导内容）。 */
+export type TemplateEdit =
+  | { op: "set"; ref: string; text: string; mode?: "replace" | "append" | "prepend" }
+  | { op: "delete"; ref: string; as?: "run" | "paragraph" };
+
+export interface TemplateAiResponse {
+  /** 只覆盖锚点的 kind/label/tags 等元信息（style 仍由锚点自身决定）。 */
+  anchors?: Record<string, { kind?: string; label?: string; tags?: string[] }>;
+  /** 规范化建议：删除/清空引导与占位内容，让 docx 变成干净的模板。 */
+  edits?: TemplateEdit[];
+  /** markdown 结构 → 已有样式的规则。 */
+  rules?: TemplateRule[];
+  /** 命名格式配方。 */
+  styles?: Record<string, StyleRef>;
+  /** 额外 profile。 */
+  profiles?: Record<string, Partial<TemplateProfile>>;
+  /** JSON 字段或直接把 markdown 放这里。 */
+  skeleton?: string;
+}
+
+export interface MergeResult {
+  info: TemplateInfo;
+  skeleton: string;
+  /** 校验后的规范化操作。 */
+  edits: TemplateEdit[];
+  warnings: string[];
+}
+
+export interface BuildTemplateAiOptions {
+  input: string | Buffer;
+  /** 产物目录；会写入 template.docx / template.json / skeleton.md。 */
+  outDir: string;
+  /** 用户对文档/报告的说明，帮助 AI 判断结构。 */
+  task?: string;
+  chat: ChatFn;
+  /** 书签前缀。 */
+  anchorPrefix?: string;
+  /** 只看前 N 个锚点（超大文档时避免 prompt 过长）。 */
+  maxAnchors?: number;
+  /** 内置 system 提示词预设（generic / labReport）。 */
+  preset?: TemplateSystemPreset;
+  /** 完全替换内置 system 提示词（优先级高于 preset）；传空字符串则不发送 system 消息。 */
+  systemPrompt?: string;
+  /** 追加到用户消息末尾的额外要求。 */
+  extraInstructions?: string;
+  onMessages?: (messages: ChatMessage[]) => void;
+}
+
+export interface BuildTemplateAiResult extends MergeResult {
+  templatePath: string;
+  infoPath: string;
+  skeletonPath: string;
+  /** 规范化结果。 */
+  normalized: { applied: number; deleted: number };
+}
+
+/** 端到端：读 docx → AI → 落盘三件套。 */
+export async function buildTemplateWithAi(options: BuildTemplateAiOptions): Promise<BuildTemplateAiResult> {
+  const doc = await openDocx(options.input);
+  const { info } = buildTemplate(doc, {
+    prefix: options.anchorPrefix,
+    source: typeof options.input === "string" ? options.input : "(buffer)",
+  });
+
+  const messages = buildTemplateAiMessages(info, {
+    task: options.task,
+    preset: options.preset,
+    systemPrompt: options.systemPrompt,
+    extraInstructions: options.extraInstructions,
+    maxAnchors: options.maxAnchors,
+  });
+  options.onMessages?.(messages);
+  const raw = await options.chat(messages);
+  const merged = mergeTemplateAiResponse(raw, info);
+
+  // 应用规范化建议：删掉引导/占位内容，得到干净模板；再按剩余书签裁剪锚点表。
+  const styleIdOf = new Map<string, number | undefined>(
+    Object.entries(merged.info.anchors).map(([ref, anchor]) => [ref, anchor.styleId]),
+  );
+  const normalized = applyNormalization(doc, merged.edits, merged.warnings);
+  const remaining = new Set(readAnchors(doc, info.anchorPrefix).map((range) => range.ref));
+  for (const ref of Object.keys(merged.info.anchors)) {
+    if (!remaining.has(ref)) delete merged.info.anchors[ref];
+  }
+  merged.warnings.push(...remapDanglingAnchors(merged.info, styleIdOf));
+  merged.warnings.push(...pruneTemplateRefs(merged.info));
+  // 兜底：规范化后 AI 的规则可能大多失效，用剩余文档重新推断补齐基础规则。
+  augmentProfileFromDoc(doc, merged.info);
+
+  await mkdir(options.outDir, { recursive: true });
+  const templatePath = path.join(options.outDir, "template.docx");
+  const infoPath = path.join(options.outDir, "template.json");
+  const skeletonPath = path.join(options.outDir, "skeleton.md");
+  await doc.saveAs(templatePath);
+  await writeFile(infoPath, JSON.stringify(merged.info, null, 2), "utf-8");
+  await writeFile(skeletonPath, merged.skeleton, "utf-8");
+
+  return { ...merged, templatePath, infoPath, skeletonPath, normalized };
+}
+
+/** 用规范化后的文档重新推断基础 rules/styles，附加到默认 profile（AI 规则优先，推断补齐）。 */
+function augmentProfileFromDoc(doc: import("docx-edit").VirtualWordDocument, info: TemplateInfo): void {
+  const analysis = analyzeDocument(doc);
+  const stamped: StampedAnchorLike[] = Object.entries(info.anchors).map(([ref, anchor]) => ({
+    ref,
+    kind: anchor.kind,
+    label: anchor.label ?? "",
+    styleId: anchor.styleId ?? -1,
+  }));
+  const inferred = inferTemplate(analysis, stamped);
+  const name = info.defaultProfile;
+  const profile = info.profiles[name] ?? { styles: {}, rules: [] };
+  info.profiles[name] = {
+    ...profile,
+    styles: { ...inferred.profile.styles, ...profile.styles },
+    rules: [...profile.rules, ...inferred.profile.rules],
+    defaults: profile.defaults ?? inferred.profile.defaults,
+  };
+}
+
+/** 把规范化操作应用到文档（直接改 OOXML，不新建样式）。 */
+export function applyNormalization(
+  doc: import("docx-edit").VirtualWordDocument,
+  edits: readonly TemplateEdit[],
+  warnings: string[],
+): { applied: number; deleted: number } {
+  const ranges = new Map(readAnchors(doc).map((range) => [range.ref, range]));
+  let applied = 0;
+  let deleted = 0;
+
+  for (const edit of edits) {
+    const range = ranges.get(edit.ref);
+    if (!range) {
+      warnings.push(`规范化：未知锚点 ${edit.ref}，已忽略`);
+      continue;
+    }
+    if (edit.op === "set") {
+      if (range.runEls.length > 0 && writeRunElements(range.runEls, edit.text, edit.mode ?? "replace")) applied += 1;
+      else warnings.push(`规范化 set 失败：${edit.ref}`);
+      continue;
+    }
+    // delete
+    if (edit.as === "paragraph") {
+      const paragraphEl = range.paragraphEl as XmlElement;
+      if (paragraphEl?.parentNode) {
+        paragraphEl.parentNode.removeChild(paragraphEl);
+        deleted += 1;
+      }
+      continue;
+    }
+    let removed = 0;
+    for (const runEl of range.runEls as XmlElement[]) {
+      if (runEl?.parentNode) {
+        runEl.parentNode.removeChild(runEl);
+        removed += 1;
+      }
+    }
+    if (removed > 0) deleted += 1;
+  }
+
+  return { applied, deleted };
+}
+
+/** 构造给 AI 的消息。 */
+export interface TemplatePromptOptions {
+  task?: string;
+  /** 选用内置 system 提示词预设。 */
+  preset?: TemplateSystemPreset;
+  /** 完全替换内置 system 提示词（优先级高于 preset）；传空字符串表示不发送 system 消息。 */
+  systemPrompt?: string;
+  /** 追加到用户消息末尾的额外要求。 */
+  extraInstructions?: string;
+  /** 只看前 N 个锚点。 */
+  maxAnchors?: number;
+}
+
+/**
+ * 提示词以 `prompts/*.md` 的 skill 文档形式维护（便于阅读、版本化、按文档类型扩展）。
+ * 运行时读取；读不到（例如打包未带上文件）则退回精简的兜底文本。
+ */
+function loadPrompt(relative: string, fallback: string): string {
+  try {
+    return readFileSync(new URL(`../prompts/${relative}`, import.meta.url), "utf-8").trim();
+  } catch {
+    return fallback;
+  }
+}
+
+const FALLBACK_GENERIC = `你是 Word 模板助手。阅读样式表与锚点表，输出 JSON（rules/styles/anchors/edits/skeleton）。
+只能用给定的 ref，禁止新建样式；skeleton 只写需要填写或新增的内容，其余从模板原样保留。只输出 JSON。`;
+
+const FALLBACK_LAB_REPORT = `这是实验/课程报告类文档：逐段判断删除还是保留。
+删：面向写报告者的指令、格式要求、填写提示、纯占位符。
+留：章节标题、实验目的与要求及其条目、实验内容与任务描述、封面字段。拿不准就保留。`;
+
+/** 文档无关的通用提示词（来自 `prompts/template.md`）。 */
+export const GENERIC_TEMPLATE_SYSTEM_PROMPT = loadPrompt("template.md", FALLBACK_GENERIC);
+
+/** 实验/课程报告专用提示词 = 通用 + `prompts/lab-report.md` 判断准则。 */
+export const LAB_REPORT_TEMPLATE_SYSTEM_PROMPT =
+  GENERIC_TEMPLATE_SYSTEM_PROMPT + "\n\n---\n\n" + loadPrompt("lab-report.md", FALLBACK_LAB_REPORT);
+
+/** 预设的 system 提示词。 */
+export const TEMPLATE_SYSTEM_PRESETS = {
+  generic: GENERIC_TEMPLATE_SYSTEM_PROMPT,
+  labReport: LAB_REPORT_TEMPLATE_SYSTEM_PROMPT,
+} as const;
+
+export type TemplateSystemPreset = keyof typeof TEMPLATE_SYSTEM_PRESETS;
+
+/** 默认沿用实验报告策略（本仓库主要场景）。 */
+export const DEFAULT_TEMPLATE_SYSTEM_PROMPT = LAB_REPORT_TEMPLATE_SYSTEM_PROMPT;
+
+/** 构造用户消息主体（样式表 + 锚点表 + 示例）。 */
+export function buildTemplateContext(info: TemplateInfo, options: TemplatePromptOptions = {}): string {
+  const styleLines = Object.entries(info.anchors)
+    .map(([, anchor]) => anchor.styleId)
+    .filter((styleId): styleId is number => styleId !== undefined);
+  const styleIds = [...new Set(styleLines)].sort((a, b) => a - b);
+  const styleTable = styleIds.map((id) => `styleId=${id}`).join("\n");
+
+  let anchors = Object.entries(info.anchors).map(([ref, anchor]) => ({
+    ref,
+    kind: anchor.kind,
+    styleId: anchor.styleId,
+    label: (anchor.label ?? "").slice(0, 30),
+  }));
+  if (options.maxAnchors && anchors.length > options.maxAnchors) anchors = anchors.slice(0, options.maxAnchors);
+  const anchorTable = anchors
+    .map((anchor) => `${anchor.ref}\tstyle=${anchor.styleId}\t${anchor.kind}\t${JSON.stringify(anchor.label)}`)
+    .join("\n");
+
+  const schemaHint = `示例（注意 skeleton 很精简：只列要填的封面字段和要补写的章节，固定的任务正文不出现）：
+{
+  "rules": [
+    {"match":{"type":"heading","level":1},"style":{"anchor":"hrseg0007"}},
+    {"match":{"type":"paragraph"},"style":{"recipe":"body"}},
+    {"match":{"type":"code"},"style":{"anchor":"hrseg0042"}}
+  ],
+  "styles": {"body": {"anchor": "hrseg0012"}},
+  "anchors": {
+    "hrseg0003": {"kind":"slot","label":"学号"},
+    "hrseg0091": {"kind":"insert","label":"实验记录"}
+  },
+  "edits": [ {"op":"delete","ref":"hrseg0033","as":"paragraph"} ],
+  "skeleton": "---\\nprofile: default\\n---\\n\\n[计算机科学与技术学院](ref:hrseg0019)\\n\\n# 三、实验记录及问题回答 {ref:hrseg0091}\\n\\n(在此记录实验过程与结果)\\n\\n# 四、体会 {ref:hrseg0094}\\n\\n(在此填写心得体会)\\n"
+}`;
+
+  return [
+    options.task ? `用户说明：${options.task}` : "",
+    `可用样式（styleId 仅是编号，样式来源必须用锚点引用）：\n${styleTable}`,
+    `锚点表（ref / 样式 / 类型 / 示例文本）：\n${anchorTable}`,
+    schemaHint,
+    options.extraInstructions ?? "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+/**
+ * 构造给 AI 的消息。第二个参数可以是 task 字符串，或完整选项对象。
+ * 传入 `systemPrompt` 时**完全替换**内置提示词（不会叠加）；传空字符串则不发送 system 消息。
+ */
+export function buildTemplateAiMessages(info: TemplateInfo, options: string | TemplatePromptOptions = {}): ChatMessage[] {
+  const opts: TemplatePromptOptions = typeof options === "string" ? { task: options } : options;
+  const systemPrompt =
+    opts.systemPrompt !== undefined
+      ? opts.systemPrompt
+      : opts.preset
+        ? TEMPLATE_SYSTEM_PRESETS[opts.preset]
+        : DEFAULT_TEMPLATE_SYSTEM_PROMPT;
+  const user = buildTemplateContext(info, opts);
+  return systemPrompt ? [{ role: "system", content: systemPrompt }, { role: "user", content: user }] : [{ role: "user", content: user }];
+}
+
+/** 解析 AI 返回的 JSON/文本，校验后合并进 TemplateInfo。 */
+export function mergeTemplateAiResponse(text: string, info: TemplateInfo): MergeResult {
+  const warnings: string[] = [];
+  const parsed = extractJson<TemplateAiResponse>(text);
+
+  const next: TemplateInfo = {
+    ...info,
+    anchors: { ...info.anchors },
+    profiles: { ...info.profiles },
+  };
+
+  let skeleton = info.profiles[info.defaultProfile]?.extensions?.skeleton as string | undefined;
+  if (typeof parsed?.skeleton === "string") skeleton = parsed.skeleton;
+  if (!parsed) warnings.push("AI 返回不是可解析的 JSON，已保留原模板");
+  if (!skeleton) skeleton = "";
+
+  // 锚点元信息（保留原 style/styleId）
+  if (parsed?.anchors) {
+    for (const [ref, patch] of Object.entries(parsed.anchors)) {
+      const anchor = next.anchors[ref];
+      if (!anchor) {
+        warnings.push(`AI 引用了不存在的锚点 ${ref}，已忽略`);
+        continue;
+      }
+      if (patch.kind === "slot" || patch.kind === "insert") anchor.kind = patch.kind;
+      if (typeof patch.label === "string") anchor.label = patch.label;
+      if (Array.isArray(patch.tags)) anchor.tags = patch.tags;
+    }
+  }
+
+  // 规则校验
+  const validRules = (parsed?.rules ?? []).filter((rule) => {
+    if (!rule?.match?.type) {
+      warnings.push("丢弃一条缺少 match.type 的规则");
+      return false;
+    }
+    const ref = rule.style && "anchor" in rule.style ? rule.style.anchor : undefined;
+    if (ref && !next.anchors[ref]) {
+      warnings.push(`规则引用了不存在的锚点 ${ref}，已丢弃`);
+      return false;
+    }
+    return true;
+  });
+
+  const defaultProfile = next.profiles[next.defaultProfile] ?? { styles: {}, rules: [] };
+  const mergedStyles = { ...defaultProfile.styles, ...(parsed?.styles ?? {}) };
+  const profile: TemplateProfile = {
+    ...defaultProfile,
+    styles: mergedStyles,
+    rules: validRules.length > 0 ? validRules : defaultProfile.rules,
+  };
+  next.profiles[next.defaultProfile] = profile;
+  for (const [name, partial] of Object.entries(parsed?.profiles ?? {})) {
+    next.profiles[name] = { ...next.profiles[name], ...partial, styles: { ...(next.profiles[name]?.styles ?? {}), ...(partial.styles ?? {}) }, rules: partial.rules ?? next.profiles[name]?.rules ?? [] };
+  }
+
+  // skeleton 里的 ref 校验
+  if (skeleton) {
+    const parsedDoc = parseDocument(skeleton);
+    const used = new Set<string>([
+      ...parsedDoc.fills.map((fill) => fill.ref),
+      ...parsedDoc.blocks.map((block) => block.ref).filter((ref): ref is string => Boolean(ref)),
+    ]);
+    for (const ref of used) {
+      if (!next.anchors[ref]) warnings.push(`skeleton 引用了不存在的锚点 ${ref}`);
+    }
+  } else {
+    warnings.push("AI 未给出 skeleton，已产出空填字稿");
+  }
+
+  // 规范化操作校验
+  const validEdits: TemplateEdit[] = [];
+  for (const edit of parsed?.edits ?? []) {
+    if (!edit || (edit.op !== "set" && edit.op !== "delete") || !edit.ref) {
+      warnings.push("丢弃一条非法的规范化操作");
+      continue;
+    }
+    if (!next.anchors[edit.ref]) {
+      warnings.push(`规范化引用了不存在的锚点 ${edit.ref}，已忽略`);
+      continue;
+    }
+    validEdits.push(edit);
+  }
+
+  return { info: next, skeleton, edits: validEdits, warnings };
+}
