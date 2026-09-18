@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node examples/get_costs.ts",
     "net": "node --experimental-strip-types hustnet/bin/hustnet.ts",
+    "capture:portal": "node --experimental-strip-types hustnet/bin/capture-portal.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json && pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
     "example:profile": "node examples/get_profile.ts",

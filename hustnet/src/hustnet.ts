@@ -648,8 +648,8 @@ export class NetClient {
   }
 
   get sessionId(): string | undefined {
-    const base = this.portalContext?.base;
-    return this.session.getCookie(SESSION_COOKIE, base ?? this.options.probeUrl ?? NET_DEFAULT_PROBE_URL);
+    const target = this.portalContext?.indexUrl ?? this.options.probeUrl ?? NET_DEFAULT_PROBE_URL;
+    return this.session.getCookie(SESSION_COOKIE, target);
   }
 
   get persistedAt(): string | undefined {
@@ -657,7 +657,7 @@ export class NetClient {
   }
 
   cookies(): Record<string, string> {
-    return this.session.allCookies(this.portalContext?.base);
+    return this.session.allCookies(this.portalContext?.indexUrl);
   }
 
   /* ------------------------------ 门户发现 ------------------------------ */
@@ -713,6 +713,45 @@ export class NetClient {
       interfaceUrl: `${cleanBase}${EPORTAL_INTERFACE_PATH}`,
       successUrl: `${cleanBase}${EPORTAL_SUCCESS_PATH}`,
     };
+  }
+
+  /* ------------------------------ 失效自愈 ------------------------------ */
+
+  /** 传输层可重试错误 / 会话失效——都可能意味「缓存的门户上下文过期」。 */
+  private isRetryablePortalError(error: unknown): boolean {
+    return (
+      (error instanceof NetTransportError && error.retryable) ||
+      error instanceof NetSessionExpiredError
+    );
+  }
+
+  /**
+   * 缓存的门户上下文可能已过期（典型：从有线切到无线，门户从 `.61` 变成 `.60`）。
+   * 首次请求因传输错误 / 会话失效失败后：作废缓存 → 重新探测 → 重试一次。
+   *
+   * 若重新探测也失败（通常意味着当前已在线、不再有劫持），则恢复旧上下文重试一次，
+   * 避免把「网络抖动」误判成「门户变更」。
+   *
+   * 显式 `options.portal` 指定的门户不自动作废（用户已固定）。
+   */
+  private async withPortalRetry<T>(phase: NetPhase, run: () => Promise<T>): Promise<T> {
+    try {
+      return await run();
+    } catch (error) {
+      if (!this.isRetryablePortalError(error) || this.options.portal) throw error;
+
+      const previous = this.portalContext;
+      this.logger.warn(`门户请求失败（${phase}: ${formatError(error)}），重新探测门户…`);
+      this.portalContext = undefined;
+      try {
+        await this.discover(true);
+        this.logger.info(`已切换到门户：${this.portal?.base ?? "(未知)"}`);
+      } catch (probeError) {
+        this.portalContext = previous;
+        this.logger.warn(`重新探测门户失败（${formatError(probeError)}），沿用缓存门户重试一次`);
+      }
+      return await run();
+    }
   }
 
   private async probe(probeUrl: string): Promise<NetProbeOutcome> {
@@ -788,7 +827,7 @@ export class NetClient {
    */
   async openIndex(force = false): Promise<void> {
     const context = await this.discover(force);
-    const before = this.session.getCookie(SESSION_COOKIE, context.base);
+    const before = this.session.getCookie(SESSION_COOKIE, context.indexUrl);
     const response = await this.send(
       {
         url: context.indexUrl,
@@ -808,7 +847,7 @@ export class NetClient {
         ),
       });
     }
-    const after = this.session.getCookie(SESSION_COOKIE, context.base);
+    const after = this.session.getCookie(SESSION_COOKIE, context.indexUrl);
     if (!after) {
       throw new NetSessionExpiredError({
         phase: "session",
@@ -863,6 +902,11 @@ export class NetClient {
 
   /** 完整登录：发现门户 → 刷新会话 → 取公钥 → 加密 → 提交。 */
   async login(): Promise<NetLoginResult> {
+    return this.withPortalRetry("login", () => this.loginOnce());
+  }
+
+  /** 单次登录（不做门户切换重试）。 */
+  private async loginOnce(): Promise<NetLoginResult> {
     const context = await this.discover();
     await this.openIndex();
     const pageInfo = await this.fetchPageInfo();
@@ -1001,6 +1045,11 @@ export class NetClient {
 
   /** 取当前在线用户信息；未登录时门户返回 fail，这里抛 `NetOfflineError`。 */
   async getOnlineUserInfo(userIndex?: string): Promise<NetUserInfo> {
+    return this.withPortalRetry("userInfo", () => this.getOnlineUserInfoOnce(userIndex));
+  }
+
+  /** 单次取在线信息（不做门户切换重试）。 */
+  private async getOnlineUserInfoOnce(userIndex?: string): Promise<NetUserInfo> {
     const context = await this.discover();
     const index = userIndex ?? this.userIndexValue ?? "";
     const response = await this.send(
@@ -1037,15 +1086,27 @@ export class NetClient {
     }
     if (info.result !== "success") {
       const message = String(info.message ?? "获取用户信息失败");
-      if (/下线|未登录|不在线|获取用户信息失败|用户不存在/.test(message)) {
+      // 门户在「刚登录 / 数据仍在同步」时会返回 result:"wait" +「用户信息不完整，请稍后重试」，
+      // 但 userIndex/userName/userIp/userMac/accountFee 等字段其实已经带齐。
+      // 只要有用户数据就以它为准（否则会把完整信息误判成 PROTOCOL / OFFLINE）。
+      const hasUserData = Boolean(
+        info.userIndex || info.userId || info.userIp || info.userMac,
+      );
+      if (hasUserData) {
+        this.logger.warn(
+          `门户返回 result=${String(info.result)}（${message}），但响应已带用户信息` +
+            `（${info.userId ?? info.userIp ?? "-"}），按在线处理`,
+        );
+      } else if (/下线|未登录|不在线|获取用户信息失败|用户不存在/.test(message)) {
         throw new NetOfflineError({ phase: "userInfo", message, raw: info, responseBody: snippet(text) });
+      } else {
+        throw new NetProtocolError({
+          phase: "userInfo",
+          message,
+          raw: info,
+          responseBody: snippet(text),
+        });
       }
-      throw new NetProtocolError({
-        phase: "userInfo",
-        message,
-        raw: info,
-        responseBody: snippet(text),
-      });
     }
     if (info.userIndex) this.userIndexValue = String(info.userIndex);
     this.save();
@@ -1062,6 +1123,11 @@ export class NetClient {
    * `success.jsp` 本身只是约 90KB 的登录成功页，不是心跳。
    */
   async keepAlive(): Promise<string> {
+    return this.withPortalRetry("keepalive", () => this.keepAliveOnce());
+  }
+
+  /** 单次保活（不做门户切换重试）。 */
+  private async keepAliveOnce(): Promise<string> {
     if (!this.userIndexValue) {
       throw new NetError({
         phase: "keepalive",
@@ -1243,32 +1309,34 @@ export class NetClient {
    */
   async logout(): Promise<void> {
     try {
-      const context = await this.discover();
-      if (this.userIndexValue) {
-        const response = await this.send(
-          {
-            url: `${context.interfaceUrl}?method=logout`,
-            method: "POST",
-            data: new URLSearchParams({ userIndex: this.userIndexValue }),
-            responseType: "buffer",
-            headers: {
-              Accept: "*/*",
-              Origin: context.base,
-              Referer: context.indexUrl,
-              "X-Requested-With": "XMLHttpRequest",
+      await this.withPortalRetry("logout", async () => {
+        const context = await this.discover();
+        if (this.userIndexValue) {
+          const response = await this.send(
+            {
+              url: `${context.interfaceUrl}?method=logout`,
+              method: "POST",
+              data: new URLSearchParams({ userIndex: this.userIndexValue }),
+              responseType: "buffer",
+              headers: {
+                Accept: "*/*",
+                Origin: context.base,
+                Referer: context.indexUrl,
+                "X-Requested-With": "XMLHttpRequest",
+              },
             },
-          },
-          "logout",
-        );
-        const text = decodeBody(response.data, firstHeader(response.headers, "content-type"));
-        const result = parseJsonLoose<{ result?: string; message?: string }>(text);
-        if (response.status >= 400) {
-          this.logger.warn(`门户登出返回 HTTP ${response.status}，仍按本地登出处理`);
-        } else if (result?.result && result.result !== "success") {
-          this.logger.warn(`门户登出被拒绝：${result.message ?? "未知原因"}`);
+            "logout",
+          );
+          const text = decodeBody(response.data, firstHeader(response.headers, "content-type"));
+          const result = parseJsonLoose<{ result?: string; message?: string }>(text);
+          if (response.status >= 400) {
+            this.logger.warn(`门户登出返回 HTTP ${response.status}，仍按本地登出处理`);
+          } else if (result?.result && result.result !== "success") {
+            this.logger.warn(`门户登出被拒绝：${result.message ?? "未知原因"}`);
+          }
         }
-      }
-      this.session.deleteCookie(SESSION_COOKIE, context.base);
+        this.session.deleteCookie(SESSION_COOKIE, context.base);
+      });
     } catch (error) {
       this.logger.warn(`登出请求失败（本地会话仍会清除）：${formatError(error)}`);
     } finally {
