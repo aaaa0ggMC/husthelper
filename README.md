@@ -220,7 +220,6 @@ client.withRawOcr(async (rawGif: Buffer) => {
 
 详细开发与数据结构文档可参阅：
 
-- [各平台认证逻辑总览 (docs/platform_auth/README.md)](./docs/platform_auth/README.md)
 - [认证流程与原理解析 (docs/auth.md)](./docs/auth.md)
 - [一卡通流水与账户文档 (docs/transactions.md)](./docs/transactions.md)
 - [个人档案解析文档 (docs/profile.md)](./docs/profile.md)

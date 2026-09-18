@@ -12,3 +12,4 @@ privacy.key
 session.json
 audit.jsonl
 ecard_ledger.json
+docs/platform_auth/

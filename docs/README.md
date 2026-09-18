@@ -1,6 +1,5 @@
 # husthelper 文档
 
-- [各平台认证总览 platform_auth](./platform_auth/README.md) — 所有对接平台的认证方式、CAS service 与会话对照
 - [认证 auth](./auth.md) — 登录流程、验证码识别策略、会话与自动续期、account 获取
 - [流水查询 transactions](./transactions.md) — 查询参数、分页、返回对象字段
 - [个人信息 profile](./profile.md) — 校园卡账户信息读取与解析
