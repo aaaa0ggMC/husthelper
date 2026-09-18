@@ -15,7 +15,13 @@
     "net": "node examples/net_cli.ts",
     "example:profile": "node examples/get_profile.ts",
     "example:grades": "node examples/get_grades.ts",
+    "example:exams": "node examples/get_exams.ts",
+    "example:free-rooms": "node examples/get_free_rooms.ts",
     "example:online-devices": "node examples/get_online_devices.ts",
+    "example:service-center": "node examples/get_service_center.ts",
+    "example:exercise": "node examples/get_exercise_engagements.ts",
+    "example:reserves": "node examples/get_reserves.ts",
+    "example:fitness": "node examples/get_fitness.ts",
     "example:custom-ocr": "node examples/custom_ocr.ts",
     "example:export_ledger": "node --experimental-strip-types examples/export_ledger.ts",
     "test": "echo \"Error: no test specified\" && exit 1"

@@ -164,10 +164,13 @@ console.log(`姓名: ${profile.basic?.name}，院系: ${profile.basic?.departmen
 | :--- | :--- | :--- |
 | `hustnet` *(独立入口)* | 校园网门户 (eportal) | 状态探测、静默登录、网络保活、CLI 工具 |
 | `client.ecard` | 校园一卡通 | 流水查询 (`getTransactions`)、分页遍历、账户信息与个人档案 |
-| `client.mhub` | 教务成绩 (HUB) | 学期查询、成绩单抓取 (`getGrades`)、自动加权排除缺考/缓考 |
+| `client.mhub` | 教务成绩 (HUB) | 学期查询、成绩单抓取 (`getGrades`)、学业考试、空闲教室、自动加权排除缺考/缓考 |
 | `client.one` | 数智华中大 (one.hust) | CAS OIDC 委托认证、Bearer JWT 自动换取与续期、门户接口调用 |
 | `client.smartcourse` | 智慧课程平台 | 课程列表、课表日历、课程公告与待办通知 |
-| `client.hkwxy` | 网络中心设备管理 | 查阅当前校园网已在线的物理终端与 MAC 信息 |
+| `client.pejxgl` | 体育教学管理系统 | 学期列表、课外锻炼次数（学期末汇总）、已修/已选体育课 |
+| `client.pecg` | 场馆服务（场馆预约） | 经 petyxy SSO 登录，查询本人预约记录 |
+| `client.petyxy` | 华中大体育 | petyxy SSO，体质测试成绩与学期列表 |
+| `client.hkwxy` | 网络中心设备管理 | 在线物理终端与 MAC 信息、微校园服务大厅服务目录 |
 | `client.wechat` | 微信/企业微信微校园 | 微校园 `wechat_session_id` 获取与应用中心调用 |
 | `client.aggregate` | 跨平台统一聚合层 | 整合上述多源数据，提供 `me` / `schedule` / `balance` 等统一实体 |
 
@@ -219,9 +222,15 @@ client.withRawOcr(async (rawGif: Buffer) => {
 - [一卡通流水与账户文档 (docs/transactions.md)](./docs/transactions.md)
 - [个人档案解析文档 (docs/profile.md)](./docs/profile.md)
 - [成绩查询与绩点算法 (docs/grades.md)](./docs/grades.md)
+- [学业考试查询 (docs/exam.md)](./docs/exam.md)
+- [空闲教室查询 (docs/free-room.md)](./docs/free-room.md)
 - [在线终端与设备查询 (docs/online-devices.md)](./docs/online-devices.md)
+- [微校园服务大厅 (docs/service-center.md)](./docs/service-center.md)
 - [数智华中大 OIDC 规范 (docs/one-hust.md)](./docs/one-hust.md)
 - [智慧课程平台接入 (docs/smartcourse.md)](./docs/smartcourse.md)
+- [体育教学管理：锻炼次数与已修课程 (docs/pejxgl.md)](./docs/pejxgl.md)
+- [场馆服务：预约记录 (docs/pecg.md)](./docs/pecg.md)
+- [华中大体育：体质测试成绩 (docs/petyxy.md)](./docs/petyxy.md)
 - [统一数据聚合器 (docs/aggregate.md)](./docs/aggregate.md)
 
 ---

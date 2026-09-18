@@ -68,20 +68,43 @@ export {
   MHUB_BASE,
   MHUB_SERVICE,
   MHUB_SESSION_COOKIE,
+  EXAM_TYPE,
   MhubApi,
   mhubService,
   mhubUrl,
+} from "./src/mhub.ts";
+export type {
+  ExamUser,
+  CurrentSemester,
+  ExamSemester,
+  ExamSchedule,
+  ExamQuery,
+  ExamPage,
+  TeachingBuilding,
+  CurrentWeek,
+  WeekDay,
+  FreeRoom,
+  FreeRoomResult,
+  FreeRoomQuery,
 } from "./src/mhub.ts";
 export {
   HKWXY_HOST,
   HKWXY_BASE,
   HKWXY_SERVICE,
   HKWXY_SESSION_COOKIE,
+  HKWXY_WP_BASE,
+  HKWXY_WP_SERVICE,
+  HKWXY_SERVICE_CENTER_ID,
   HkwxyApi,
   hkwxyService,
   hkwxyUrl,
+  hkwxyWpService,
+  hkwxyWpUrl,
+  isHkwxyWpLoginRedirect,
   parseOnlineDevices,
+  parseServiceCenter,
 } from "./src/hkwxy.ts";
+export type { ServiceItem, ServiceGroup, ServiceSection } from "./src/hkwxy.ts";
 
 /* -------------------------------- one.hust ------------------------------- */
 export {
@@ -128,6 +151,50 @@ export type {
   MyInfo,
 } from "./src/one.ts";
 export type { ClientRuntime } from "./src/runtime.ts";
+
+/* --------------------------------- pejxgl --------------------------------- */
+export {
+  PEJXGL_HOST,
+  PEJXGL_BASE,
+  PEJXGL_SERVICE,
+  PEJXGL_SESSION_COOKIE,
+  pejxglService,
+  pejxglUrl,
+  isPejxglLoginRedirect,
+  PejxglApi,
+} from "./src/pejxgl.ts";
+export type { PeSemester, ExerciseEngagement, TakenCourse } from "./src/pejxgl.ts";
+
+/* ---------------------------------- pecg ---------------------------------- */
+export {
+  PECG_HOST,
+  PECG_BASE,
+  PECG_SESSION_COOKIE,
+  PECG_LOGINTO,
+  pecgUrl,
+  isPecgLoginResponse,
+  acquirePecgSession,
+  parseReserveList,
+  PecgApi,
+} from "./src/pecg.ts";
+export type { VenueReserve } from "./src/pecg.ts";
+
+/* --------------------------------- petyxy --------------------------------- */
+export {
+  PETYXY_HOST,
+  PETYXY_BASE,
+  PETYXY_LOGIN,
+  PETYXY_DOLOGIN,
+  PETYXY_PFT_INDEX,
+  PETYXY_SESSION_COOKIE,
+  petyxyCasService,
+  petyxyUrl,
+  isPetyxyLoginResponse,
+  acquirePetyxySession,
+  parseFitnessResult,
+  PetyxyApi,
+} from "./src/petyxy.ts";
+export type { FitnessPeriod, FitnessItem, FitnessResult } from "./src/petyxy.ts";
 
 /* -------------------------------- aggregate ------------------------------- */
 export {

@@ -21,6 +21,9 @@ import { HkwxyApi } from "./hkwxy.ts";
 import { WechatApi } from "./wechat.ts";
 import { OneHustApi } from "./one.ts";
 import { SmartCourseApi } from "./smartcourse.ts";
+import { PejxglApi } from "./pejxgl.ts";
+import { PecgApi } from "./pecg.ts";
+import { PetyxyApi } from "./petyxy.ts";
 import { AggregateApi } from "./aggregate.ts";
 import type { ClientRuntime } from "./runtime.ts";
 
@@ -68,6 +71,9 @@ function normalizeAi(options: AiOcrOptions): AIConfig {
  * - `client.wechat`  微校园会话
  * - `client.one`     one.hust OIDC bearer token
  * - `client.smartcourse`  智慧课程平台
+ * - `client.pejxgl`  体育教学管理系统（课外锻炼次数）
+ * - `client.pecg`    场馆服务（预约记录，经 petyxy SSO 登录）
+ * - `client.petyxy`  华中大体育（体质测试成绩，petyxy SSO）
  * - `client.aggregate`    跨平台聚合（不持有 session，只引用上面各命名空间）
  */
 export class HustClient {
@@ -77,6 +83,9 @@ export class HustClient {
   readonly wechat: WechatApi;
   readonly one: OneHustApi;
   readonly smartcourse: SmartCourseApi;
+  readonly pejxgl: PejxglApi;
+  readonly pecg: PecgApi;
+  readonly petyxy: PetyxyApi;
   readonly aggregate: AggregateApi;
 
   private un?: string;
@@ -101,6 +110,9 @@ export class HustClient {
     this.wechat = new WechatApi(runtime);
     this.one = new OneHustApi(runtime);
     this.smartcourse = new SmartCourseApi(runtime);
+    this.pejxgl = new PejxglApi(runtime);
+    this.pecg = new PecgApi(runtime);
+    this.petyxy = new PetyxyApi(runtime);
     this.aggregate = new AggregateApi(this);
 
     if (options.account) this.ecard.withAccount(options.account);
