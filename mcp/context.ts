@@ -5,7 +5,7 @@
 
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
-import hust, { type HustClient, type Logger } from "../index.ts";
+import hust, { type HustClient, type Logger } from "hustpass";
 
 export const MCP_DIR = fileURLToPath(new URL(".", import.meta.url));
 

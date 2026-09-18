@@ -1,18 +1,14 @@
 {
-  "name": "husthelper",
-  "version": "1.0.0",
-  "description": "HUST 统一身份认证 + 一卡通流水查询的 Node.js 封装",
+  "name": "husthelper-workspace",
+  "version": "0.0.0",
+  "private": true,
   "type": "module",
-  "exports": {
-    ".": "./index.ts",
-    "./hustnet": "./hustnet.ts"
-  },
-  "bin": {
-    "hustnet": "./examples/net_cli.ts"
-  },
+  "description": "husthelper 单仓多包：hustcore / hustnet / hustpass / mcp",
   "scripts": {
     "start": "node examples/get_costs.ts",
-    "net": "node examples/net_cli.ts",
+    "net": "node --experimental-strip-types hustnet/bin/hustnet.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json && pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
     "example:profile": "node examples/get_profile.ts",
     "example:grades": "node examples/get_grades.ts",
     "example:exams": "node examples/get_exams.ts",
@@ -27,15 +23,14 @@
     "example:custom-ocr": "node examples/custom_ocr.ts",
     "example:login-qrcode": "node examples/login_qrcode.ts",
     "example:electricity": "node examples/get_electricity.ts",
-    "example:export_ledger": "node --experimental-strip-types examples/export_ledger.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "example:export_ledger": "node --experimental-strip-types examples/export_ledger.ts"
   },
   "keywords": [
     "hust",
     "cas",
+    "eportal",
     "ecard"
   ],
-  "author": "",
   "license": "MIT",
   "devEngines": {
     "packageManager": {
@@ -44,16 +39,10 @@
       "onFail": "download"
     }
   },
-  "dependencies": {
-    "axios": "^1.20.0",
-    "fast-xml-parser": "^4.5.7",
-    "gifuct-js": "^2.1.2",
-    "jpeg-js": "^0.4.4",
-    "sm-crypto": "^0.5.7"
-  },
   "devDependencies": {
+    "@types/node": "^22.0.0",
     "@types/qrcode": "^1.5.6",
-    "@types/sm-crypto": "^0.3.4",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "typescript": "^5.7.0"
   }
 }

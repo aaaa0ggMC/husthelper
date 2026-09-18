@@ -1,0 +1,28 @@
+{
+  "name": "hustnet",
+  "version": "1.0.0",
+  "description": "华中科技大学校园网（eportal）认证 SDK 与 CLI",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.ts",
+      "default": "./index.ts"
+    }
+  },
+  "types": "./index.ts",
+  "bin": {
+    "hustnet": "./bin/hustnet.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "start": "node --experimental-strip-types ./bin/hustnet.ts"
+  },
+  "dependencies": {
+    "hustcore": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  },
+  "license": "MIT"
+}

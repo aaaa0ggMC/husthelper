@@ -18,7 +18,7 @@ import {
 } from "./context.ts";
 import { appendAudit } from "./audit.ts";
 import type { Privacy } from "./privacy.ts";
-import type { Transaction } from "../src/ecard.ts";
+import type { Transaction } from "hustpass";
 
 /** ledger 中没有 ecard 记录时的默认回溯天数（可用 HUST_LEDGER_SYNC_SINCE 覆盖起始日期） */
 const DEFAULT_LOOKBACK_DAYS = 365;

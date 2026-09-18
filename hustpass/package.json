@@ -1,0 +1,30 @@
+{
+  "name": "hustpass",
+  "version": "1.0.0",
+  "description": "华中科技大学统一身份认证（CAS）与下游业务 SDK",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.ts",
+      "default": "./index.ts"
+    }
+  },
+  "types": "./index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "hustcore": "workspace:*",
+    "axios": "^1.20.0",
+    "fast-xml-parser": "^4.5.7",
+    "gifuct-js": "^2.1.2",
+    "jpeg-js": "^0.4.4",
+    "sm-crypto": "^0.5.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/sm-crypto": "^0.3.4",
+    "typescript": "^5.7.0"
+  },
+  "license": "MIT"
+}

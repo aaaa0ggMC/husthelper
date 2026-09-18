@@ -1,4 +1,4 @@
-import hust from "../index.ts";
+import hust from "../hustpass/index.ts";
 
 declare function yourOcr(gif: Buffer): Promise<string>;
 

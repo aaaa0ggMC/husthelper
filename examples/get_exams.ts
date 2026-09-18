@@ -1,4 +1,4 @@
-import hust, { EXAM_TYPE } from "../index.ts";
+import hust, { EXAM_TYPE } from "../hustpass/index.ts";
 import { loadConfig } from "./config.ts";
 
 const config = loadConfig();

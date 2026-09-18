@@ -23,6 +23,7 @@
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "hustpass": "workspace:*",
     "zod": "^3.25.0"
   },
   "devDependencies": {

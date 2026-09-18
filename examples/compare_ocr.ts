@@ -1,10 +1,10 @@
 import fs from "node:fs";
-import { Session } from "../src/http.ts";
-import { fetchCaptchaGif, gifToJpeg } from "../src/captcha.ts";
-import { recognizeStdCharPipe } from "../src/stdchar-pipe.ts";
-import { recognizeCaptcha } from "../src/openai.ts";
-import { CAS_CODE, casLoginUrl } from "../src/cas.ts";
-import { ECARD_SERVICE } from "../src/ecard.ts";
+import { Session } from "../hustpass/index.ts";
+import { fetchCaptchaGif, gifToJpeg } from "../hustpass/index.ts";
+import { recognizeStdCharPipe } from "../hustpass/index.ts";
+import { recognizeCaptcha } from "../hustpass/index.ts";
+import { CAS_CODE, casLoginUrl } from "../hustpass/index.ts";
+import { ECARD_SERVICE } from "../hustpass/index.ts";
 import { loadConfig } from "./config.ts";
 
 const config = loadConfig();

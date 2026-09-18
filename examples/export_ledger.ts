@@ -1,5 +1,5 @@
 import fs from "node:fs/promises";
-import hust from "../index.ts";
+import hust from "../hustpass/index.ts";
 import { loadConfig } from "./config.ts";
 
 const config = loadConfig();

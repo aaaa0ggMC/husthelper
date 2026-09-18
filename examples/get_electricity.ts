@@ -1,4 +1,4 @@
-import hust from "../index.ts";
+import hust from "../hustpass/index.ts";
 import { loadConfig } from "./config.ts";
 
 /**

@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { AIConfig } from "../index.ts";
+import type { AIConfig } from "../hustpass/index.ts";
 
 export interface ExampleConfig {
   un: string;

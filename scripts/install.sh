@@ -24,7 +24,7 @@ else
 fi
 
 # 覆盖前：若目标已存在且非本工具生成，先备份，避免误覆盖
-if [ -e "${TARGET_BIN}" ] && ! grep -q "examples/net_cli.ts" "${TARGET_BIN}" 2>/dev/null; then
+if [ -e "${TARGET_BIN}" ] && ! grep -q "hustnet/bin/hustnet.ts" "${TARGET_BIN}" 2>/dev/null; then
   BACKUP="${TARGET_BIN}.bak.$(date +%s)"
   cp -p -- "${TARGET_BIN}" "${BACKUP}"
   echo "注意: ${TARGET_BIN} 已存在且非本工具生成，已备份到 ${BACKUP}"
@@ -39,7 +39,7 @@ cat <<EOF > "${TARGET_BIN}"
 set -euo pipefail
 
 REPO_DIR="${REPO_DIR}"
-ENTRY="\${REPO_DIR}/examples/net_cli.ts"
+ENTRY="\${REPO_DIR}/hustnet/bin/hustnet.ts"
 
 CONFIG_ARGS=()
 HAS_CONFIG=0

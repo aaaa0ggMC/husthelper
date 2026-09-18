@@ -55,7 +55,7 @@
     - `/zxqstudentcourse/zxqyxcourses.action` —— 已修课程
     - DWR：`ZxqCoursesService.findDbTime`（服务器时间）、
       `AuthPermissionService.selectXkqx` / `getYxCourses` / `findKtByKcmcAndXqh3`
-  - 待办：新增 `src/zxq.ts`（`wsxkService` + `ZxqApi`），接入 `client.zxq`、`index.ts` 导出、example 与 `docs/zxq.md`；
+  - 待办：新增 `hustpass/src/zxq.ts`（`wsxkService` + `ZxqApi`），接入 `client.zxq`、`hustpass/index.ts` 导出、example 与 `docs/academic/zxq.md`；
     解析策略以真实 HTML 表格字段为准（课程名 / 课程号 / 课堂号 / 教师 / 时间 / 地点 / 容量 / 已选 / 余量）。
 
 - [ ] **hkwxy 的 `tp_up` / `tp_wp` 仍会各触发一次续期**：两者会话 cookie 路径已隔离（`/tp_up`、`/tp_wp`），
