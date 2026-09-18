@@ -1,309 +1,262 @@
 # husthelper
 
-> ## ⚠️ 免责声明（务必先读）
+<p align="center">
+  <strong>专为华中科技大学（HUST）打造的现代化认证套件与校园网络工具箱</strong>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Node.js-22%2B-brightgreen?logo=node.js" alt="Node.js 22+" />
+  <img src="https://img.shields.io/badge/TypeScript-Native-blue?logo=typescript" alt="TypeScript Native" />
+  <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License MIT" />
+</p>
+
+---
+
+`husthelper` 核心聚焦于解决华科开发者最常面临的身份认证与网络接入痛点，提供两大核心 SDK：
+
+1. 🌐 **校园网登录 SDK (`husthelper/hustnet`)**：校园网门户（eportal）网页认证、掉线重连、心跳保活、网卡绑定及开箱即用的 CLI 工具。
+2. 🔑 **校园 CAS 统一身份认证 SDK (`husthelper`)**：模拟登录、离线/AI 验证码识别、CASTGC 免密自动续期，一站式对接一卡通、数智华中大 (one.hust)、成绩、课表等下游平台。
+
+---
+
+> [!IMPORTANT]
+> ### ⚠️ 安全与合规声明（使用前必读）
 >
-> - **侵权即删**：本项目仅用于技术学习与交流，无意侵犯任何单位或个人的合法权益。若本项目的内容（代码、文档、验证码模板等）**侵犯了您的权益，请通过 Issue 或邮件（[feeback@yslwd.eu.org](mailto:feeback@yslwd.eu.org)）联系，我们将在收到通知后 24 小时内第一时间删除相关内容**。
-> - **合规使用**：本项目用于模拟登录华中科技大学统一身份认证系统并查询个人一卡通数据。请**仅用于查询本人数据**，遵守学校相关管理规定，**严禁**用于批量抓取、攻击、越权访问或任何未经授权的用途。因使用本项目产生的一切后果由使用者自行承担。
-> - **保管好你的账号密码**：请务必妥善保管你的 `un`（学号）与 `pwd`（密码）。**不要把 `config.json`、密码、API Key 提交到公开仓库、粘贴到聊天或截图分享**；本项目已在 `.gitignore` 中忽略 `config.json`，但请你在 `git add` 前务必自行确认，一旦泄露请立刻改密。
-> - **第三方风险**：若使用 AI 识别，验证码图片会被发送到你配置的第三方接口，请自行评估其可信度。
-> - 使用本项目即表示你已阅读并同意本声明。
+> - **合法合规与数据边界**：本项目仅用于技术学习、个人研究及**查询本人数据**。请严格遵守学校相关管理规定与网络安全法规，**严禁用于批量抓取、暴力破解、越权访问、网络攻击或任何未经授权的用途**。因违规使用造成的一切后果由使用者自行承担。
+> - **凭据安全准则**：账号学号与密码属于个人敏感资产。**严禁**将包含明文凭据的 `config.json`、`.hust-session.json` 或 API Key 提交到公开仓库、聊天群或截图分享。会话持久化文件默认以 `0600` 权限安全保存，项目已在 `.gitignore` 中默认忽略敏感配置文件。
+> - **只读原则（Read-Only）**：本库封装的所有业务接口均为**只读查询**（查询余额、流水、成绩、课表、通知、在线设备等），**不提供且不背书任何写入、修改、选退课、提交作业等破坏性操作**。
+> - **第三方隐私风险**：若选用 AI 验证码识别，验证码图片将被发送到您配置的第三方 OpenAI 兼容端点，请自行评估接口提供商的安全性与隐私政策。
+> - **侵权即删**：若本项目任何内容（代码、文档等）侵犯了您的合法权益，请通过 Issue 或邮件（[feeback@yslwd.eu.org](mailto:feeback@yslwd.eu.org)）联系，我们将在收到通知后 24 小时内第一时间处理或删除。
 
-华中科技大学统一身份认证（CAS）模拟登录 + 一卡通流水查询的 Node.js 封装。
+---
 
-- 自动处理 HUST CAS 登录：RSA 加密、验证码识别、ticket 兑换 `JSESSIONID`
-- 验证码识别可插拔：AI（OpenAI 兼容接口）/ 内置离线模板匹配 / 完全自定义
-- `JSESSIONID` 自动续期：优先用 `CASTGC` 免密重登，失效才回退完整登录
-- 一卡通流水查询与自动翻页
-- 校园卡个人信息（profile）读取与解析
-- 成绩查询（mhub/HUB），含加权成绩修正（排除缓考/缺考等）
-- 在线设备查询（hkwxy）
-- 会话持久化：自动保存/恢复 `CASTGC` 等 cookie，失效自动续期
-- m.hust.edu.cn（微校园）wechat 会话获取与自动重连
-- one.hust（数智华中大）OIDC 委托认证，获取 bearer token（JWT），过期自动重换
-- 智慧课程（smartcourse）cookie 认证，课表 / 通知 / 课程 / 邮件
-- 跨平台聚合（`client.aggregate`）：schema 驱动，多来源并发合并、按优先级去重回填、失败降级
-- 校园网认证（`hustnet`，与 CAS 并列的独立入口）：劫持探测、`JSESSIONID` 自动刷新、运行时 RSA 公钥、详细错误分层、CLI
-- 日志可外部注入，默认输出到 console
+## 快速导航
 
-📖 详细文档见 [`docs/`](./docs/README.md)：[认证 auth](./docs/auth.md) · [流水查询](./docs/transactions.md) · [个人信息 profile](./docs/profile.md) · [成绩查询](./docs/grades.md) · [在线设备](./docs/online-devices.md) · [one.hust](./docs/one-hust.md) · [智慧课程 smartcourse](./docs/smartcourse.md) · [聚合 aggregate](./docs/aggregate.md) · [校园网认证 hustnet](./docs/hustnet.md)
+- [环境要求与安装](#环境要求与安装)
+- [核心 SDK 快速上手](#核心-sdk-快速上手)
+  - [1. 校园网登录 SDK (hustnet)](#1-校园网登录-sdk-hustnethustnet)
+  - [2. 统一身份认证 CAS SDK (husthelper)](#2-统一身份认证-cas-sdk-husthelper)
+- [功能全景与架构设计](#功能全景与架构设计)
+- [验证码识别方案](#验证码识别方案任选其一)
+- [会话管理与持久化](#会话管理与自动续期)
+- [下游业务模块](#下游业务模块)
+- [校园网命令行工具 (CLI)](#校园网命令行工具-cli)
+- [生态与扩展 (MCP)](#生态与扩展-mcp)
+- [已知限制 (MFA)](#已知限制企业微信-mfa-二次验证)
+- [开源协议](#开源协议)
 
-## 环境要求
+---
 
-Node.js 22+（依赖内置 TypeScript 类型剥离直接运行 `.ts`；22.x 需 `--experimental-strip-types`，23+ 默认开启）。
+## 环境要求与安装
 
-## 安装
+依赖 **Node.js 22+**（内置支持直接运行 TypeScript；Node 22 需加上 `--experimental-strip-types`，Node 23+ 默认启用）。
 
 ```bash
+# 使用 pnpm（推荐）
 pnpm add husthelper
-# 或
+
+# 或使用 npm
 npm i husthelper
 ```
 
-## 快速开始
+---
 
-```ts
-import hust from "husthelper";
+## 核心 SDK 快速上手
 
-const client = hust
-  .auth({ user_name: "U2025xxxxx", password: "your-password" })
-  .withAiOcr({
-    baseURL: "https://api.openai.com/v1",
-    apiKey: "sk-...",
-    model: "gpt-4o-mini",
-  });
+### 1. 校园网登录 SDK (`husthelper/hustnet`)
 
-const page = await client.ecard.getTransactions({ page: 1 });
-console.log(page.records, page.total, page.nextPage);
-
-for await (const record of client.ecard.iterateTransactions({})) {
-  console.log(record.occtime, record.mercname, record.sign_tranamt);
-}
-```
-
-`account` 会**自动获取**（登录后从 `Queryurl.html` 里解析），通常无需填写；也可用 `auth({ account })` 或 `client.ecard.getAccount()` 显式指定/读取。它不是学号。
-
-## 客户端 API：按应用分命名空间
-
-`client` 顶层是配置/会话入口（`.auth()` / `.withXxx()` / `.persistent()` / `.renew()`），
-各业务按受 CAS 保护的应用分组：
-
-| 命名空间 | 说明 |
-| --- | --- |
-| `client.ecard` | 一卡通：`getTransactions` / `iterateTransactions` / `getProfile` / `getAccount` / `sessionId` |
-| `client.mhub` | 成绩：`getTerms` / `getGrades` / `request` / `sessionId` |
-| `client.hkwxy` | 在线设备：`getOnlineDevices` / `request` / `sessionId` |
-| `client.wechat` | 微校园：`getSession` / `getAppsCenter` / `request` / `sessionId` |
-| `client.one` | one.hust：`getAccessToken` / `accessToken` / `invalidate` / `request` |
-| `client.smartcourse` | 智慧课程平台：`getLoginUser` / `getMyLessons` / `getCourseList` / `getNoticeList` / `request` / `sessionId` / `cookies` |
-| `client.aggregate` | 跨平台聚合：`me` / `balance` / `notifications` / `documents` / `courses` / `schedule` / `today` / `activities` / `email` / `term` / `grades` / `devices` / `transactions` / `overview` / `load` |
-
-任一应用会话失效时，都会自动用 `CASTGC` 免密换票（必要时完整登录）并重放请求。
-
-## 验证码识别方式（任选其一）
-
-```ts
-// 1. AI（OpenAI 兼容的 chat/completions，走 image_url）
-.withAiOcr({ baseURL, apiKey, model, maxTokens: 1024, timeout: 60000, onImage: (jpg) => {} })
-
-// 2. 内置离线模板匹配（无需联网；实现见 stdchar/，LGPLv3，子进程调用）
-.withStdChar()
-
-// 3. 拿到合成后的 JPG 自己处理
-.withParsedOcr(async (jpg: Buffer) => "1234")
-
-// 4. 拿到原始 GIF 自己处理
-.withRawOcr(async (gif: Buffer) => "1234")
-```
-
-## 流水查询
-
-```ts
-interface TransactionQuery {
-  account?: string;
-  page?: number;
-  dateStatus?: number; // 默认 2
-  typeStatus?: number; // 默认 1
-}
-
-const page = await client.ecard.getTransactions({ page: 1 });
-// { records, total, pageSize, nextPage }
-
-const account = await client.ecard.getAccount(); // 自动获取一卡通 account
-
-for await (const tx of client.ecard.iterateTransactions({})) {
-  // 内部自动按 nextPage 翻页
-}
-```
-
-金额字段（`tranamt`、`sign_tranamt`、`cardbal`、`ebagamt`、`bank_disamt`）单位是**分**，除以 100 为元；`sign_tranamt` 带符号。
-
-## 会话与自动续期
-
-- 登录后客户端持有 CAS 的 `CASTGC`，以及各应用自己的会话 cookie（ecard `JSESSIONID`、`wechat_session_id` 等）。
-- 任一应用的请求被重定向回 `/cas/login` 时自动处理：先用 `CASTGC` 免密换该应用的 ticket，失败再回退到完整登录（验证码 + 密码），然后重放请求。
-- 可手动触发：`await client.renew()`；查看会话状态：`client.ecard.sessionId` / `client.cookiesFor(host)`。
-
-## one.hust（数智华中大）
-
-`client.one` 通过 CAS 的 OAuth2/OIDC 委托流程换取 one.hust 的 bearer token（OIDC JWT，约 2 小时有效；响应里的 `expiresIn` 为 7200）：
-
-```ts
-const token = await client.one.getAccessToken(); // 自动换取并缓存，过期自动重换
-client.one.accessToken;                          // 同步读取缓存（未过期才有值）
-client.one.invalidate();                         // 主动作废，下次重新换取
-
-// 自带 Authorization: Bearer <token>，401 时自动重换一次
-const res = await client.one.request("/<api-path>");
-```
-
-token 以 `accessToken` cookie 的形式存进同一个 cookie jar，因此会被 `.persistent()` **一并缓存到会话文件**，下次运行直接复用（仍受 JWT 过期时间约束）。详见 [docs/one-hust.md](./docs/one-hust.md)。
-
-## 聚合（client.aggregate）
-
-`client.aggregate` 把各子平台的信息按「资源」聚合，尽量给出最全面的结果。它**不持有任何 session/cookie/凭据**，只引用 `client.one` / `client.smartcourse` / `client.ecard` / `client.mhub` / `client.hkwxy`；读取某属性时按内置 schema **并发**调用多个来源（`Promise.allSettled`），优先高优先级来源，重复项去重、缺失字段用次优来源回填，**仅当全部来源失败/无数据时才抛 `AggregateError`**。
-
-```ts
-const me = await client.aggregate.me;
-const courses = await client.aggregate.courses;
-// { enrolled, teaching, online, all, sources, raw }
-
-const ov = await client.aggregate.overview(); // 并发取多资源，永不 reject
-// 失败的资源在 ov.errors: [{ resource, message }]
-
-await client.aggregate.load("activities", { beginDate, endDate });
-await client.aggregate.notificationsAll({ limit: 200 }); // one 门户全量遍历
-await client.aggregate.transactionsIn({ page: 2 });
-```
-
-带参数/遍历的便捷方法：`activitiesIn` / `notificationsIn` / `documentsIn` / `transactionsIn` / `gradesOf` / `notificationsAll` / `documentsAll`。每个列表项带 `source`（来源标签）与 `raw`（原始对象），对象型资源带 `sources: string[]` 与 `raw`。详见 [docs/aggregate.md](./docs/aggregate.md)。
-
-## 校园网认证（hustnet）
-
-与 CAS 完全独立、与 `hust` 并列的第二个入口，用于登录校园网门户（eportal）：
+专用于华科校园网门户（eportal）Web 认证。自动处理重定向劫持检测、动态 RSA 密钥获取、状态查询与离线重连。
 
 ```ts
 import hustnet from "husthelper/hustnet";
 
+// 初始化校园网认证客户端
 const client = hustnet
-  .auth({ username: "U2025xxxxx", password: "your-password" })
-  .persistent(".hustnet-session.json");
+  .auth({
+    username: "U2025xxxxx",
+    password: "your-password",
+  })
+  .persistent(".hustnet-session.json"); // 可选：持久化存储网关会话
 
-const info = await client.getMyInfo(); // 未认证会自动登录
-console.log(info.userName, info.userIp, info.accountFee, info.userPackage);
+// 查询联网状态（若当前未通过认证，会自动触发登录认证流程）
+const info = await client.getMyInfo();
+console.log(`在线用户: ${info.userName} | IP: ${info.userIp} | 套餐: ${info.userPackage}`);
+
+// 主动登出
+// await client.logout();
 ```
 
-- 未认证时先探测门户劫持跳转（加密 query 无法自行签发）；已联网不被劫持时按「已在线」处理。
-- `JSESSIONID` 自动刷新；RSA 公钥指数/模数运行时从 `pageInfo` 动态获取，不硬编码。
-- 全部失败抛 `NetError` 子类，带 `phase` / `code` / `retryable` / 原始响应，便于按类型处理。
-- 支持多网卡选卡（`localAddress`）与自定义 `NetTransport`，为「指定网卡发送 MAC」预留扩展点。
-- 自带 CLI：`pnpm net status|info|login|logout|keepalive`（配置 `hustnet.json`）。
+*详细指南参见 [docs/hustnet.md](./docs/hustnet.md)*
 
-详见 [docs/hustnet.md](./docs/hustnet.md)。
+---
 
-## 会话持久化
+### 2. 统一身份认证 CAS SDK (`husthelper`)
+
+专用于 `pass.hust.edu.cn` 单点登录。自动处理 RSA 加密提交、验证码拉取与识别、CASTGC 免密凭据维护。在此基础上开箱即用访问一卡通、HUB 成绩、数智华中大等系统。
 
 ```ts
+import hust from "husthelper";
+
+// 初始化 CAS 客户端（支持离线模板匹配或 AI 识图，任选其一）
 const client = hust
-  .auth({ user_name, password })
-  .withStdChar()
-  .persistent(".hust-session.json", { maxAgeMs: 2 * 60 * 60 * 1000 });
+  .auth({
+    user_name: "U2025xxxxx",
+    password: "your-password",
+  })
+  .withStdChar() // 推荐：使用内置离线模板匹配，无需外部网络调用
+  .persistent(".hust-session.json"); // 持久化会话：下次直接免密访问
+
+// 示例：查询一卡通流水记录
+const page = await client.ecard.getTransactions({ page: 1 });
+console.log(`一卡通总记录数: ${page.total} 条`);
+
+// 异步迭代器自动分页
+for await (const record of client.ecard.iterateTransactions({})) {
+  console.log(`${record.occtime} | ${record.mercname} | 消费: ${record.sign_tranamt / 100} 元`);
+}
+
+// 示例：获取个人基本档案
+const profile = await client.ecard.getProfile();
+console.log(`姓名: ${profile.basic?.name}，院系: ${profile.basic?.department}`);
 ```
 
-- 自动保存 `CASTGC`、ecard 的 `JSESSIONID`、`wechat_session_id` 等 cookie（含 `expires`/`path`；服务端未给 `expires` 的会话 cookie 标记为 `session: true`）。
-- 下次运行自动恢复，**无需重新登录/验证码**；被服务端判定失效时自动续期。
-- `maxAgeMs`（可选）：若距上次保存超过该时长，恢复后**主动续期一次**（先用 `CASTGC` 免密，失败再完整登录），避免「先失败再续期」的往返。
-- `client.persistedAt` 返回最近保存时间（ISO 字符串）。
-- 文件含会话凭据，以 `0600` 权限写入，已加入 `.gitignore`，**请勿提交或分享**。
+*详细指南参见 [docs/auth.md](./docs/auth.md) 与各业务子文档*
 
-## 已知限制：企业微信 MFA（二次验证）暂未处理
+---
 
-> ⚠️ 本项目**尚未处理企业微信 MFA / 二次验证**。因为作者目前还未遇到该流程，故未实现。若你的账号登录时被要求 MFA，脚本会失败。
+## 功能全景与架构设计
 
-**规避办法**：先用**浏览器**在同一网络/设备上完整登录一次（让系统认定你的 MAC/IP 等为可信设备），完成 MFA；之后再用本脚本登录，通常就不会再触发 MFA。若仍触发，则当前版本无法自动通过。
+整个库围绕两个独立又互为补充的模块构建：
 
-## 日志
+```
+                        ┌──────────────────────────────────────────────┐
+                        │                 husthelper                   │
+                        └───────┬──────────────────────────────┬───────┘
+                                │                              │
+                ┌───────────────▼──────────────┐ ┌─────────────▼─────────────┐
+                │   校园网 SDK (hustnet)       │ │     校园 CAS SDK (hust)     │
+                ├──────────────────────────────┤ ├───────────────────────────┤
+                │ • 门户劫持探测与重定向处理     │ │ • RSA 动态加密与凭据维护   │
+                │ • 动态 RSA 加密认证          │ │ • 多策略验证码（离线/AI） │
+                │ • 网络心跳与自动掉线重连      │ │ • CASTGC 票据免密自动续期 │
+                │ • 多网卡绑定支持 (IP/MAC)     │ │ • 统一 CookieJar 会话持久化│
+                │ • 独立 CLI 命令行工具        │ └─────────────┬─────────────┘
+                └──────────────────────────────┘               │
+                                   ┌───────────────────────────┴───────────────────────────┐
+                                   │                                                       │
+                           ┌───────▼────────┐  ┌────────────────▼───────────────┐  ┌───────▼────────┐
+                           │   生活与资产   │  │           教务与学术           │  │   跨平台聚合   │
+                           ├────────────────┤  ├────────────────────────────────┤  ├────────────────┤
+                           │ • 一卡通流水   │  │ • HUB/mhub 成绩与加权修正      │  │ • 多来源并发   │
+                           │ • 卡片个人信息 │  │ • 智慧课程 (课表/通知/作业)    │  │ • 字段补全降级 │
+                           │ • 在线设备管理 │  │ • one.hust 数智门户 (OIDC JWT) │  │ • Model Context│
+                           │ • 微校园会话   │  │                                │  │   Protocol(MCP)│
+                           └────────────────┘  └────────────────────────────────┘  └────────────────┘
+```
 
-默认 `console`。可外部注入：
+### 客户端命名空间映射
+
+| 命名空间 | 对应系统 / 功能 | 核心能力 |
+| :--- | :--- | :--- |
+| `hustnet` *(独立入口)* | 校园网门户 (eportal) | 状态探测、静默登录、网络保活、CLI 工具 |
+| `client.ecard` | 校园一卡通 | 流水查询 (`getTransactions`)、分页遍历、账户信息与个人档案 |
+| `client.mhub` | 教务成绩 (HUB) | 学期查询、成绩单抓取 (`getGrades`)、自动加权排除缺考/缓考 |
+| `client.one` | 数智华中大 (one.hust) | CAS OIDC 委托认证、Bearer JWT 自动换取与续期、门户接口调用 |
+| `client.smartcourse` | 智慧课程平台 | 课程列表、课表日历、课程公告与待办通知 |
+| `client.hkwxy` | 网络中心设备管理 | 查阅当前校园网已在线的物理终端与 MAC 信息 |
+| `client.wechat` | 微信/企业微信微校园 | 微校园 `wechat_session_id` 获取与应用中心调用 |
+| `client.aggregate` | 跨平台统一聚合层 | 整合上述多源数据，提供 `me` / `schedule` / `balance` 等统一实体 |
+
+---
+
+## 验证码识别方案（任选其一）
+
+CAS 登录常带有干扰型字符验证码。本库支持灵活可插拔的识别方案：
 
 ```ts
-import type { Logger } from "husthelper";
+// 方案 1：【推荐】内置离线模板匹配（无需联网、零额外依赖，通过独立子进程管道调用）
+client.withStdChar();
 
-client.withLogger((msg) => sink(msg));         // 所有级别走同一函数
-client.withLogger({ info: console.log });       // 部分级别
-client.withLogger({ info: () => {} });          // 静音
+// 方案 2：AI 视觉大模型（兼容 OpenAI、DeepSeek、Local AI 等 chat/completions 格式）
+client.withAiOcr({
+  baseURL: "https://api.openai.com/v1",
+  apiKey: "sk-...",
+  model: "gpt-4o-mini",
+  timeout: 60000,
+});
+
+// 方案 3：拿到中值算法合成后的 JPG 图片流自己处理（接入自建 ddddocr 或自有模型）
+client.withParsedOcr(async (jpgBuffer: Buffer) => {
+  return await myCustomOcr(jpgBuffer);
+});
+
+// 方案 4：直接获取原始动图 GIF Buffer 自定义处理
+client.withRawOcr(async (rawGif: Buffer) => {
+  return await myGifSolver(rawGif);
+});
 ```
 
-## 示例
+---
 
-`config.json` 由示例自己读取，框架本身不读配置文件：
+## 会话管理与自动续期
 
-> ⚠️ **`config.json` 内含你的学号、密码和 API Key，切勿提交到任何公开仓库或分享给他人。** 本项目已将其加入 `.gitignore`。
+1. **凭据安全存储**：
+   通过 `.persistent(filePath, { maxAgeMs })` 可将 CAS 的 `CASTGC` 及各应用的 `JSESSIONID` / `accessToken` 统一加密保存。下次程序启动时直接复用，**无需再次输入密码与验证码**。
+2. **免密无感续期**：
+   当某应用会话过期收到 302 重定向到 `/cas/login` 时，客户端会自动使用持有的 `CASTGC` 重新免密换取 service ticket 并重新发起请求；仅当 `CASTGC` 完全失效时，才会优雅回退至完整登录流程。
 
-```jsonc
-// config.json
-{
-  "un": "U2025xxxxx",
-  "pwd": "your-password",
-  "account": "",
-  "openai": {
-    "baseURL": "http://127.0.0.1:1145/v1",
-    "apiKey": "sk-...",
-    "model": "gpt-4o-mini"
-  },
-  "saveDebugImage": true
-}
-```
+---
+
+## 下游业务模块
+
+详细开发与数据结构文档可参阅：
+
+- 🔑 [认证流程与原理解析 (docs/auth.md)](./docs/auth.md)
+- 💳 [一卡通流水与账户文档 (docs/transactions.md)](./docs/transactions.md)
+- 👤 [个人档案解析文档 (docs/profile.md)](./docs/profile.md)
+- 📊 [成绩查询与绩点算法 (docs/grades.md)](./docs/grades.md)
+- 📱 [在线终端与设备查询 (docs/online-devices.md)](./docs/online-devices.md)
+- 🌐 [数智华中大 OIDC 规范 (docs/one-hust.md)](./docs/one-hust.md)
+- 📚 [智慧课程平台接入 (docs/smartcourse.md)](./docs/smartcourse.md)
+- 🧩 [统一数据聚合器 (docs/aggregate.md)](./docs/aggregate.md)
+
+---
+
+## 校园网命令行工具 (CLI)
+
+本项目为校园网模块配备了便捷的 CLI 工具，方便在路由器、Termux 或无图形界面的服务器上快速使用。
 
 ```bash
+# 复制配置文件模板
 cp config.example.json config.json
-pnpm start                      # examples/get_costs.ts
-pnpm run example:export_ledger  # 导出完整历史校园卡账单，适配 ledger-mcp-termux
-node examples/compare_ocr.ts 12 # 对比 AI 与离线模板匹配
+
+# 快捷命令（配置 hustnet.json 或 config.json 凭据）
+pnpm net status      # 查询当前联网状态与 IP
+pnpm net login       # 执行登录认证
+pnpm net logout      # 断开当前连接
+pnpm net info        # 查询账户余额与资费套餐
+pnpm net keepalive   # 守护模式：断网自动探测与重连
 ```
 
-## 目录结构
+---
 
-```
-index.ts                 默认导出 { auth }
-src/client.ts            HustClient：链式配置 + 命名空间装配 + 会话/持久化
-src/runtime.ts           命名空间 API 依赖的内部能力接口
-src/cas.ts               CAS 门面：登录 / 换票 / CASTGC 续期 / CasService 抽象
-src/ecard.ts             一卡通：CasService 声明 + EcardApi + 流水解析
-src/mhub.ts              成绩：CasService 声明 + MhubApi
-src/hkwxy.ts             在线设备：CasService 声明 + HkwxyApi + 解析
-src/wechat.ts            微校园：CasService 声明 + WechatApi
-src/one.ts               one.hust：OIDC 委托认证 + OneHustApi + JWT 工具
-src/smartcourse.ts       智慧课程：CAS OAuth2 cookie 认证 + 课程/通知/课表解析
-src/aggregate.ts         跨平台聚合：schema 驱动 + 多来源并发合并
-src/captcha.ts           GIF 解码、多帧时域中位数合成 JPG
-src/openai.ts            OpenAI 兼容的验证码识别
-src/stdchar-pipe.ts      子进程调用 stdchar（MIT）
-src/http.ts              Session：axios + 分域名 cookie jar
-stdchar/                 离线模板匹配识别（LGPL-3.0，独立子进程）
-examples/                使用示例
-```
+## 生态与扩展 (MCP)
 
-### 架构：CAS 是唯一门面，其余都是「应用」
+本项目内置符合 **Model Context Protocol (MCP)** 标准的服务端（位于 [`mcp/`](./mcp/README.md)）。
+可直接为 Claude Desktop、Cursor 等大模型客户端注入统一的华中大校园助手上下文能力。支持 `count` / `redacted`（默认脱敏）/ `raw` 三级隐私分层。
 
-`pass.hust.edu.cn`（CAS）是 HUST 登录的唯一入口，登录后签发长期票据 `CASTGC`。
-一卡通（ecard）、成绩（mhub）、在线设备（hkwxy）、微校园（wechat）等都是受 CAS
-保护的**应用**：各自用自己的入口 URL 作为 CAS 的 `service` 参数换 ticket，再兑换
-自己的会话 cookie（多为 `JSESSIONID`）。one.hust / smartcourse 稍特殊：它们的 `service`
-是 CAS 的 OAuth2 authorize 端点，走委托流程——one.hust 换到 OIDC JWT（见
-[docs/one-hust.md](./docs/one-hust.md)），smartcourse 则在下发一堆 `.hust.edu.cn` 会话 cookie。
+---
 
-- 所有应用共用同一个 `Session`（分域名 cookie jar）和同一个 `CASTGC`。
-- 获取任意应用会话都是同一个流程：`CASTGC` 免密换票 → 兑换应用会话；`CASTGC`
-  失效才回退完整登录（RSA + 验证码）。
-- 各应用 API 只依赖 `ClientRuntime`（`src/runtime.ts`），因此可以独立成文件；
-  新增普通应用只需声明一个 `CasService`（见 `src/ecard.ts`）并复用一个 `XxxApi` 类。
+## 已知限制：企业微信 MFA 二次验证
 
-## 范围声明：只读不写
+> [!WARNING]
+> 本项目**尚未实现企业微信扫码 MFA / 动态验证码拦截流程**。若您的账号在 CAS 开启了强制 MFA，自动化登录将会遇到阻断。
+>
+> **建议规避方案**：先在同一网络环境下使用**常规浏览器**完整登录一次，完成 MFA 认证以令学校风控系统信任当前 IP/设备；随后再使用本 SDK，通常短时间内不会再次触发二次验证。
 
-> **本库封装的全部接口均为「读取类」**：查询余额/流水/成绩/课表/通知/公文/日程/在线设备等，
-> **不提供任何写入、修改、删除、提交、发送类操作**（不改密码、不提交作业、不发通知、不选退课等）。
+---
 
-用户当然可以借用本库的**认证过程**（CAS `CASTGC`、one.hust 的 bearer token、smartcourse 的会话 cookie 等）
-自行去调用学校系统的写接口——本库也确实把 token/会话暴露了出来。**但那是你自己的行为，与本仓库无关**：
-作者不实现、不提供、不背书任何写操作，由此产生的一切后果由使用者自行承担。
+## 开源协议
 
-请务必遵守学校相关规定，仅访问本人数据。
-
-## MCP 服务
-
-本仓库自带一个 MCP 服务端（[`mcp/`](./mcp/README.md)），把上面的**聚合层**（`client.aggregate`）
-按 `count` / `redacted` / `raw` 三级隐私分层暴露给支持 MCP 的客户端，支持 stdio 与
-Streamable HTTP / SSE，默认 `redacted` 打码、`raw` 需要一把模型拿不到的密钥。
-详见 [mcp/README.md](./mcp/README.md)。
-
-## License
-
-- 除 `stdchar/` 外，本项目采用 **MIT**，见 [LICENSE](./LICENSE)。
-- `stdchar/` 下的验证码算法与数字模板移植自
-  [xuxinhang/HUST-CAS-login-emulator](https://github.com/xuxinhang/HUST-CAS-login-emulator)，
-  采用 **LGPL-3.0-or-later**，见 `stdchar/LICENSE` 与 `stdchar/NOTICE`。
-- MIT 核心不 import `stdchar/`，双方仅通过**子进程 stdin/stdout** 交互，以保持核心的 MIT 许可。
-
-## 免责声明
-
-本项目仅供个人查询本人数据、学习研究使用。请遵守学校相关管理规定，不得用于批量、攻击性或未经授权的用途。使用风险自负。
+- 本仓库核心代码基于 **[MIT License](./LICENSE)** 开源。
+- `stdchar/` 目录下的验证码识别算法与字体模板移植自 [xuxinhang/HUST-CAS-login-emulator](https://github.com/xuxinhang/HUST-CAS-login-emulator)，遵循 **[LGPL-3.0-or-later](./stdchar/LICENSE)** 协议。本项目采用独立子进程标准输入输出（stdin/stdout）通信，以确保核心主干符合 MIT 商业友好性。
