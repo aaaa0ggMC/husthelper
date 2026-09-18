@@ -214,7 +214,10 @@ export async function exchangeTicket(
     break;
   }
 
-  const value = session.getCookie(service.sessionCookie, service.host);
+  // 优先按 service 入口 URL 的路径匹配（同名不同 Path 的会话 cookie），退回域名
+  const value =
+    session.getCookie(service.sessionCookie, service.service) ??
+    session.getCookie(service.sessionCookie, service.host);
   if (!value) {
     throw new Error(`${service.name}: 未在 ${service.host} 拿到 ${service.sessionCookie}`);
   }

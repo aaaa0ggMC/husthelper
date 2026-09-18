@@ -22,8 +22,9 @@ CAS 应用共用 `pass.hust.edu.cn` 的长期票据 `CASTGC`：只要 `CASTGC` �
 - `ticketHops`：换票时最多跟随的跳转次数；
 - `isLoginRedirect`：**自定义失效判定**（默认只看是否跳 `/cas/login`，有些应用跳自身 `/login`）。
 
-> **cookie 按域名存储**：同一域名下若两个应用各有一个同名 `JSESSIONID`（靠 `Path` 区分），
-> 本库会互相覆盖，交替使用时会各自触发一次续期（能自愈）。见下方 petyxy / hkwxy。
+> **cookie 按 `domain + path + name` 存储**：同一域名下多个同名 `JSESSIONID`（靠 `Path` 区分，如 petyxy 的
+> `/pft` 与 `/ggtypt`、hkwxy 的 `/tp_up` 与 `/tp_wp`）可共存，并按请求路径做 RFC 6265 匹配发送。
+> 因此 petyxy/pecg 交替访问不再重复续期（hkwxy 因服务端会话粘性仍会各续期一次，见下）。
 
 ## 平台一览
 
@@ -55,7 +56,8 @@ CAS 应用共用 `pass.hust.edu.cn` 的长期票据 `CASTGC`：只要 `CASTGC` �
 
 - **在线设备（tp_up）**：`service=https://hkwxy.hust.edu.cn/tp_up/v2?m=up`。
 - **微校园服务大厅（tp_wp）**：未登录访问 `/tp_wp/*` 会 302 到 `/tp_wp/403`，再 302 到
-  `pass/cas/login?service=https://hkwxy.hust.edu.cn/tp_wp/403`。两者同名 `JSESSIONID` 靠 `Path` 区分。
+  `pass/cas/login?service=https://hkwxy.hust.edu.cn/tp_wp/403`。两者同名 `JSESSIONID` 靠 `Path` 区分，本库已按路径隔离；
+  但该站的服务端会话/负载均衡在另一应用登录后会让先前会话失效，故 `tp_up`、`tp_wp` 交替时仍各续期一次（自动自愈）。
 
 ### petyxy（二次跳转 SSO）与 pecg（场馆）
 

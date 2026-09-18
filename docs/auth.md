@@ -116,7 +116,7 @@ client.httpSession;                    // 底层 Session（高级用法）
 client.cookiesFor("pass.hust.edu.cn"); // 查看某域下的 cookie
 ```
 
-`Session` 内的 cookie 按域名隔离，CAS 与 ecard 的 `JSESSIONID` 不会互相覆盖。
+`Session` 内的 cookie 按 `域名 + Path` 隔离，CAS 与 ecard 的 `JSESSIONID` 不会互相覆盖；同一域名下同名但不同 `Path` 的 cookie（如 petyxy 的 `/pft` 与 `/ggtypt`）也能共存，并按请求路径匹配发送。
 
 ## 会话持久化
 

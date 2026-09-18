@@ -241,7 +241,8 @@ export class PetyxyApi {
 
   private async ensureSession(force = false): Promise<Session> {
     const session = await this.runtime.ensureReady();
-    if (!force && session.getCookie(PETYXY_SESSION_COOKIE, PETYXY_HOST)) return session;
+    // 按 /pft 路径检查，避免与 petyxy 下 /ggtypt 的同名 JSESSIONID 混淆
+    if (!force && session.getCookie(PETYXY_SESSION_COOKIE, PETYXY_PFT_INDEX)) return session;
 
     if (!this.acquiring) {
       this.acquiring = acquirePetyxySession(

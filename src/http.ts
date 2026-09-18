@@ -21,9 +21,39 @@ export type CookieInput = string | Cookie;
 export type CookieStore = Record<string, Record<string, Cookie>>;
 export type CookieStoreInput = Record<string, Record<string, CookieInput>>;
 
+/** 内部存储带 cookie 名（同名不同 Path 的 cookie 需要并存） */
+interface StoredCookie extends Cookie {
+  name: string;
+}
+
+/** RFC 6265 path-match：请求路径是否适用该 cookie path */
+function pathMatchesPath(requestPath: string, cookiePath: string): boolean {
+  const path = cookiePath || "/";
+  const request = requestPath || "/";
+  if (request === path) return true;
+  if (request.startsWith(path)) {
+    if (path.endsWith("/")) return true;
+    if (request.charAt(path.length) === "/") return true;
+  }
+  return false;
+}
+
+function urlPath(url: string): string {
+  try {
+    return new URL(url, "https://pass.hust.edu.cn").pathname || "/";
+  } catch {
+    return "/";
+  }
+}
+
+function isUrl(value: string): boolean {
+  return value.includes("://");
+}
+
 export class Session {
   readonly client: AxiosInstance;
-  private cookies = new Map<string, Map<string, Cookie>>();
+  /** domain -> cookies（同一 domain 下允许同名不同 Path 并存） */
+  private cookies = new Map<string, StoredCookie[]>();
   private onUpdate?: () => void;
 
   constructor(headers: Record<string, string> = {}) {
@@ -40,7 +70,7 @@ export class Session {
   }
 
   private resolveHost(urlOrHost: string): string {
-    return urlOrHost.includes("://") ? this.hostOf(urlOrHost) : urlOrHost.toLowerCase();
+    return isUrl(urlOrHost) ? this.hostOf(urlOrHost) : urlOrHost.toLowerCase();
   }
 
   private matches(host: string, domain: string): boolean {
@@ -51,10 +81,26 @@ export class Session {
     return cookie.expiresAt !== undefined && cookie.expiresAt <= Date.now();
   }
 
-  setCookie(name: string, value: string, domain: string, attributes: Omit<Cookie, "value"> = {}): void {
+  private jarOf(domain: string): StoredCookie[] {
+    return this.cookies.get(domain) ?? [];
+  }
+
+  private replace(jar: StoredCookie[]): StoredCookie[] {
+    return jar.filter((cookie) => !this.isExpired(cookie));
+  }
+
+  setCookie(
+    name: string,
+    value: string,
+    domain: string,
+    attributes: Omit<Cookie, "value"> = {},
+  ): void {
     const key = domain.toLowerCase();
-    const jar = this.cookies.get(key) ?? new Map<string, Cookie>();
-    jar.set(name, { value, ...attributes, domain: key });
+    const path = attributes.path ?? "/";
+    const jar = this.jarOf(key).filter(
+      (cookie) => !(cookie.name === name && (cookie.path ?? "/") === path),
+    );
+    jar.push({ name, value, ...attributes, path, domain: key });
     this.cookies.set(key, jar);
   }
 
@@ -62,10 +108,15 @@ export class Session {
     const result: CookieStore = {};
     for (const [domain, jar] of this.cookies) {
       const out: Record<string, Cookie> = {};
-      for (const [name, cookie] of jar) {
+      for (const cookie of jar) {
         if (this.isExpired(cookie)) continue;
-        const { session: _ignored, ...rest } = cookie;
-        out[name] = { ...rest, session: cookie.expiresAt === undefined };
+        const { name, ...rest } = cookie;
+        const path = cookie.path ?? "/";
+        // 默认路径用 cookie 名作 key，其余用 `name@path`，以兼容旧会话文件
+        out[path === "/" ? name : `${name}@${path}`] = {
+          ...rest,
+          session: cookie.expiresAt === undefined,
+        };
       }
       if (Object.keys(out).length > 0) result[domain] = out;
     }
@@ -74,69 +125,103 @@ export class Session {
 
   importCookies(data: CookieStoreInput): void {
     for (const [domain, jar] of Object.entries(data)) {
-      for (const [name, entry] of Object.entries(jar)) {
+      const key = domain.toLowerCase();
+      for (const [entryKey, entry] of Object.entries(jar)) {
         const cookie: Cookie = typeof entry === "string" ? { value: entry } : entry;
         if (this.isExpired(cookie)) continue;
-        const key = domain.toLowerCase();
-        const jarMap = this.cookies.get(key) ?? new Map<string, Cookie>();
-        jarMap.set(name, { ...cookie, domain: key });
-        this.cookies.set(key, jarMap);
+
+        let name = entryKey;
+        let path = cookie.path ?? "/";
+        const at = entryKey.lastIndexOf("@");
+        if (at > 0) {
+          name = entryKey.slice(0, at);
+          path = entryKey.slice(at + 1);
+        }
+
+        const next = this.jarOf(key).filter(
+          (item) => !(item.name === name && (item.path ?? "/") === path),
+        );
+        next.push({ ...cookie, name, path, domain: key });
+        this.cookies.set(key, next);
       }
     }
-  }
-
-  deleteCookie(name: string, urlOrHost: string): void {
-    const host = this.resolveHost(urlOrHost);
-    for (const [domain, jar] of this.cookies) {
-      if (this.matches(host, domain)) jar.delete(name);
-    }
-    this.onUpdate?.();
   }
 
   setOnUpdate(onUpdate?: () => void): void {
     this.onUpdate = onUpdate;
   }
 
+  deleteCookie(name: string, urlOrHost: string): void {
+    const host = this.resolveHost(urlOrHost);
+    for (const [domain, jar] of this.cookies) {
+      if (!this.matches(host, domain)) continue;
+      const next = jar.filter((cookie) => cookie.name !== name);
+      if (next.length > 0) this.cookies.set(domain, next);
+      else this.cookies.delete(domain);
+    }
+    this.onUpdate?.();
+  }
+
   getCookie(name: string, urlOrHost?: string): string | undefined {
-    if (urlOrHost) {
-      const host = this.resolveHost(urlOrHost);
-      for (const [domain, jar] of this.cookies) {
-        if (this.matches(host, domain)) {
-          const cookie = jar.get(name);
-          if (cookie && !this.isExpired(cookie)) return cookie.value;
+    const host = urlOrHost ? this.resolveHost(urlOrHost) : undefined;
+    const requestPath = urlOrHost && isUrl(urlOrHost) ? urlPath(urlOrHost) : undefined;
+
+    let best: StoredCookie | undefined;
+    let bestLength = -1;
+    for (const [domain, jar] of this.cookies) {
+      if (host && !this.matches(host, domain)) continue;
+      for (const cookie of jar) {
+        if (cookie.name !== name || this.isExpired(cookie)) continue;
+        if (requestPath !== undefined && !pathMatchesPath(requestPath, cookie.path ?? "/")) continue;
+        const length = (cookie.path ?? "/").length;
+        if (length > bestLength) {
+          best = cookie;
+          bestLength = length;
         }
       }
-      return undefined;
     }
-    for (const jar of this.cookies.values()) {
-      const cookie = jar.get(name);
-      if (cookie && !this.isExpired(cookie)) return cookie.value;
-    }
-    return undefined;
+    return best?.value;
   }
 
   allCookies(urlOrHost?: string): Record<string, string> {
     const host = urlOrHost ? this.resolveHost(urlOrHost) : undefined;
-    const result: Record<string, string> = {};
+    const requestPath = urlOrHost && isUrl(urlOrHost) ? urlPath(urlOrHost) : undefined;
+
+    const chosen = new Map<string, { length: number; value: string }>();
     for (const [domain, jar] of this.cookies) {
       if (host && !this.matches(host, domain)) continue;
-      for (const [k, cookie] of jar) {
-        if (!this.isExpired(cookie)) result[k] = cookie.value;
+      for (const cookie of jar) {
+        if (this.isExpired(cookie)) continue;
+        if (requestPath !== undefined && !pathMatchesPath(requestPath, cookie.path ?? "/")) continue;
+        const length = (cookie.path ?? "/").length;
+        const previous = chosen.get(cookie.name);
+        if (!previous || length > previous.length) {
+          chosen.set(cookie.name, { length, value: cookie.value });
+        }
       }
     }
+
+    const result: Record<string, string> = {};
+    for (const [name, item] of chosen) result[name] = item.value;
     return result;
   }
 
   cookieHeader(url: string): string {
     const host = this.hostOf(url);
-    const parts: string[] = [];
+    const requestPath = urlPath(url);
+
+    const matches: StoredCookie[] = [];
     for (const [domain, jar] of this.cookies) {
       if (!this.matches(host, domain)) continue;
-      for (const [name, cookie] of jar) {
-        if (!this.isExpired(cookie)) parts.push(`${name}=${cookie.value}`);
+      for (const cookie of jar) {
+        if (this.isExpired(cookie)) continue;
+        if (pathMatchesPath(requestPath, cookie.path ?? "/")) matches.push(cookie);
       }
     }
-    return parts.join("; ");
+
+    // RFC 6265：路径更具体的排在前面
+    matches.sort((a, b) => (b.path ?? "/").length - (a.path ?? "/").length);
+    return matches.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
   }
 
   private absorb(response: AxiosResponse): void {
@@ -181,15 +266,29 @@ export class Session {
         }
       }
 
+      const cookiePath = path ?? "/";
       const expiry = maxAge !== undefined ? now + maxAge * 1000 : expiresAt;
-      const jar = this.cookies.get(domain) ?? new Map<string, Cookie>();
 
-      if (value === "" || (expiry !== undefined && expiry <= now)) {
-        jar.delete(name);
-      } else {
-        jar.set(name, { value, expiresAt: expiry, path, domain, secure, httpOnly });
+      // 同名（domain + path）先移除，再按情况重建；顺带清理过期项
+      const jar = this.replace(
+        this.jarOf(domain).filter(
+          (cookie) => !(cookie.name === name && (cookie.path ?? "/") === cookiePath),
+        ),
+      );
+
+      if (value !== "" && !(expiry !== undefined && expiry <= now)) {
+        jar.push({
+          name,
+          value,
+          expiresAt: expiry,
+          path: cookiePath,
+          domain,
+          secure,
+          httpOnly,
+        });
       }
-      if (jar.size > 0) this.cookies.set(domain, jar);
+
+      if (jar.length > 0) this.cookies.set(domain, jar);
       else this.cookies.delete(domain);
     }
 

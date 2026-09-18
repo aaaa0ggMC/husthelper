@@ -304,9 +304,22 @@ export class HustClient {
     return value;
   }
 
+  /**
+   * 检查应用会话 cookie 是否存在的参照地址：应用入口 URL 与 `service.host` 同域时用 URL，
+   * 以便按 cookie `Path` 精确匹配（如 hkwxy 的 `/tp_up` 与 `/tp_wp`）；否则退回域名。
+   */
+  private cookieRef(service: CasService): string {
+    try {
+      if (new URL(service.service).hostname.toLowerCase() === service.host) return service.service;
+    } catch {
+      /* 不是合法 URL，退回域名 */
+    }
+    return service.host;
+  }
+
   private async ensureService(service: CasService): Promise<Session> {
     const session = await this.ensureReady();
-    if (!session.getCookie(service.sessionCookie, service.host)) {
+    if (!session.getCookie(service.sessionCookie, this.cookieRef(service))) {
       await this.acquireService(service);
     }
     return this.session!;

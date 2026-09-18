@@ -50,7 +50,7 @@ export async function acquirePecgSession(
 ): Promise<void> {
   await acquirePetyxySession(session, PECG_LOGINTO, login, logger);
 
-  if (!session.getCookie(PECG_SESSION_COOKIE, PECG_HOST)) {
+  if (!session.getCookie(PECG_SESSION_COOKIE, PECG_LOGINTO)) {
     throw new Error("pecg: SSO 完成后仍未拿到 JSESSIONID");
   }
   logger.info("pecg 会话获取成功");
@@ -137,7 +137,8 @@ export class PecgApi {
   /** 确保 pecg 会话存在；`force` 时强制重走 SSO */
   private async ensureSession(force = false): Promise<Session> {
     const session = await this.runtime.ensureReady();
-    if (!force && session.getCookie(PECG_SESSION_COOKIE, PECG_HOST)) return session;
+    // 按 /cggl 路径检查，避免与其他域/路径下的同名 JSESSIONID 混淆
+    if (!force && session.getCookie(PECG_SESSION_COOKIE, PECG_LOGINTO)) return session;
 
     if (!this.acquiring) {
       this.acquiring = acquirePecgSession(
