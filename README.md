@@ -14,13 +14,13 @@
 
 `husthelper` 核心聚焦于解决华科开发者最常面临的身份认证与网络接入痛点，提供两大核心 SDK：
 
-1. 🌐 **校园网登录 SDK (`husthelper/hustnet`)**：校园网门户（eportal）网页认证、掉线重连、心跳保活、网卡绑定及开箱即用的 CLI 工具。
-2. 🔑 **校园 CAS 统一身份认证 SDK (`husthelper`)**：模拟登录、离线/AI 验证码识别、CASTGC 免密自动续期，一站式对接一卡通、数智华中大 (one.hust)、成绩、课表等下游平台。
+1. **校园网登录 SDK (`husthelper/hustnet`)**：校园网门户（eportal）网页认证、掉线重连、心跳保活、网卡绑定及开箱即用的 CLI 工具。
+2. **校园 CAS 统一身份认证 SDK (`husthelper`)**：模拟登录、离线/AI 验证码识别、CASTGC 免密自动续期，一站式对接一卡通、数智华中大 (one.hust)、成绩、课表等下游平台。
 
 ---
 
 > [!IMPORTANT]
-> ### ⚠️ 安全与合规声明（使用前必读）
+> ### 安全与合规声明（使用前必读）
 >
 > - **合法合规与数据边界**：本项目仅用于技术学习、个人研究及**查询本人数据**。请严格遵守学校相关管理规定与网络安全法规，**严禁用于批量抓取、暴力破解、越权访问、网络攻击或任何未经授权的用途**。因违规使用造成的一切后果由使用者自行承担。
 > - **凭据安全准则**：账号学号与密码属于个人敏感资产。**严禁**将包含明文凭据的 `config.json`、`.hust-session.json` 或 API Key 提交到公开仓库、聊天群或截图分享。会话持久化文件默认以 `0600` 权限安全保存，项目已在 `.gitignore` 中默认忽略敏感配置文件。
@@ -211,14 +211,14 @@ client.withRawOcr(async (rawGif: Buffer) => {
 
 详细开发与数据结构文档可参阅：
 
-- 🔑 [认证流程与原理解析 (docs/auth.md)](./docs/auth.md)
-- 💳 [一卡通流水与账户文档 (docs/transactions.md)](./docs/transactions.md)
-- 👤 [个人档案解析文档 (docs/profile.md)](./docs/profile.md)
-- 📊 [成绩查询与绩点算法 (docs/grades.md)](./docs/grades.md)
-- 📱 [在线终端与设备查询 (docs/online-devices.md)](./docs/online-devices.md)
-- 🌐 [数智华中大 OIDC 规范 (docs/one-hust.md)](./docs/one-hust.md)
-- 📚 [智慧课程平台接入 (docs/smartcourse.md)](./docs/smartcourse.md)
-- 🧩 [统一数据聚合器 (docs/aggregate.md)](./docs/aggregate.md)
+- [认证流程与原理解析 (docs/auth.md)](./docs/auth.md)
+- [一卡通流水与账户文档 (docs/transactions.md)](./docs/transactions.md)
+- [个人档案解析文档 (docs/profile.md)](./docs/profile.md)
+- [成绩查询与绩点算法 (docs/grades.md)](./docs/grades.md)
+- [在线终端与设备查询 (docs/online-devices.md)](./docs/online-devices.md)
+- [数智华中大 OIDC 规范 (docs/one-hust.md)](./docs/one-hust.md)
+- [智慧课程平台接入 (docs/smartcourse.md)](./docs/smartcourse.md)
+- [统一数据聚合器 (docs/aggregate.md)](./docs/aggregate.md)
 
 ---
 
