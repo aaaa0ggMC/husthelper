@@ -22,9 +22,10 @@
 - one.hust（数智华中大）OIDC 委托认证，获取 bearer token（JWT），过期自动重换
 - 智慧课程（smartcourse）cookie 认证，课表 / 通知 / 课程 / 邮件
 - 跨平台聚合（`client.aggregate`）：schema 驱动，多来源并发合并、按优先级去重回填、失败降级
+- 校园网认证（`hustnet`，与 CAS 并列的独立入口）：劫持探测、`JSESSIONID` 自动刷新、运行时 RSA 公钥、详细错误分层、CLI
 - 日志可外部注入，默认输出到 console
 
-📖 详细文档见 [`docs/`](./docs/README.md)：[认证 auth](./docs/auth.md) · [流水查询](./docs/transactions.md) · [个人信息 profile](./docs/profile.md) · [成绩查询](./docs/grades.md) · [在线设备](./docs/online-devices.md) · [one.hust](./docs/one-hust.md) · [智慧课程 smartcourse](./docs/smartcourse.md) · [聚合 aggregate](./docs/aggregate.md)
+📖 详细文档见 [`docs/`](./docs/README.md)：[认证 auth](./docs/auth.md) · [流水查询](./docs/transactions.md) · [个人信息 profile](./docs/profile.md) · [成绩查询](./docs/grades.md) · [在线设备](./docs/online-devices.md) · [one.hust](./docs/one-hust.md) · [智慧课程 smartcourse](./docs/smartcourse.md) · [聚合 aggregate](./docs/aggregate.md) · [校园网认证 hustnet](./docs/hustnet.md)
 
 ## 环境要求
 
@@ -155,6 +156,29 @@ await client.aggregate.transactionsIn({ page: 2 });
 ```
 
 带参数/遍历的便捷方法：`activitiesIn` / `notificationsIn` / `documentsIn` / `transactionsIn` / `gradesOf` / `notificationsAll` / `documentsAll`。每个列表项带 `source`（来源标签）与 `raw`（原始对象），对象型资源带 `sources: string[]` 与 `raw`。详见 [docs/aggregate.md](./docs/aggregate.md)。
+
+## 校园网认证（hustnet）
+
+与 CAS 完全独立、与 `hust` 并列的第二个入口，用于登录校园网门户（eportal）：
+
+```ts
+import hustnet from "husthelper/hustnet";
+
+const client = hustnet
+  .auth({ username: "U2025xxxxx", password: "your-password" })
+  .persistent(".hustnet-session.json");
+
+const info = await client.getMyInfo(); // 未认证会自动登录
+console.log(info.userName, info.userIp, info.accountFee, info.userPackage);
+```
+
+- 未认证时先探测门户劫持跳转（加密 query 无法自行签发）；已联网不被劫持时按「已在线」处理。
+- `JSESSIONID` 自动刷新；RSA 公钥指数/模数运行时从 `pageInfo` 动态获取，不硬编码。
+- 全部失败抛 `NetError` 子类，带 `phase` / `code` / `retryable` / 原始响应，便于按类型处理。
+- 支持多网卡选卡（`localAddress`）与自定义 `NetTransport`，为「指定网卡发送 MAC」预留扩展点。
+- 自带 CLI：`pnpm net status|info|login|logout|keepalive`（配置 `hustnet.json`）。
+
+详见 [docs/hustnet.md](./docs/hustnet.md)。
 
 ## 会话持久化
 
