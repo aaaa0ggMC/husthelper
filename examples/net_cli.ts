@@ -32,6 +32,7 @@ interface CliOptions {
   portal?: string;
   queryString?: string;
   service?: string;
+  dumpFile?: string;
   save: boolean;
 }
 
@@ -60,6 +61,7 @@ const HELP = `校园网认证 CLI
       --portal <url>    直接指定门户基址（需配合 --query）
       --query <qs>      门户加密下发的原始 query（配合 --portal）
       --service <name>  套餐 / 服务名
+      --dump <file>     将 keepalive 的原始响应写入文件（排查用）
       --no-save         交互输入的账号密码不写入配置文件
 
 示例：
@@ -107,6 +109,9 @@ function parseArgs(argv: string[]): CliOptions {
         break;
       case "--service":
         options.service = value();
+        break;
+      case "--dump":
+        options.dumpFile = value();
         break;
       case "--no-save":
         options.save = false;
@@ -316,7 +321,14 @@ async function main(): Promise<void> {
     }
     case "keepalive": {
       const text = await client.keepAlive();
-      console.log(`保活完成（响应 ${text.length} 字节）`);
+      const interval = /keepaliveInterval["'\s:=]+(\d+)/i.exec(text)?.[1];
+      console.log(
+        `保活完成（响应 ${text.length} 字节${interval ? `，页面内 keepaliveInterval=${interval}` : ""}）`,
+      );
+      if (options.dumpFile) {
+        fs.writeFileSync(options.dumpFile, text);
+        console.log(`原始响应已写入 ${options.dumpFile}`);
+      }
       break;
     }
     default:

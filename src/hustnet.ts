@@ -38,7 +38,8 @@ import {
  *   3. POST `InterFace.do?method=pageInfo`（body：`queryString=<encodeURIComponent(query)>`）
  *      返回公钥指数 / 模数（**运行时动态获取，不硬编码**）以及是否需要验证码 / 短信。
  *   4. POST `InterFace.do?method=login`，密码按 eportal 的 RSA 方案加密后提交。
- *   5. POST `InterFace.do?method=getOnlineUserInfo` 取在线信息；GET `success.jsp` 做保活；
+ *   5. POST `InterFace.do?method=getOnlineUserInfo` 取在线信息；
+ *      POST `InterFace.do?method=keepalive` 保活（对应成功页里的 `AuthInterFace.keepalive`）；
  *      POST `InterFace.do?method=logout` 下线。
  *
  * 解耦点：
@@ -1053,7 +1054,13 @@ export class NetClient {
 
   /* -------------------------------- 保活 -------------------------------- */
 
-  /** GET success.jsp：门户定义的轻量保活 / 轮询。 */
+  /**
+   * 保活：POST `InterFace.do?method=keepalive` + `userIndex=`。
+   *
+   * 对应登录成功页里 `AuthInterFace.keepalive(userIndex)` 的调用
+   * （页面仅在 `keepaliveInterval>0` 时按「分钟」轮询该接口）；
+   * `success.jsp` 本身只是约 90KB 的登录成功页，不是心跳。
+   */
   async keepAlive(): Promise<string> {
     if (!this.userIndexValue) {
       throw new NetError({
@@ -1063,16 +1070,18 @@ export class NetClient {
       });
     }
     const context = await this.discover();
-    const query = new URLSearchParams({
-      userIndex: this.userIndexValue,
-      keepaliveInterval: "0",
-    });
     const response = await this.send(
       {
-        url: `${context.successUrl}?${query}`,
-        method: "GET",
+        url: `${context.interfaceUrl}?method=keepalive`,
+        method: "POST",
+        data: new URLSearchParams({ userIndex: this.userIndexValue }),
         responseType: "buffer",
-        headers: { Referer: context.indexUrl },
+        headers: {
+          Accept: "*/*",
+          Origin: context.base,
+          Referer: context.successUrl,
+          "X-Requested-With": "XMLHttpRequest",
+        },
       },
       "keepalive",
     );
@@ -1085,18 +1094,21 @@ export class NetClient {
         responseBody: snippet(text),
       });
     }
-    if (/已经?下线|重新登录|认证/.test(text) && !/success/i.test(text)) {
-      this.userIndexValue = undefined;
-      throw new NetOfflineError({
-        phase: "keepalive",
-        message: "保活响应提示已下线，需要重新认证",
-        responseBody: snippet(text),
-      });
-    }
-    return text;
+    const result = parseJsonLoose<{ result?: string; message?: string }>(text);
+    if (result?.result === "success" || /success/i.test(text)) return text;
+    this.userIndexValue = undefined;
+    throw new NetOfflineError({
+      phase: "keepalive",
+      message: String(result?.message ?? "保活未返回 success，判定已离线"),
+      raw: result,
+      responseBody: snippet(text),
+    });
   }
 
-  /** 周期性保活；默认 60s，句柄已 `unref`，不阻塞进程退出。 */
+  /**
+   * 周期性保活；默认 60s，句柄已 `unref`，不阻塞进程退出。
+   * 门户的 `keepaliveInterval` 单位是分钟，若要严格对齐可自行传入。
+   */
   startKeepAlive(intervalMs = 60_000): void {
     this.stopKeepAlive();
     this.keepAliveTimer = setInterval(() => {

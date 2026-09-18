@@ -28,8 +28,9 @@ http://<nas>:8080/eportal/index.jsp?wlanuserip=<enc>&wlanacname=<enc>&...&naspor
    （**modulus / exponent 运行时动态获取，不硬编码**）；
 4. 密码按门户前端 `AuthInterFace.js` 的 `encryptedPassword()` 做反转 + 分块无填充 RSA 加密；
 5. `POST InterFace.do?method=login` → `result: "success"` 且返回 `userIndex`；
-6. `POST InterFace.do?method=getOnlineUserInfo` 取信息；`GET success.jsp` 保活；
-   `POST InterFace.do?method=logout` 下线。
+6. `POST InterFace.do?method=getOnlineUserInfo` 取信息；
+   `POST InterFace.do?method=keepalive` 保活（对应成功页里 `AuthInterFace.keepalive(userIndex)`，
+   `success.jsp` 只是约 90KB 的登录成功页）；`POST InterFace.do?method=logout` 下线。
 
 ## 快速开始
 
@@ -147,10 +148,11 @@ pnpm net keepalive       # 执行一次保活
 - 选项：`-c/--config`、`-s/--session`、`-p/--probe`、`--portal`/`--query`、`--service`。
 - `hustnet.json` 与 `.hustnet-session.json` 均含凭据，已加入 `.gitignore`，**切勿提交或分享**。
 
-## 已知推断（待抓包核对）
+## 接口来源与核对情况
 
-- 登出：`InterFace.do?method=logout` + `userIndex=`（best-effort，服务端不认也会清本地会话）。
-- 保活：`GET success.jsp?userIndex=...&keepaliveInterval=0`。
+- 登出：`InterFace.do?method=logout` + `userIndex=`（已抓包核对；best-effort，服务端不认也会清本地会话）。
+- 保活：`InterFace.do?method=keepalive` + `userIndex=`（已由成功页 `AuthInterFace.keepalive(userIndex)`
+  确认；`success.jsp?...&keepaliveInterval=N` 只是成功页，`N` 单位是分钟，`N>0` 时才轮询保活）。
 - 密码加密：来自前端 `AuthInterFace.js` 的 `RSAUtils.encryptedString`（反转 + 分块无填充 RSA）。
   若门户升级算法（表现为登录永远「用户名或密码错误」），对照该文件更新
   `src/hustnet.ts` 的 `encryptEportalPassword` / `eportalChunkSize`；
