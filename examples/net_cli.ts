@@ -232,9 +232,17 @@ async function resolveCredentials(config: CliConfig, options: CliOptions): Promi
   return resolved;
 }
 
+/** 姓名一律打码，避免截图/录屏泄露 */
+const MASK = "***";
+
+/** 把 JSON 文本里 `userName` 之类的字段值替换成 `***` */
+function redactText(text: string): string {
+  return text.replace(/("user_?name"\s*:\s*")[^"]*(")/gi, `$1${MASK}$2`);
+}
+
 function printUserInfo(info: NetUserInfo): void {
   console.log("校园网账号信息：");
-  console.log(`  姓名：${info.userName ?? "?"}`);
+  console.log(`  姓名：${info.userName ? MASK : "?"}`);
   console.log(`  学号：${info.userId ?? "?"}`);
   console.log(`  IP：  ${info.userIp ?? "?"}`);
   console.log(`  MAC： ${info.userMac ?? "?"}`);
@@ -248,8 +256,10 @@ function report(error: unknown): number {
     console.error(`[校园网] ${error.phase}/${error.code}: ${error.message}`);
     if (error.httpStatus) console.error(`  HTTP: ${error.httpStatus}`);
     if (error.retryable) console.error("  该错误可重试");
-    if (error.responseBody) console.error(`  原始响应: ${error.responseBody}`);
-    if (error.raw) console.error(`  原始数据: ${JSON.stringify(error.raw).slice(0, 400)}`);
+    if (error.responseBody) console.error(`  原始响应: ${redactText(error.responseBody)}`);
+    if (error.raw) {
+      console.error(`  原始数据: ${redactText(JSON.stringify(error.raw)).slice(0, 400)}`);
+    }
     return 1;
   }
   console.error(error instanceof Error ? error.message : String(error));
