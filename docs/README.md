@@ -18,6 +18,7 @@
 - [在线设备 online-devices](./life/online-devices.md) — hkwxy 在线设备查询
 - [微校园服务大厅 service-center](./life/service-center.md) — hkwxy/tp_wp 服务大厅主界面与 JSESSIONID 换取点
 - [宿舍电费 electricity](./life/electricity.md) — sdhq 移动后勤：CAS 会话 + SM2/SM3 鉴权、电表与剩余电量
+- [校园网自助服务 selfservice](./life/selfservice.md) — myself：CAS 会话 + GBK HTML 解析、余额/套餐/在线设备
 
 ## 教务与学术
 

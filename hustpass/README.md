@@ -94,6 +94,7 @@ console.log(`姓名: ${profile.basic?.name}，院系: ${profile.basic?.departmen
 | `client.register` | 学期注册系统 | 注册状态、当前学期起止、注册通知 |
 | `client.ihuster` | IHuster 微平台 / 第二课堂 | CAS→JWT(OAuth)、二课学分汇总、用户信息 |
 | `client.electricity` | 宿舍电费（sdhq 移动后勤） | 校区/楼栋/房间/电表枚举、剩余电量查询（SM2/SM3 鉴权） |
+| `client.selfservice` | 校园网自助服务（myself） | 首页概览（余额/套餐/在线设备数）、在线与无感认证设备、个人资料（GBK HTML 解析） |
 | `client.hkwxy` | 网络中心设备管理 | 在线物理终端与 MAC 信息、微校园服务大厅服务目录 |
 | `client.wechat` | 微信/企业微信微校园 | 微校园 `wechat_session_id` 获取与应用中心调用 |
 | `client.aggregate` | 跨平台统一聚合层 | 整合上述多源数据，提供 `me` / `schedule` / `balance` 等统一实体 |
@@ -152,6 +153,7 @@ client.withRawOcr(async (rawGif: Buffer) => {
 - [学期注册 (docs/registration.md)](../docs/academic/registration.md)
 - [第二课堂：二课学分 (docs/ihuster.md)](../docs/academic/ihuster.md)
 - [宿舍电费查询 (docs/electricity.md)](../docs/life/electricity.md)
+- [校园网自助服务 (docs/selfservice.md)](../docs/life/selfservice.md)
 - [统一数据聚合器 (docs/aggregate.md)](../docs/aggregate.md)
 
 ## 已知限制：企业微信 MFA 二次验证

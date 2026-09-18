@@ -24,6 +24,7 @@
     "example:custom-ocr": "node examples/custom_ocr.ts",
     "example:login-qrcode": "node examples/login_qrcode.ts",
     "example:electricity": "node examples/get_electricity.ts",
+    "example:selfservice": "node examples/get_selfservice.ts",
     "example:export_ledger": "node --experimental-strip-types examples/export_ledger.ts"
   },
   "keywords": [

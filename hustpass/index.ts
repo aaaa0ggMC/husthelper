@@ -264,6 +264,30 @@ export type {
   ElectricityRoomBalance,
 } from "./src/electricity.ts";
 
+/* ------------------------------- selfservice ------------------------------ */
+export {
+  SELFSERVICE_HOST,
+  SELFSERVICE_BASE,
+  SELFSERVICE_SERVICE,
+  SELFSERVICE_SESSION_COOKIE,
+  selfserviceService,
+  selfserviceUrl,
+  isSelfserviceLoginRedirect,
+  decodeEntities,
+  parseSelfserviceOverview,
+  parseSelfserviceOnlineDevices,
+  parseSelfserviceProfile,
+  SelfserviceApi,
+} from "./src/selfservice.ts";
+export type {
+  SelfserviceOverview,
+  SelfserviceOnlineDevice,
+  SelfservicePasswordlessDevice,
+  SelfserviceOnlineDeviceResult,
+  SelfserviceProfile,
+  SelfserviceActionResult,
+} from "./src/selfservice.ts";
+
 /* -------------------------------- aggregate ------------------------------- */
 export {
   AggregateApi,
