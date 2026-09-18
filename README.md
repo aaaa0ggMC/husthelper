@@ -242,12 +242,34 @@ pnpm net info        # 查询账户余额与资费套餐
 pnpm net keepalive   # 守护模式：断网自动探测与重连
 ```
 
+### 一键安装到系统全局 (Linux / Windows)
+
+项目在 `scripts/` 目录下提供了跨平台的全局安装与卸载脚本：
+
+- **Linux / macOS**（默认安装至 `~/.local/bin/hustnet`）：
+  ```bash
+  bash scripts/install.sh    # 安装
+  bash scripts/uninstall.sh  # 卸载
+  ```
+- **Windows**（PowerShell，安装并自动写入用户 PATH 环境变量）：
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File scripts/install.ps1    # 安装
+  powershell -ExecutionPolicy Bypass -File scripts/uninstall.ps1  # 卸载
+  ```
+
+安装后即可在任意终端直接敲 `hustnet <command>` 使用（自动优先读取当前目录、`~/.config/hustnet/hustnet.json` 或项目目录下的配置文件）。
+
 ---
 
 ## 生态与扩展 (MCP)
 
 本项目内置符合 **Model Context Protocol (MCP)** 标准的服务端（位于 [`mcp/`](./mcp/README.md)）。
 可直接为 Claude Desktop、Cursor 等大模型客户端注入统一的华中大校园助手上下文能力。支持 `count` / `redacted`（默认脱敏）/ `raw` 三级隐私分层。
+
+> **为什么 MCP 仅聚合了校园业务数据，而没有做校园网认证（net mcp）？**
+>
+> 1. **先有鸡还是先有蛋的逻辑悖论**：绝大多数用户使用的是云端大模型（如 Claude、ChatGPT 等）。当你校园网断开、处于离线状态时，外部网络请求根本发不出去，远端模型压根无法接收你的指令，更不可能替你调用 MCP 工具去登录网络；即便使用的是本地大模型，直接跑命令也远比过一遍大模型工具调用更直接可靠。
+> 2. **轻量与必要性**：校园网认证本身只需在终端执行一行 `hustnet login`（或挂一个后台 `keepalive` 守护），难道真有人已经懒到连这一行命令都不想敲了吗（手动滑稽）。
 
 ---
 
