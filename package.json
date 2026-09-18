@@ -4,10 +4,15 @@
   "description": "HUST 统一身份认证 + 一卡通流水查询的 Node.js 封装",
   "type": "module",
   "exports": {
-    ".": "./index.ts"
+    ".": "./index.ts",
+    "./hustnet": "./hustnet.ts"
+  },
+  "bin": {
+    "hustnet": "./examples/net_cli.ts"
   },
   "scripts": {
     "start": "node examples/get_costs.ts",
+    "net": "node examples/net_cli.ts",
     "example:profile": "node examples/get_profile.ts",
     "example:grades": "node examples/get_grades.ts",
     "example:online-devices": "node examples/get_online_devices.ts",
