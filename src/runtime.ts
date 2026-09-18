@@ -18,6 +18,8 @@ export interface ClientRuntime {
     config?: RequestOptions,
   ): Promise<AxiosResponse<T>>;
   loginContext(): LoginContext;
+  /** 子 SSO 流程的登录回退：执行已配置的登录方式序列并返回带 ticket 的 Location */
+  loginFallback(serviceUrl: string, serviceName?: string): Promise<string>;
   cookiesFor(urlOrHost: string): Record<string, string>;
   save(): void;
 }

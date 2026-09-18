@@ -4,8 +4,14 @@ import { Session, type RequestOptions } from "./http.ts";
 import { defaultLogger, resolveLogger, type Logger, type LoggerInput } from "./logger.ts";
 import type { StdCharOptions } from "./stdchar-pipe.ts";
 import {
-  acquireServiceSession,
+  CAS_HOST,
+  CAS_ORIGIN,
+  CASTGC_COOKIE,
+  exchangeTicket,
   isCasLoginResponse,
+  performCasLogin,
+  qrLogin,
+  requestCasTicket,
   serviceUrl,
   type CasService,
   type Credentials,
@@ -49,6 +55,25 @@ export interface AiOcrOptions {
   timeout?: number;
   onImage?: (jpg: Buffer) => void;
 }
+
+/** 企业微信扫码登录处理器：拿到二维码内容后展示；可在此注入阻塞逻辑（如前端 UI 显示并等待扫码） */
+export type QrCodeHandler = (scanUrl: string) => void | Promise<void>;
+
+export interface QrCodeOptions {
+  /** 轮询间隔（毫秒），默认 3000 */
+  intervalMs?: number;
+  /** 二维码有效期（毫秒），默认 180000 */
+  timeoutMs?: number;
+}
+
+export type QrCodeLoginOptions = QrCodeOptions & { onQrCode?: QrCodeHandler };
+
+/** 一条登录方式。按加入 `HustClient` 的先后顺序依次尝试（持久化会话始终优先复用） */
+type LoginMethod =
+  | { kind: "password" }
+  | { kind: "qr"; handler: QrCodeHandler; options: QrCodeOptions };
+
+type LoginMethodKind = LoginMethod["kind"];
 
 function normalizeAi(options: AiOcrOptions): AIConfig {
   const baseURL = options.baseURL ?? options.base_url;
@@ -97,6 +122,8 @@ export class HustClient {
   private un?: string;
   private pwd?: string;
   private ocr?: OcrStrategy;
+  /** 登录方式，按配置顺序依次尝试 */
+  private methods: LoginMethod[] = [];
   private session?: Session;
   private logger: Logger = defaultLogger;
   private persistPath?: string;
@@ -106,9 +133,6 @@ export class HustClient {
   private saveTimer?: ReturnType<typeof setTimeout>;
 
   constructor(options: AuthOptions = {}) {
-    this.un = options.user_name;
-    this.pwd = options.password;
-
     const runtime = this.createRuntime();
     this.ecard = new EcardApi(runtime);
     this.mhub = new MhubApi(runtime);
@@ -123,10 +147,48 @@ export class HustClient {
     this.ihuster = new IhusterApi(runtime);
     this.aggregate = new AggregateApi(this);
 
-    if (options.account) this.ecard.withAccount(options.account);
+    this.auth(options);
   }
 
   /* ------------------------------ 链式配置 ------------------------------ */
+
+  /**
+   * 配置账号密码登录（并加入登录方式序列）。`HustClient` 构造时已自动调用；
+   * 也可在 `withQrCode()` 之后调用，此时密码登录会排在扫码登录**之后**尝试。
+   */
+  auth(options: AuthOptions = {}): this {
+    this.un = options.user_name;
+    this.pwd = options.password;
+    if (options.account) this.ecard.withAccount(options.account);
+
+    this.removeMethod("password");
+    if (this.un && this.pwd) this.methods.push({ kind: "password" });
+    return this;
+  }
+
+  /**
+   * 配置企业微信扫码登录（加入登录方式序列）。`handler` 收到二维码内容后可自行渲染，
+   * 并可通过返回 `Promise` 阻塞等待扫码；扫码状态的轮询由 SDK 在后台继续。
+   *
+   * 与 `auth()` 的调用先后决定尝试顺序，例如：
+   * - `hust.auth({...}).withQrCode(fn)`：先密码，失败再扫码
+   * - `hust.withQrCode(fn).auth({...})`：先扫码，失败再密码
+   *
+   * 已持久化的会话（`.persistent()`）始终最优先复用。
+   */
+  withQrCode(handler: QrCodeHandler, options: QrCodeOptions = {}): this {
+    this.removeMethod("qr");
+    this.methods.push({ kind: "qr", handler, options });
+    return this;
+  }
+
+  private removeMethod(kind: LoginMethodKind): void {
+    this.methods = this.methods.filter((method) => method.kind !== kind);
+  }
+
+  private hasMethod(kind: LoginMethodKind): boolean {
+    return this.methods.some((method) => method.kind === kind);
+  }
 
   withRawOcr(ocr: RawOcr): this {
     this.ocr = { kind: "raw", raw: ocr };
@@ -208,6 +270,21 @@ export class HustClient {
     return this.acquireService(ecardService);
   }
 
+  /**
+   * 便捷方法：确保拿到一卡通会话。**优先复用持久化的 `CASTGC`**，失效时才按配置的登录方式
+   * 尝试（含企业微信扫码）。等价于先 `withQrCode(onQrCode)` 再访问业务接口。
+   */
+  async loginByQrCode(options: QrCodeLoginOptions = {}): Promise<void> {
+    const { onQrCode, ...rest } = options;
+    if (onQrCode) {
+      this.withQrCode(onQrCode, rest);
+    } else if (!this.hasMethod("qr")) {
+      throw new Error("loginByQrCode 需要提供 onQrCode，或先调用 withQrCode(handler)");
+    }
+    await this.ensureService(ecardService);
+    this.save();
+  }
+
   private attachPersistence(session: Session): void {
     session.setOnUpdate(() => this.scheduleSave());
   }
@@ -252,6 +329,17 @@ export class HustClient {
     return { credentials: this.requireCredentials(), ocr: this.requireOcr() };
   }
 
+  /** 子 SSO 流程的登录回退入口：以给定 service URL 执行配置好的登录方式序列 */
+  private async loginFallback(serviceUrl: string, serviceName = "cas"): Promise<string> {
+    return this.authenticate({
+      name: serviceName,
+      host: CAS_HOST,
+      base: CAS_ORIGIN,
+      service: serviceUrl,
+      sessionCookie: CASTGC_COOKIE,
+    });
+  }
+
   private createRuntime(): ClientRuntime {
     const self = this;
     return {
@@ -267,6 +355,7 @@ export class HustClient {
         config?: RequestOptions,
       ) => self.serviceRequest<T>(service, path, config),
       loginContext: () => self.loginContext(),
+      loginFallback: (serviceUrl, serviceName) => self.loginFallback(serviceUrl, serviceName),
       cookiesFor: (host) => self.cookiesFor(host),
       save: () => self.save(),
     };
@@ -292,14 +381,70 @@ export class HustClient {
     return this.session!;
   }
 
-  /** 获取（或重新获取）某个 CAS 应用的会话 */
+  /**
+   * 按配置顺序依次尝试各登录方式，返回带 ticket 的通行凭证 Location。
+   * 某一种失败（缺少凭据/OCR、识别错误、用户未扫码等）会自动降级到下一种。
+   */
+  private async authenticate(service: CasService): Promise<string> {
+    if (this.methods.length === 0) {
+      throw new Error(
+        "没有可用的登录方式，请使用 auth({ user_name, password }) 或 withQrCode(handler) 配置",
+      );
+    }
+
+    const session = this.ensureJar();
+    let lastError: unknown;
+
+    for (let i = 0; i < this.methods.length; i++) {
+      const method = this.methods[i];
+      try {
+        if (method.kind === "password") {
+          this.logger.info(`使用密码 + 验证码登录 (${service.name})...`);
+          return await performCasLogin(
+            session,
+            service.service,
+            this.requireCredentials(),
+            this.requireOcr(),
+            { logger: this.logger },
+          );
+        }
+
+        this.logger.info(`使用企业微信扫码登录 (${service.name})...`);
+        await qrLogin(session, service.service, {
+          logger: this.logger,
+          intervalMs: method.options.intervalMs,
+          timeoutMs: method.options.timeoutMs,
+          onQrCode: method.handler,
+        });
+        const ticket = await requestCasTicket(session, service, this.logger);
+        if (!ticket) throw new Error("扫码成功但未拿到通行凭证");
+        return ticket;
+      } catch (error) {
+        lastError = error;
+        const message = error instanceof Error ? error.message : String(error);
+        const more = i < this.methods.length - 1;
+        this.logger.warn(`登录方式 ${method.kind} 失败：${message}${more ? "，尝试下一种..." : ""}`);
+      }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error("所有登录方式均失败");
+  }
+
+  /** 获取（或重新获取）某个 CAS 应用的会话：先复用 `CASTGC`，失效再按配置的登录方式执行 */
   private async acquireService(service: CasService): Promise<string> {
-    const value = await acquireServiceSession(
-      this.ensureJar(),
-      service,
-      () => this.loginContext(),
-      { logger: this.logger },
-    );
+    const session = this.ensureJar();
+    const logger = this.logger;
+
+    let ticket = await requestCasTicket(session, service, logger);
+    if (!ticket) {
+      if (service.bootstrapUrl) {
+        logger.debug(`引导访问 ${service.bootstrapUrl}`);
+        await session.get(service.bootstrapUrl);
+      }
+      ticket = await this.authenticate(service);
+    }
+
+    const value = await exchangeTicket(session, ticket, service, logger);
     this.save();
     return value;
   }

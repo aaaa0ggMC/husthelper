@@ -1,5 +1,5 @@
 import type { AxiosResponse } from "axios";
-import type { CasResponse, LoginContextProvider } from "./cas.ts";
+import type { CasLoginProvider, CasResponse } from "./cas.ts";
 import type { RequestOptions, Session } from "./http.ts";
 import { defaultLogger, type Logger } from "./logger.ts";
 import { acquirePetyxySession } from "./petyxy.ts";
@@ -41,11 +41,11 @@ export function isPecgLoginResponse(response: CasResponse): boolean {
 
 /**
  * 通过 petyxy SSO 为 pecg 建立会话（写入共享 cookie jar）。
- * 优先用 CASTGC 免密；失败才回退完整登录（`login` 惰性求值）。
+ * 优先用 CASTGC 免密；失败才执行登录方式序列（`login` 惰性求值）。
  */
 export async function acquirePecgSession(
   session: Session,
-  login: LoginContextProvider,
+  login: CasLoginProvider,
   logger: Logger = defaultLogger,
 ): Promise<void> {
   await acquirePetyxySession(session, PECG_LOGINTO, login, logger);
@@ -143,7 +143,7 @@ export class PecgApi {
     if (!this.acquiring) {
       this.acquiring = acquirePecgSession(
         session,
-        () => this.runtime.loginContext(),
+        (serviceUrl) => this.runtime.loginFallback(serviceUrl, "pecg"),
         this.runtime.logger,
       ).finally(() => {
         this.acquiring = undefined;

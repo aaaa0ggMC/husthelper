@@ -25,6 +25,7 @@
     "example:reserves": "node examples/get_reserves.ts",
     "example:fitness": "node examples/get_fitness.ts",
     "example:custom-ocr": "node examples/custom_ocr.ts",
+    "example:login-qrcode": "node examples/login_qrcode.ts",
     "example:export_ledger": "node --experimental-strip-types examples/export_ledger.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -46,5 +47,9 @@
     "axios": "^1.20.0",
     "gifuct-js": "^2.1.2",
     "jpeg-js": "^0.4.4"
+  },
+  "devDependencies": {
+    "@types/qrcode": "^1.5.6",
+    "qrcode": "^1.5.4"
   }
 }

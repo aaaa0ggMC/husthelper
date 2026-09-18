@@ -1,5 +1,5 @@
 import type { AxiosResponse } from "axios";
-import { performCasLogin, requestCasTicket, type CasService, type LoginContextProvider } from "./cas.ts";
+import { requestCasTicket, type CasLoginProvider, type CasService } from "./cas.ts";
 import type { RequestOptions, Session } from "./http.ts";
 import { defaultLogger, type Logger } from "./logger.ts";
 import type { ClientRuntime } from "./runtime.ts";
@@ -109,18 +109,15 @@ export function extractIhusterToken(location: string): string | undefined {
 /** 通过 CAS 获取 ihuster 的 JWT（写入共享 session 的 cookie 缓存） */
 export async function acquireIhusterToken(
   session: Session,
-  login: LoginContextProvider,
+  login: CasLoginProvider,
   logger: Logger = defaultLogger,
 ): Promise<string> {
   logger.info("ihuster: 通过 CAS 获取 JWT");
 
   let ticket = await requestCasTicket(session, ihusterCasService, logger);
   if (!ticket) {
-    logger.warn("ihuster: CASTGC 缺失或失效，回退完整登录");
-    const context = login();
-    ticket = await performCasLogin(session, IHUSTER_SERVICE, context.credentials, context.ocr, {
-      logger,
-    });
+    logger.warn("ihuster: CASTGC 缺失或失效，回退登录方式序列");
+    ticket = await login(IHUSTER_SERVICE);
   }
 
   const response = await session.get<string>(ticket, { responseType: "text" });
@@ -214,7 +211,7 @@ export class IhusterApi {
     if (!this.acquiring) {
       this.acquiring = acquireIhusterToken(
         session,
-        () => this.runtime.loginContext(),
+        (serviceUrl) => this.runtime.loginFallback(serviceUrl, "ihuster"),
         this.runtime.logger,
       ).finally(() => {
         this.acquiring = undefined;

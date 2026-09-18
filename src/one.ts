@@ -3,10 +3,9 @@ import {
   CAS_HOST,
   CAS_ORIGIN,
   isCasLoginResponse,
-  performCasLogin,
   requestCasTicket,
+  type CasLoginProvider,
   type CasService,
-  type LoginContextProvider,
 } from "./cas.ts";
 import { Session, type RequestOptions } from "./http.ts";
 import { defaultLogger, type Logger } from "./logger.ts";
@@ -352,19 +351,18 @@ function authorizeServiceSpec(authorizeUrl: string): CasService {
   };
 }
 
-/** 第 1 步：优先用 CASTGC 免密拿到 authorize 的 ticket，否则完整登录 */
+/** 第 1 步：优先用 CASTGC 免密拿到 authorize 的 ticket，否则执行登录方式序列 */
 async function requestInitialTicket(
   session: Session,
   authorizeUrl: string,
-  login: LoginContextProvider,
+  login: CasLoginProvider,
   logger: Logger,
 ): Promise<string> {
   const ticket = await requestCasTicket(session, authorizeServiceSpec(authorizeUrl), logger);
   if (ticket) return ticket;
 
-  logger.warn("one.hust: CASTGC 缺失或失效，回退完整登录");
-  const context = login();
-  return performCasLogin(session, authorizeUrl, context.credentials, context.ocr, { logger });
+  logger.warn("one.hust: CASTGC 缺失或失效，回退登录方式序列");
+  return login(authorizeUrl);
 }
 
 /** 第 2–5 步：跟随跳转直到落在 one.hust/cas.html（200） */
@@ -465,7 +463,7 @@ function oneAuthcBase(contextPathAuthc: string): string {
  */
 export async function acquireOneToken(
   session: Session,
-  login: LoginContextProvider,
+  login: CasLoginProvider,
   options: OneHustOptions = {},
   logger: Logger = defaultLogger,
 ): Promise<OneToken> {
@@ -606,7 +604,7 @@ export class OneHustApi {
 
     const token = await acquireOneToken(
       session,
-      () => this.runtime.loginContext(),
+      (serviceUrl) => this.runtime.loginFallback(serviceUrl, "one.hust"),
       {},
       this.runtime.logger,
     );

@@ -1,11 +1,10 @@
 import type { AxiosResponse } from "axios";
 import {
   isCasLoginResponse,
-  performCasLogin,
   requestCasTicket,
+  type CasLoginProvider,
   type CasResponse,
   type CasService,
-  type LoginContextProvider,
 } from "./cas.ts";
 import type { RequestOptions, Session } from "./http.ts";
 import { defaultLogger, type Logger } from "./logger.ts";
@@ -67,12 +66,12 @@ export function isPetyxyLoginResponse(response: CasResponse): boolean {
 /**
  * 为任意 petyxy 目标应用建立会话（写入共享 cookie jar）。
  * `target` 是目标应用入口（会作为 CAS `service` 的 service 参数落库）。
- * 优先用 CASTGC 免密；失败才回退完整登录（`login` 惰性求值）。
+ * 优先用 CASTGC 免密；失败才执行登录方式序列（`login` 惰性求值）。
  */
 export async function acquirePetyxySession(
   session: Session,
   target: string,
-  login: LoginContextProvider,
+  login: CasLoginProvider,
   logger: Logger = defaultLogger,
 ): Promise<void> {
   logger.info("petyxy: SSO 登录");
@@ -83,11 +82,8 @@ export async function acquirePetyxySession(
 
   let ticket = await requestCasTicket(session, petyxyCasService, logger);
   if (!ticket) {
-    logger.warn("petyxy: CASTGC 缺失或失效，回退完整登录");
-    const context = login();
-    ticket = await performCasLogin(session, petyxyCasService.service, context.credentials, context.ocr, {
-      logger,
-    });
+    logger.warn("petyxy: CASTGC 缺失或失效，回退登录方式序列");
+    ticket = await login(petyxyCasService.service);
   }
 
   let current = new URL(ticket, PETYXY_BASE).toString();
@@ -248,7 +244,7 @@ export class PetyxyApi {
       this.acquiring = acquirePetyxySession(
         session,
         PETYXY_PFT_INDEX,
-        () => this.runtime.loginContext(),
+        (serviceUrl) => this.runtime.loginFallback(serviceUrl, "petyxy"),
         this.runtime.logger,
       ).finally(() => {
         this.acquiring = undefined;

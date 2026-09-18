@@ -23,6 +23,10 @@ export const CAS_ORIGIN = `https://${CAS_HOST}`;
 export const CAS_LOGIN = `${CAS_ORIGIN}/cas/login`;
 export const CAS_RSA = `${CAS_ORIGIN}/cas/rsa`;
 export const CAS_CODE = `${CAS_ORIGIN}/cas/code`;
+/** 企业微信扫码登录：二维码内容指向的授权入口 */
+export const CAS_QR_LOGIN = `${CAS_ORIGIN}/cas/qyQrLogin`;
+/** 企业微信扫码登录：轮询扫码/授权状态 */
+export const CAS_QR_CHECK = `${CAS_ORIGIN}/cas/checkQRCodeScan`;
 
 /** CAS 长期票据 cookie：所有应用共用的登录门面凭据 */
 export const CASTGC_COOKIE = "CASTGC";
@@ -60,6 +64,13 @@ export interface LoginContext {
 }
 
 export type LoginContextProvider = () => LoginContext;
+
+/**
+ * 子 SSO 流程（one.hust / pecg / petyxy / ihuster）的登录回退：
+ * 对给定 CAS service 执行客户端配置的登录方式序列（密码 / 扫码 ...），返回带 ticket 的 Location。
+ * 由 `HustClient` 提供，确保这些流程也能降级到扫码登录。
+ */
+export type CasLoginProvider = (serviceUrl: string) => Promise<string>;
 
 /* ------------------------------ CAS 应用描述 ------------------------------ */
 
@@ -318,4 +329,114 @@ export async function acquireServiceSession(
   logger.warn(`${service.name}: CASTGC 缺失或失效，回退完整登录`);
   const context = login();
   return fullLogin(session, service, context.credentials, context.ocr, { logger });
+}
+
+/* ------------------------------ 企业微信扫码登录 ------------------------------ */
+
+/**
+ * 构造二维码内容：指向 CAS 的 `qyQrLogin` 授权入口。
+ * 用企业微信（或绑定企业微信的微信）扫描后会走微信 OAuth，将扫码人与 `uuid` 绑定。
+ */
+export function qrScanUrl(uuid: string, service: string): string {
+  return `${CAS_QR_LOGIN}?uuid=${encodeURIComponent(uuid)}&service=${encodeURIComponent(service)}`;
+}
+
+/** 构造扫码状态轮询地址 */
+export function qrCheckUrl(uuid: string): string {
+  return `${CAS_QR_CHECK}?random=${Math.random()}&uuid=${encodeURIComponent(uuid)}`;
+}
+
+export interface QrLoginOptions {
+  logger?: Logger;
+  /** 轮询间隔（毫秒），默认 3000 */
+  intervalMs?: number;
+  /** 单个二维码有效期（毫秒），默认 180000（前端为 60 次 × 3s） */
+  timeoutMs?: number;
+  /** 拿到二维码内容（需用户用企业微信扫描）时回调，可在此渲染终端二维码 */
+  onQrCode?: (scanUrl: string) => void | Promise<void>;
+}
+
+export interface QrLoginResult {
+  /** 本次扫码使用的二维码内容地址 */
+  scanUrl: string;
+  /** `checkQRCodeScan` 返回的跳转地址（部分部署通过 CASTGC 登录时为空） */
+  redirectUrl?: string;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function followRedirects(session: Session, start: string, maxHops = 8): Promise<void> {
+  let current = new URL(start, CAS_ORIGIN).toString();
+  for (let hop = 0; hop < maxHops; hop++) {
+    const response = await session.get<string>(current, { responseType: "text" });
+    const next = response.headers["location"];
+    if (response.status >= 300 && response.status < 400 && typeof next === "string") {
+      current = new URL(next, current).toString();
+      continue;
+    }
+    break;
+  }
+}
+
+/**
+ * 企业微信扫码登录：生成二维码并轮询等待用户扫描/授权，成功后本次会话即拿到 `CASTGC`
+ * （部分部署还会在 `checkQRCodeScan` 返回 `redirect_url`，会顺带跟随以建立应用会话）。
+ *
+ * 该流程无需账号密码与验证码，可用于绕过密码/验证码甚至企业微信 MFA。
+ */
+export async function qrLogin(
+  session: Session,
+  service: string,
+  options: QrLoginOptions = {},
+): Promise<QrLoginResult> {
+  const logger = options.logger ?? defaultLogger;
+  const intervalMs = options.intervalMs ?? 3000;
+  const timeoutMs = options.timeoutMs ?? 180_000;
+
+  const uuid = crypto.randomUUID();
+  const scanUrl = qrScanUrl(uuid, service);
+
+  logger.info("请使用企业微信扫描二维码登录（企业微信 → 消息页右上角 + → 扫一扫）");
+  await options.onQrCode?.(scanUrl);
+
+  // 先访问登录页建立本次会话的 JSESSIONID；成功后 checkQRCodeScan 会向本会话下发 CASTGC
+  await session.get<string>(casLoginUrl(service), { responseType: "text" });
+  const castgcBefore = session.getCookie(CASTGC_COOKIE, CAS_HOST);
+
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await sleep(intervalMs);
+
+    const response = await session.get<string>(qrCheckUrl(uuid), {
+      responseType: "text",
+      headers: { Referer: casLoginUrl(service), "X-Requested-With": "XMLHttpRequest" },
+    });
+
+    const body = typeof response.data === "string" ? response.data.trim() : "";
+    let redirectUrl: string | undefined;
+    if (body) {
+      try {
+        const parsed = JSON.parse(body) as { redirect_url?: string; redirectUrl?: string };
+        redirectUrl = parsed.redirect_url ?? parsed.redirectUrl;
+      } catch {
+        /* 非 JSON 响应，按未完成处理 */
+      }
+    }
+
+    if (redirectUrl && typeof redirectUrl === "string") {
+      logger.info("扫码成功，正在完成登录...");
+      await followRedirects(session, redirectUrl);
+      return { scanUrl, redirectUrl };
+    }
+
+    const castgcNow = session.getCookie(CASTGC_COOKIE, CAS_HOST);
+    if (castgcNow && castgcNow !== castgcBefore) {
+      logger.info("扫码成功（已下发 CASTGC）");
+      return { scanUrl };
+    }
+  }
+
+  throw new Error("二维码登录超时（二维码已失效），请重试");
 }

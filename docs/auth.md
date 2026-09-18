@@ -167,8 +167,78 @@ client.persistent(".hust-session.json", { maxAgeMs: 2 * 60 * 60 * 1000 });
 
 自动续期后仍被重定向到 CAS 时会抛 `自动续期后仍被重定向到 CAS 登录`。
 
-## 已知限制：企业微信 MFA
+## 登录方式与顺序
 
-未处理企业微信 MFA / 二次验证（作者尚未遇到，暂未实现）。若登录被要求 MFA，脚本会失败。
+`HustClient` 支持多种登录方式，按配置的先后顺序依次尝试；**已持久化的会话（`.persistent()`）
+始终最优先复用**（先用 `CASTGC` 免密换票），只有持久化会话失效时才执行登录方式序列。
 
-规避：先用**浏览器**在同一网络/设备上完整登录一次（让系统认定你的 MAC/IP 为可信设备），完成 MFA 后再用本库登录，通常不会再触发；若仍触发则当前版本无法自动通过。
+- `auth({ user_name, password })`：密码 + 验证码登录（需配合 `withXxxOcr()`）
+- `withQrCode(handler)`：企业微信扫码登录（无需密码 / 验证码 / OCR）
+
+顺序即调用顺序：
+
+```ts
+// 先密码，失败再扫码
+hust.auth({ user_name, password }).withQrCode(showQr).persistent(".hust-session.json");
+
+// 先扫码，失败再密码（扫码作为默认方式）
+hust.withQrCode(showQr).auth({ user_name, password }).persistent(".hust-session.json");
+```
+
+`one.hust` / `pecg` / `petyxy` / `ihuster` 等「子 SSO」流程在 `CASTGC` 失效时也会走同一序列，
+因此配置了扫码后它们同样能降级到扫码登录。
+
+> **推荐组合：密码优先 + 扫码兜底**
+>
+> 扫码登录必须由人操作，无法在后台静默完成，因此不适合频繁续期；而密码登录遇到 MFA 又会被拦截。
+> 两者组合正好互补：
+>
+> ```ts
+> hust
+>   .auth({ user_name, password })
+>   .withStdChar()        // 密码登录用离线验证码识别
+>   .withQrCode(showQr)   // 密码被 MFA 拦截时，自动降级到扫码
+>   .persistent(".hust-session.json");
+> ```
+>
+> `CASTGC` 失效时先用密码**静默续期**；一旦被强制 MFA 拦截，自动降级为扫码一次。
+> 扫码完成后设备/会话被风控信任，后续密码登录通常不再触发 MFA，从而恢复全自动续期。
+
+## 企业微信扫码登录
+
+用企业微信扫码授权后，CAS 会向当前会话下发长期票据 `CASTGC`，随后即可正常获取各应用会话，
+可作为强制 MFA 场景下的替代登录方式。
+
+```ts
+import hust from "husthelper";
+
+const client = hust
+  .withQrCode((scanUrl) => {
+    // scanUrl 即二维码内容（企业微信扫码入口），可自行渲染为终端图片/文件
+    // 返回 Promise 可阻塞等待用户扫码；扫码状态轮询由 SDK 在后台继续
+    console.log(scanUrl);
+  })
+  .persistent(".hust-session.json");
+```
+
+`handler` 可为异步函数，在其中注入阻塞逻辑（例如前端 UI 显示二维码并等待用户扫码后再 resolve）。
+轮询默认 3s 一次、二维码 180s 失效，可用 `withQrCode(handler, { intervalMs, timeoutMs })` 调整。
+
+便捷方法 `client.loginByQrCode({ onQrCode, intervalMs?, timeoutMs? })` 等价于「注册扫码方式 + 首次访问」，
+同样**优先复用持久化会话**；如需强制重新扫码，可清除 `.hust-session.json`，或调用
+`client.httpSession?.deleteCookie("CASTGC", "pass.hust.edu.cn")`。
+
+底层能力也单独导出：
+
+| 导出 | 说明 |
+| --- | --- |
+| `qrLogin(session, service, options)` | 生成二维码并轮询，成功返回 `{ scanUrl, redirectUrl? }` |
+| `qrScanUrl(uuid, service)` / `qrCheckUrl(uuid)` | 二维码内容 / 状态轮询地址 |
+| `CAS_QR_LOGIN` / `CAS_QR_CHECK` | 对应 CAS 端点常量 |
+
+完整示例见 [`examples/login_qrcode.ts`](../examples/login_qrcode.ts)（终端支持图片协议时内联显示二维码，否则写入 PNG 文件；`--file` / `--image` / `--refresh` 可指定）。
+
+## 已知限制：强制 MFA 下的密码登录
+
+若账号开启了强制企业微信 MFA，走密码 / 验证码的完整登录仍会被阻断，请改用企业微信扫码登录
+（`hust.withQrCode(handler)` 或 `client.loginByQrCode()`）。

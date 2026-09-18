@@ -1,4 +1,9 @@
-import { HustClient, type AuthOptions } from "./src/client.ts";
+import {
+  HustClient,
+  type AuthOptions,
+  type QrCodeHandler,
+  type QrCodeOptions,
+} from "./src/client.ts";
 
 export { HustClient } from "./src/client.ts";
 export { Session } from "./src/http.ts";
@@ -17,6 +22,8 @@ export {
   CAS_LOGIN,
   CAS_RSA,
   CAS_CODE,
+  CAS_QR_LOGIN,
+  CAS_QR_CHECK,
   CASTGC_COOKIE,
   casLoginUrl,
   serviceUrl,
@@ -25,6 +32,9 @@ export {
   exchangeTicket,
   fullLogin,
   acquireServiceSession,
+  qrScanUrl,
+  qrCheckUrl,
+  qrLogin,
 } from "./src/cas.ts";
 export type {
   CasService,
@@ -33,11 +43,14 @@ export type {
   LoginOptions,
   LoginContext,
   LoginContextProvider,
+  CasLoginProvider,
   AcquireOptions,
   OcrStrategy,
   AiOcr,
   ParsedOcr,
   RawOcr,
+  QrLoginOptions,
+  QrLoginResult,
 } from "./src/cas.ts";
 
 /* ----------------------------- CAS 应用声明 ------------------------------ */
@@ -325,13 +338,25 @@ export type {
 export type { RgbaFrame } from "./src/captcha.ts";
 export { defaultLogger, resolveLogger } from "./src/logger.ts";
 export type { Logger, LoggerInput } from "./src/logger.ts";
-export type { AuthOptions, AiOcrOptions, PersistOptions } from "./src/client.ts";
+export type {
+  AuthOptions,
+  AiOcrOptions,
+  PersistOptions,
+  QrCodeHandler,
+  QrCodeOptions,
+  QrCodeLoginOptions,
+} from "./src/client.ts";
 export type { AIConfig } from "./src/openai.ts";
 
 export function auth(options: AuthOptions = {}): HustClient {
   return new HustClient(options);
 }
 
-const hust = { auth };
+/** 以企业微信扫码登录为首要 / 唯一登录方式创建客户端；之后仍可链式 `.auth({...})` 追加密码登录 */
+export function withQrCode(handler: QrCodeHandler, options: QrCodeOptions = {}): HustClient {
+  return new HustClient().withQrCode(handler, options);
+}
+
+const hust = { auth, withQrCode };
 
 export default hust;
