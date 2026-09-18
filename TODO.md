@@ -42,6 +42,22 @@
 
 ## 待办
 
+- [ ] **公选课全量课表获取（只读，`client.zxq`）**：公选课为抽签分配，**只抓全量课程数据供分析课标冲突，不做选/退课**。
+  - 状态：**未实现**。选课系统（`wsxk.hust.edu.cn`）非选课季时 `zxqremian.action` 仅返回「本次选课安排还未公布」，无任何课程行，
+    **响应 schema 无法采样**；需等选课窗口开启后（或拿到一份真实响应样本）再补。
+  - 已验证的登录链（用 `CASTGC` 免密换票，`CAS service = https://wsxk.hust.edu.cn/hustpass2.action`）：
+    `/hustpass2.action` → `/select.jsp` → DWR `AuthPermissionService.getUserMenuList` 取菜单 →
+    公选课入口 `GGXK`：`/studentControl!chooseSystem.action?xkxt=zxq` →
+    `/zxqstudentcourse/selectzxqbody.action` → 框架页 `/zxqcourse/index_zxq.jsp`。
+  - 只读端点（计划在此封装）：
+    - `/zxqstudentcourse/zxqremian.action` —— **公选课全量余量/课表列表（核心，选课季才有数据）**
+    - `/zxqstudentcourse/zxqalreadycourse.action` —— 已选结果（含退选入口，只读解析）
+    - `/zxqstudentcourse/zxqyxcourses.action` —— 已修课程
+    - DWR：`ZxqCoursesService.findDbTime`（服务器时间）、
+      `AuthPermissionService.selectXkqx` / `getYxCourses` / `findKtByKcmcAndXqh3`
+  - 待办：新增 `src/zxq.ts`（`wsxkService` + `ZxqApi`），接入 `client.zxq`、`index.ts` 导出、example 与 `docs/zxq.md`；
+    解析策略以真实 HTML 表格字段为准（课程名 / 课程号 / 课堂号 / 教师 / 时间 / 地点 / 容量 / 已选 / 余量）。
+
 - [ ] **hkwxy 的 `tp_up` / `tp_wp` 仍会各触发一次续期**：两者会话 cookie 路径已隔离（`/tp_up`、`/tp_wp`），
   但该站点的会话/负载均衡粘性在另一应用登录后会让先前会话失效，属服务端行为，cookie jar 无法规避（会自动自愈）。
 - [ ] 若需要，可把服务大厅（`client.hkwxy.getServiceCenter`）作为静态资源纳入聚合（目录型数据，价值有限）。
