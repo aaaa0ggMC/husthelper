@@ -171,8 +171,45 @@ HUST_USERNAME=... HUST_PASSWORD=... node index.ts --port 3000
 | `hust_transactions` | 一卡通流水（分页，金额已归一为元） |
 | `hust_email` | 校园邮箱信息 |
 | `hust_privacy` | 当前会话的隐私策略与预算余额 |
+| `hust_sync_ledger` | 把一卡通流水增量同步到本地 ledger 账本（**仅在检测到 ledger 时出现**；只回汇总，不回明细） |
 
-每个工具都接受可选的 `level`（`count` / `redacted` / `raw`，默认会话默认等级）。
+除 `hust_sync_ledger` 外，每个工具都接受可选的 `level`（`count` / `redacted` / `raw`，默认会话默认等级）。
+
+## 同步开销到本地 ledger
+
+如果你在本地跑着 [ledger-mcp-termux](../../mcps/ledger-mcp-termux)（记账账本），本 MCP 会**在启动时探测**
+`ledger` 命令；探测到就注册 `hust_sync_ledger`，否则该工具不出现在 `tools/list` 里。
+
+当用户明确要求「把开销同步到账本」时，模型调用 `hust_sync_ledger`：
+
+1. 先从账本里读**最新一条 `source=ecard` 流水的时间**作为 checkpoint（账本为空时默认回溯一年）；
+2. 从该时间起按学期月份翻阅一卡通流水直到现在；
+3. 映射成 ledger 条目（`source=ecard`、`method=校园卡`、币种 `CNY`，命中医疗关键词的标 `sensitive`）后写入账本。
+
+**模型只拿得到汇总**，例如：
+
+```json
+{
+  "synced": 9, "inserted": 9, "updated": 0, "unchanged": 0,
+  "amount": { "currency": "CNY", "expense": "40.75", "income": "0.00", "net": "40.75" },
+  "window": { "since": "2026-09-17 00:00:00", "until": "2026-09-18 17:10:19", "months": 1 }
+}
+```
+
+商户名、卡号、备注等明细只在 MCP 进程内流转，**不会进入模型上下文**；这使「同步」和「让模型分析账目」
+彻底解耦——要分析，请让模型去调 ledger 侧的工具。重复同步是幂等的：ledger 按内容指纹去重，不会重复记账。
+
+配置：
+
+| 方式 | 说明 |
+| --- | --- |
+| `HUST_LEDGER_CMD` | ledger 可执行命令，默认 `ledger`（PATH 上）。也支持带参数，如 `node /path/to/ledger-mcp-termux/bin/ledger.js`；含空格的路径用引号 |
+| `HUST_LEDGER_SYNC_SINCE` | 账本里没有 ecard 记录时的起始日期，`YYYY-MM-DD`；不设则回溯一年 |
+| 工具参数 `since` | 本次同步的强制起点，覆盖上面的 checkpoint，适合分批回填 |
+| 工具参数 `dryRun` | 只预览条数与金额、不写账本 |
+
+> 走 hub/HTTP 时，如果 ledger 在另一个进程里跑，注意两边都要能访问到账本命令与 `LEDGER_DB`
+> （ledger 侧可用 `LEDGER_DB` / `LEDGER_DATA_DIR` 指定）。
 
 ## 密钥管理
 
@@ -201,6 +238,8 @@ node key.ts rotate   # 轮换（旧的 raw 权限立即失效）
 | `HUST_REDACTED_BUDGET` | `2000` | 同上，针对 redacted |
 | `HUST_SHOW_SENSITIVE` | 空 | `1` 允许 redacted 下查看敏感条目，`0` 明确禁止 |
 | `HUST_SESSION` | 自动 | 审计里记录的会话标识 |
+| `HUST_LEDGER_CMD` | `ledger` | 本地账本命令；探测到才注册 `hust_sync_ledger`，可带参数 |
+| `HUST_LEDGER_SYNC_SINCE` | 一年前 | 账本无 ecard 记录时同步的起始日期 `YYYY-MM-DD` |
 
 ## 已知局限
 

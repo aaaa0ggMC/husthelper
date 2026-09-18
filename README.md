@@ -281,6 +281,9 @@ pnpm net keepalive   # 守护模式：断网自动探测与重连
 本项目内置符合 **Model Context Protocol (MCP)** 标准的服务端（位于 [`mcp/`](./mcp/README.md)）。
 可直接为 Claude Desktop、Cursor 等大模型客户端注入统一的华中大校园助手上下文能力。支持 `count` / `redacted`（默认脱敏）/ `raw` 三级隐私分层。
 
+检测到本地 [ledger 记账账本](https://github.com/aaaa0ggMC/ledger-mcp-termux) 时，还会额外注册 `hust_sync_ledger`：
+把一卡通流水增量同步进账本，**只返回汇总（条数/金额），不返回任何明细**（详见 [`mcp/README.md`](./mcp/README.md)）。
+
 > **为什么 MCP 仅聚合了校园业务数据，而没有做校园网认证（net mcp）？**
 >
 > 1. **先有鸡还是先有蛋的逻辑悖论**：绝大多数用户使用的是云端大模型（如 Claude、ChatGPT 等）。当你校园网断开、处于离线状态时，外部网络请求根本发不出去，远端模型压根无法接收你的指令，更不可能替你调用 MCP 工具去登录网络；即便使用的是本地大模型，直接跑命令也远比过一遍大模型工具调用更直接可靠。

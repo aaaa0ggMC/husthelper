@@ -8,6 +8,7 @@ import { z } from "zod";
 import type { Privacy } from "./privacy.ts";
 import { shapeResource } from "./shape.ts";
 import { appendAudit } from "./audit.ts";
+import { detectLedger, syncEcardToLedger } from "./sync.ts";
 import {
   formatErrorResponse,
   formatToolResponse,
@@ -383,6 +384,31 @@ export function createMcpServer(privacy: Privacy): McpServer {
       return formatToolResponse(scriptingMan(args));
     }
   );
+
+  // 只有本机检测到 ledger 时才注册：没有账本就没有「同步开销」这回事
+  const ledger = detectLedger();
+  if (ledger.available) {
+    server.tool(
+      "hust_sync_ledger",
+      `把本人一卡通流水增量同步到本地 ledger 记账账本：从账本里最新一条 ecard 流水之后开始，抓取至今的全部流水并写入。` +
+        `**只在用户明确要求把开销/流水同步到账本时调用**。` +
+        `本工具只返回汇总（同步条数、支出/收入合计、时间窗），不返回任何一条明细；` +
+        `商户名、卡号、备注等只在服务端进程内流转，不会进入模型上下文。${CREDENTIAL_HINT}`,
+      {
+        dryRun: z
+          .boolean()
+          .optional()
+          .describe("只预览不写入，返回将要同步的条数与金额；首次同步或不确认时建议先跑一次"),
+        since: z
+          .string()
+          .optional()
+          .describe(
+            "起始时间（含），'YYYY-MM-DD' 或 'YYYY-MM-DD HH:MM:SS'；默认沿用账本里最新一条 ecard 流水之后，账本为空时默认回溯一年",
+          ),
+      },
+      (args) => syncEcardToLedger(privacy, { dryRun: args.dryRun, since: args.since }),
+    );
+  }
 
   return server;
 }

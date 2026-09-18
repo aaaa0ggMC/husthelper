@@ -41,6 +41,7 @@ export function configToEnv(raw: Record<string, unknown>): EnvOverlay {
   const env: EnvOverlay = {};
   const privacy = section(raw, ["privacy"]);
   const ai = section(raw, ["openai", "ai"]);
+  const ledger = section(raw, ["ledger"]);
 
   put(env, "HUST_USERNAME", get(raw, ["username", "user_name", "un", "HUST_USERNAME"]));
   put(env, "HUST_PASSWORD", get(raw, ["password", "pwd", "pass", "HUST_PASSWORD"]));
@@ -64,6 +65,9 @@ export function configToEnv(raw: Record<string, unknown>): EnvOverlay {
   put(env, "HUST_ALLOW_RAW", get(raw, ["allowRaw", "allow_raw", "HUST_ALLOW_RAW"]) ?? get(privacy, ["allowRaw", "allow_raw"]));
   put(env, "HUST_SHOW_SENSITIVE", get(raw, ["showSensitive", "show_sensitive", "HUST_SHOW_SENSITIVE"]) ?? get(privacy, ["showSensitive", "show_sensitive"]));
   put(env, "HUST_SESSION", get(raw, ["session", "HUST_SESSION"]));
+
+  put(env, "HUST_LEDGER_CMD", get(raw, ["ledgerCmd", "ledger_cmd", "HUST_LEDGER_CMD"]) ?? get(ledger, ["cmd", "command", "bin"]));
+  put(env, "HUST_LEDGER_SYNC_SINCE", get(raw, ["ledgerSyncSince", "ledger_sync_since", "HUST_LEDGER_SYNC_SINCE"]) ?? get(ledger, ["since", "syncSince", "sync_since"]));
 
   return env;
 }
