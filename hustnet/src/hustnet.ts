@@ -579,6 +579,12 @@ export class NetClient {
   private persistMaxAgeMs?: number;
   private persistedAtValue?: string;
   private needsRefresh = false;
+  /**
+   * 当前门户上下文是否来自本进程的实时探测。
+   * `false` 表示它是从持久化会话恢复（或由 `options.portal` 指定）的缓存值，
+   * 因此可能在网络切换 / 门户变更后失效。
+   */
+  private portalFresh = false;
   private keepAliveTimer?: ReturnType<typeof setInterval>;
   private saveTimer?: ReturnType<typeof setTimeout>;
 
@@ -677,6 +683,7 @@ export class NetClient {
         });
       }
       this.portalContext = this.buildContext(this.options.portal, query);
+      this.portalFresh = false;
       return this.portalContext;
     }
 
@@ -699,6 +706,7 @@ export class NetClient {
       });
     }
     this.portalContext = this.buildContext(outcome.portal.base, outcome.portal.query);
+    this.portalFresh = true;
     this.logger.info(`发现校园网门户：${this.portalContext.base}`);
     return this.portalContext;
   }
@@ -902,7 +910,52 @@ export class NetClient {
 
   /** 完整登录：发现门户 → 刷新会话 → 取公钥 → 加密 → 提交。 */
   async login(): Promise<NetLoginResult> {
-    return this.withPortalRetry("login", () => this.loginOnce());
+    try {
+      return await this.withPortalRetry("login", () => this.loginOnce());
+    } catch (error) {
+      // 缓存的门户上下文（queryString / JSESSIONID）失效时，门户往往回一句
+      // 「认证失败」而不是传输层错误；此时自动清空缓存并重新探测门户后
+      // 干净地重试一次，无需用户手动删除会话文件。
+      if (!this.shouldRetryWithCleanSession(error)) throw error;
+      this.logger.warn(
+        `登录被拒（${formatError(error)}），缓存的门户会话可能已失效；` +
+          "清除缓存并重新探测门户后重试…",
+      );
+      this.resetCachedPortal();
+      try {
+        return await this.loginOnce();
+      } catch (retryError) {
+        // 重新探测门户也失败（例如当前已在线、不再有劫持）时，
+        // 原始错误更能说明问题，保留它。
+        if (retryError instanceof NetPortalNotFoundError) throw error;
+        throw retryError;
+      }
+    }
+  }
+
+  /**
+   * 登录被拒是否值得「清缓存重来」：
+   * 仅当当前门户上下文是持久化缓存（非本进程实时探测、也非用户显式指定），
+   * 且错误属于认证被拒类时成立。这样真正的密码错误在首次运行时不会被重复尝试。
+   */
+  private shouldRetryWithCleanSession(error: unknown): boolean {
+    if (this.options.portal) return false;
+    if (this.portalFresh) return false;
+    return (
+      error instanceof NetCredentialError ||
+      error instanceof NetLoginRejectedError ||
+      error instanceof NetSessionExpiredError
+    );
+  }
+
+  /** 丢弃缓存的门户上下文 / JSESSIONID / userIndex，使其在下次使用时重新探测。 */
+  private resetCachedPortal(): void {
+    const base = this.portalContext?.base;
+    if (base) this.session.deleteCookie(SESSION_COOKIE, base);
+    this.portalContext = undefined;
+    this.pageInfoValue = undefined;
+    this.userIndexValue = undefined;
+    this.portalFresh = false;
   }
 
   /** 单次登录（不做门户切换重试）。 */
@@ -1216,6 +1269,7 @@ export class NetClient {
     const outcome = await this.probe(probeUrl);
     if (outcome.portal) {
       this.portalContext = this.buildContext(outcome.portal.base, outcome.portal.query);
+      this.portalFresh = true;
       return { online: false, portal: this.portalContext, reason: "探测到门户劫持跳转" };
     }
     if (!outcome.transportError) {

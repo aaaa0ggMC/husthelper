@@ -40,6 +40,7 @@ console.log(`在线用户: ${info.userName} | IP: ${info.userIp} | 套餐: ${inf
 - 门户劫持探测与重定向处理
 - 动态 RSA 加密认证（公钥运行时获取，不硬编码）
 - 网络心跳与自动掉线重连
+- 持久化会话缓存失效自愈：缓存的门户 / `JSESSIONID` 过期导致登录被拒时，自动清除缓存并重新探测门户后干净重试，无需手动删除会话文件
 - 多网卡绑定支持（`localAddress` / 自定义 Agent，决定 NAS 看到的源 IP/MAC）
 - 独立 CLI 命令行工具
 
