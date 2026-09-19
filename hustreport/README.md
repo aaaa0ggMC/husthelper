@@ -1,234 +1,250 @@
 # hustreport
 
-> ⚠️ **项目现状与开发状态说明**：
-> 目前 `hustreport` **仍是半成品阶段，内部 BUG 较多**，很多边缘场景与复杂排版正在持续探索与重构中，请勿直接用于严肃生产环境。
-> 欢迎在 [`examples/hustreport/`](../examples/hustreport/) 查看当前可运行的完整流程示例，或提交 Issue 共同改进！
+> 基于 [`docx-edit`](https://github.com/CZ600/docxEdit) 的报告文档处理引擎。核心目标：**保格式**地把 Markdown 内容填进已有的 Word 模板，不新建冗余样式、不改乱原有排版。
 
-基于 [`docx-edit`](https://github.com/CZ600/docxEdit) 的报告文档处理模块。核心目标：**保格式**地把 Markdown 内容填进已有的 Word 模板，不新建样式、不改乱排版。
-
-整条链路（AI 只在抽模板时用一次，之后完全确定性）：
+整条链路（AI 只在制作模板时调用一次，后续填字与渲染完全确定性）：
 
 ```
 原始 docx
-  │ analyze            按样式切分 segment，算 XML Style ID，导出带稳定 ref 的 CSV
+  │ analyze            按样式切分 segment，算 XML Style ID，提取批注与媒体，导出带稳定 ref 的 CSV
   ▼
-segments / styles
-  │ ai-template        把样式表+锚点表交给 AI：出 rules / 配方 / 规范化 edits / skeleton.md
+segments / styles / comments
+  │ ai-template        把样式表+锚点表+批注交给 AI：出 rules / 配方 / 规范化 edits / TOC 配置 / skeleton.md
   ▼
 template.docx + template.json + skeleton.md
-  │ （人填 skeleton.md → fill.md）
+  │ （人填 skeleton.md → fill.md，支持追加/修改各级标题、段落、代码块、图片、学术表格）
   ▼
-render  ──────────────►  final.docx
+render  ──────────────►  final.docx（自动更新目录域、语法高亮、三线表、自动剥离临时锚点与批注气泡）
 ```
+
+---
 
 ## 快速开始
 
 ```bash
 pnpm install
 
-# 1) 只读分析：切分 + 样式表 + CSV
-node hustreport/bin/hustreport.ts analyze 任务书.docx --out ./out
+# 1) 只读分析：切分 + 样式表 + 批注 + CSV
+node bin/hustreport.ts analyze 任务书.docx --out ./out
 
-# 2) 无 AI 的模板（打隐藏书签锚点 + 推断默认 DSL）
-node hustreport/bin/hustreport.ts template 任务书.docx --out ./tpl
+# 2) 纯规则打底模板（打隐藏书签锚点 + 推断默认 DSL，无 AI）
+node bin/hustreport.ts template 任务书.docx --out ./tpl
 
-# 3) 有 AI：生成模板 + 规范化 + 填字稿（读 config.json 的 openai 段或环境变量）
-node hustreport/bin/hustreport.ts ai-template 任务书.docx --out ./tpl --task "生成实验报告模板"
-#   可选：--preset generic|labReport  --system-prompt my.md  --extra "附加要求"
+# 3) AI 智能生成模板：规范化底板 + 标题级别校准 + 提取批注规范 + 诊断缺失样式 + 填字稿
+node bin/hustreport.ts ai-template 任务书.docx --out ./tpl --task "生成实验报告模板"
+#    可选：--preset generic|labReport  --system-prompt my.md  --extra "附加要求"
 
-# 4) 渲染：模板 + 填字稿 → 成稿
-node hustreport/bin/hustreport.ts render ./tpl/template.docx \
-  --info ./tpl/template.json --md ./tpl/fill.md --out ./final.docx
+# 4) 确定性渲染：模板 + 填字稿 → 成稿（支持代码主题、图片、表格与目录更新）
+node bin/hustreport.ts render ./tpl/template.docx \
+  --info ./tpl/template.json --md ./tpl/fill.md --out ./final.docx \
+  --code-template default
 ```
 
-AI 配置（环境变量优先）：
+### AI 模型配置（环境变量或 `config.json`）
+
+系统优先读取环境变量，未提供时读取当前工作目录下的 `config.json`（`openai` 或 `ai` 段）：
 
 ```bash
-export HUST_AI_BASE_URL=http://127.0.0.1:1145/v1
+export HUST_AI_BASE_URL=https://api.deepseek.com/v1
 export HUST_AI_API_KEY=sk-xxxx
-export HUST_AI_MODEL=deepseek/deepseek-flash
-export HUST_AI_MAX_TOKENS=32768      # 推理模型需要更大的输出预算
+export HUST_AI_MODEL=deepseek-chat
+export HUST_AI_MAX_TOKENS=32768      # 建议设置较大预算以生成完整 skeleton
 ```
 
-## CLI 一览
-
-| 命令 | 作用 |
-| :-- | :-- |
-| `analyze <docx>` | 切分 segment、样式表、`segments.csv / media.csv / styles.json / analysis.json` |
-| `template <docx>` | 注入持久锚点 + 推断默认 DSL，产出 `template.docx / template.json` |
-| `ai-template <docx>` | 在 template 基础上调用 AI，产出模板 + `skeleton.md`，并应用规范化 `edits` |
-| `render <template.docx>` | 按 `template.json` + 填字稿渲染出成稿 |
-| `edit <docx>` | 直接对文档做 set/insert/delete（见下） |
-
----
-
-## Part 1 · 分析（analyze）
-
-按「段落样式 + run 样式」切分内容，去重成数字 `XML Style ID`，导出 CSV。
-
-```
-Index , Segments , XML Style ID , Ref
-0 , "Java 对象和类" , 0 , body#0/p@70040CDD/s0
-1 , "Java 作为一种面向对象的编程语言，支持以下基本概念：" , 1 , body#0/p@1A2B3C4D/s0
-3 , "img_0001" , 2 , body#0/p@5E6F7A8B/s0
-```
-
-- `Index`：全局序号；`Segments`：文本（多媒体是 `img_xxxx` handle）；`XML Style ID`：含义见 `styles.json`；`Ref`：稳定定位。
-- 段落内**连续同样式**的 run 合并；不同段落不跨段合并。
-- 转义：文本字段始终 `"` 包裹，`\`→`\\`、`"`→`\"`、换行→`\n`、Tab→`\t`。
-
-### 稳定 Ref
-
-```
-body#0/p@4E2EFCDF/s1
- │    │   │          └─ 段内第几个 segment
- │    │   └──────────── Word 稳定段落 ID（w14:paraId）
- └────┴──────────────── part 类型 # 序号
-```
-
-ref 用 `w14:paraId` 而非 run 下标，**改写文本后重新分析 ref 不变**；文档没有 paraId 时退化为 `body#0/p12/s1`。
-
-### 多媒体
-
-图片不塞二进制，分配 handle（`img_0001`），元数据（relId/filename/contentType/尺寸/所在 Ref）写入 `media.csv` 与 `analysis.json`。
-
----
-
-## Part 2 · 模板（template / ai-template）
-
-### 模板 DSL（`template.json`）
-
-```jsonc
+或 `config.json`：
+```json
 {
-  "version": 2,
-  "kind": "hustreport/template",
-  "anchors": {
-    "hrseg0003": { "kind": "slot", "label": "学号", "styleId": 8, "style": { "anchor": "hrseg0003" } }
-  },
-  "defaultProfile": "default",
-  "profiles": {
-    "default": {
-      "styles": { "body": { "anchor": "hrseg0012" }, "code": { "anchor": "hrseg0042" } },
-      "rules": [
-        { "match": { "type": "heading", "level": 1 }, "style": { "anchor": "hrseg0007" } },
-        { "match": { "type": "paragraph" }, "style": { "recipe": "body" } },
-        { "match": { "type": "code" }, "style": { "recipe": "code" } }
-      ]
-    },
-    "compact": { "extends": "default", "rules": [] }
+  "openai": {
+    "baseURL": "https://api.deepseek.com/v1",
+    "apiKey": "sk-xxxx",
+    "model": "deepseek-chat"
   }
 }
 ```
 
-- **Anchor**：模板里的隐藏书签（core OOXML，Word/WPS/LibreOffice 都保留）。渲染前注入、产出成稿时剥离。
-- **StyleRef**：`{anchor}`（首选，自包含）/ `{recipe}` / `{styleName}` / `{ooxmlStyleId}` / `{inline}`。全部指向已有样式，**不新建 `styles.xml` 条目**。
-- **rules**：`match`（type/level/lang/ref）→ `style`，first-match-wins。
-- **profiles**：一篇文章可挂多套模板（`extends` 继承覆盖）。
+---
 
-### AI 生成模板
+## CLI 命令一览
 
-提示词以 skill 文档形式维护，运行时读取（改文本即生效）：
-
-```
-hustreport/prompts/
-├── template.md      # 通用：JSON schema / rules / skeleton 语法 / 约束
-└── lab-report.md    # 实验报告类：逐段判断删除还是保留
-```
-
-`ai-template` 让 AI 输出 `rules / styles / anchors / edits / skeleton`：
-
-- **`edits`（规范化）**：删除面向写作者的指令/格式要求/占位符（如「实验任务 1、2 的源程序（单倍行距，5号宋体字）」），保留标题/章节/任务描述等正文；应用后自动裁剪锚点表、重映射悬空样式引用。
-- **`skeleton`（填字稿）**：只写需要填写或新增的内容，其余从模板原样保留。
-
-三个开关精确控制提示词：`--preset generic|labReport`、`--system-prompt my.md`（完全替换内置）、`--extra "..."`（追加要求）。优先级：`systemPrompt` > `preset` > 默认 `labReport`。
+| 命令 | 常用参数 | 作用 |
+| :-- | :-- | :-- |
+| `analyze <docx>` | `--out <dir>`<br>`--parts body,header`<br>`--include-empty`<br>`--stdout` | 深度分析 docx：按段落/run样式切分，输出 `segments.csv`、`media.csv`、`styles.json` 与 `analysis.json`。 |
+| `template <docx>` | `--out <dir>` | 纯规则打底：注入持久隐藏书签锚点（`hrsegXXXX`），推断默认样式与规则，产出 `template.docx` 与 `template.json`。 |
+| `ai-template <docx>` | `--out <dir>`<br>`--task <str>`<br>`--preset generic\|labReport`<br>`--system-prompt <file>`<br>`--extra <str>` | 结合 AI 审查文档：分析样式表与批注要求，执行语义级删除/清理（`edits`），校准标题样式大纲，配置目录（TOC），给出缺失样式反馈并产出 `skeleton.md`。 |
+| `render <template.docx>` | `--info <template.json>`<br>`--md <fill.md>`<br>`--out <final.docx>`<br>`--config <config.json>`<br>`--code-template <name>`<br>`--keep-comments` | 将 Markdown 渲染填入模板：支持就地填空、追加/插入标题与段落、代码块语法着色、图片自适应排版、表格绘制，并自动同步更新目录与清理批注。 |
+| `edit <docx>` | `--out <out.docx>`<br>`--edits <edits.json>`<br>`--set <ref>=<text>` | 针对 docx 进行精确的底层批处理改写、插入或删除（仅复用已有样式 ID，不污染 `styles.xml`）。 |
 
 ---
 
-## Part 3 · 渲染（render）
+## 核心特性与工作流
 
-### 填字稿语法
+### 1. 结构分析与稳定定位（Part 1 · analyze）
+
+- **段落与 Run 切分**：段落内样式相同的连续 run 会自动合并，跨段不合并，保证切分粒度贴合排版实际。
+- **稳定 Ref（基于 `w14:paraId`）**：形如 `body#0/p@4E2EFCDF/s1`。基于 Word 的持久段落哈希 ID 定位，用户在 Word 中改写文本内容后重新分析，ref 依然保持稳定。
+- **媒体文件抽象**：文档中的图片不以二进制写入 CSV，而是分配 `img_0001` 等 handle，并将图片格式、尺寸、关联关系输出到 `media.csv`。
+- **批注（Comments）关联**：自动提取文档中的所有批注文本、作者及对应的正文锚定范围，为后续规范化提供上下文。
+
+### 2. AI 驱动的模板提炼（Part 2 · ai-template）
+
+`ai-template` 解决传统 Word 模板“既要删掉引导要求，又要保留既定标题与格式”的痛点：
+
+- **无侵入持久锚点**：在模板中埋入标准 OOXML 隐藏书签（`hrseg0001`、`hrseg0002`...），Word/WPS 均完整兼容。
+- **语义化底板规范（`edits`）**：
+  - AI 审查每个段落：引导提示语（如“请在此填写实验原理…”）、示范占位符（“×××”）、示范参考文献整段删除；
+  - 封面、既定实验题目、要求、固定表格等予以完整保留；
+  - 支持删除指导性批注（气泡与内容彻底清除）：
+    ```jsonc
+    { "op": "delete", "target": "comment", "id": "0" }   // 精确删除某条批注
+    { "op": "delete", "target": "comments" }             // 删除底板中的所有批注
+    ```
+- **标题级别与样式校准**：
+  - AI 会审查样式的 `ooxmlStyleId` 与大纲级别；
+  - 一级标题必须优先绑定 `Heading1`，二级标题绑定 `Heading2`，避免 Word/WPS 在更新目录时因错误的手工居中或级别错乱导致目录缩进异常。
+- **缺失样式诊断与用户反馈（`feedback`）**：
+  - 若文档批注或规范中提出了格式要求（如“代码块要求 Consolas 小五号”），但在文档已出现样式中未检测到样本文本，AI **绝不凭空捏造未知样式**，而是通过 `feedback.missingStyles` 给出明确的操作建议，提示用户在文档中补写一行样本。
+- **TOC 目录结构识别**：
+  - 自动识别文档原有的目录大纲级别（`maxLevel`）与目录样式（`TOC1`、`TOC2`）。
+
+### 3. 保格式渲染引擎（Part 3 · render）
+
+#### 填字稿语法（`fill.md`）
 
 ```md
 ---
 profile: default
 ---
 
-[张三](ref:hrseg0024)                                    # 填空（原地替换）
-[计算机2201班](ref:hrseg0020 | padding=cover)             # 同组补齐到等宽
-[U202212345](ref:hrseg0022 | padding=cover align=center) # 组内居中
-[正文内容](ref:hrseg0092 | use:body)                      # 覆盖锚点原有格式
+[张三](ref:hrseg0024)                                    # 原地填空（保留原 run 样式）
+[计算机科学与技术](ref:hrseg0018 | padding=cover)          # 同组补齐到等宽
+[U202612345](ref:hrseg0022 | padding=cover align=center) # 组内居中
+[报告正文内容](ref:hrseg0092 | use:body)                   # 指定配方覆盖原有格式
 
-# 六、参考文献 {ref:hrseg0095}                            # 章节插入（块）
+# 实验一 指针与数组综合设计 {ref:hrseg0001}                # 标题锚定（可修改标题文字）
 
-其后段落 / 列表 / 代码块会按顺序插到该锚点之后。
+## 1.1 调试与分析                                         # 插入二级标题（自动沿用 Heading2 规则）
+
+正文段落会按顺序排版插入。
+
+```c
+#include <stdio.h>
+int main() {
+    printf("Hello HUST!\n");
+    return 0;
+}
 ```
 
-- `[值](ref:锚点)`：**填空**，保留锚点 run 的格式。
-- `# 标题 {ref:锚点}`：**块插入**，用 `rules` 的 heading 规则套样式；标题文字与锚点原文相同时不重复插入。
-- 块属性还可带 `pos:before/after`、`profile:xxx`。
-- 填字选项：`use:<recipe|锚点>`、`padding:<组名>`（**分组，不是长度**）、`align:left|center|right`、`profile:<名>`。
+![系统架构图](images/arch.png){center max}(captionStyle=caption)
 
-### 支持的内容
+| 模块名 | 状态 | 耗时 |
+| :--- | :---: | ---: |
+| 内存池 | 正常 | 2ms |
+| 调度器 | 正常 | 15ms |
+{theme=academic header=true}
+```
 
-- 标题 / 段落 / 代码块 / 列表（含嵌套、任务列表 `- [x]`）/ 引用 / 分隔线；
-- 行内：`**粗**`、`*斜*`、`~~删除~~`、`` `代码` ``、`[链接](url)`（外链自动注册关系）、链接内嵌强调；
-- 全部通过克隆模板已有元素实现，字体/字号/下划线等 `w:rPr` 原样复用。
+#### 渲染能力特性
 
-### 尚未支持
-
-表格（会解析出 table block 但渲染时告警跳过）、图片插入、段落级对齐（`pAlign`）。
+1. **标题插入与目录（TOC）更新**：
+   - **标题重命名**：Markdown 中带有 `{ref:hrsegXXXX}` 的标题，如果文字与原模板不同，引擎会自动就地改写，不会产生重复段落。
+   - **中间插题与尾插题**：用户可在任意章节之间插入新的一级或多级标题，引擎根据当前作用域自动维护大纲层级与样式。
+   - **TOC 目录同步更新**：自动扫描渲染后的各级标题，在文档目录区域生成超链接与 `PAGEREF` 页码域，同时注入带点导线的 `TOC1` / `TOC2` 制表位样式。用户在 Word/WPS 中打开即可看到完整目录结构，点击“更新目录”也不会丢失样式。
+2. **代码块排版与高亮**：
+   - **模式 A（原生段落模式）**：若模板原文档已定义代码样式，开启 `lint: true` 可直接沿用原文档的行距、字体与边距，同时对代码 Token 进行着色；
+   - **模式 B（精美卡片表格）**：若无原生样式，默认渲染为 CodeInWord 风格的双列卡片（左侧行号栏，右侧语法高亮代码，支持背景与边框定制）；
+   - 支持多种预置高亮主题（`default`、`classic`、`eclipse`、`dark`）或自定义 CSS。
+3. **图片自适应排版**：
+   - 自动探测 PNG/JPEG/GIF 宽高比；
+   - 支持 `{center max}`、`{width=300pt}`、`{align=left}` 等控制属性；
+   - 支持图注样式自动绑定与居中居左对齐。
+4. **表格渲染**：
+   - 支持标准 Markdown 表格与对齐方式（居左、居中、居右）；
+   - 内置多种专业主题：`academic`（学术三线表，默认）、`grid`（标准全网格）、`striped`（斑马纹）、`clean`（极简无竖线）；
+   - 支持首行表头自动加粗与重复跨页标题属性。
+5. **批注与锚点清理**：
+   - 渲染完成时，自动剥离所有的临时隐藏书签锚点；
+   - 默认彻底清除批注 DOM、引用的空 run 以及包内冗余 XML 文件；
+   - 如需保留底板中的评阅批注，可指定 `--keep-comments`。
 
 ---
 
-## API
+## 配置文件（`config.json`）
 
-```ts
-import { analyzeDocx, createTemplate, buildTemplateWithAi, renderTemplateFile } from "hustreport";
+可在项目根目录放置 `config.json` 或在命令行通过 `-c / --config` 传入：
 
-const { doc, analysis } = await analyzeDocx("./任务书.docx");
-const csv = formatSegmentsCsv(analysis.segments);
-
-// 无 AI 模板
-await createTemplate("./任务书.docx", "tpl/template.docx", "tpl/template.json");
-
-// 有 AI 模板
-await buildTemplateWithAi({ input: "./任务书.docx", outDir: "tpl", task: "...", chat: myChat });
-
-// 渲染
-await renderTemplateFile("tpl/template.docx", "tpl/template.json", "tpl/fill.md", "final.docx");
+```jsonc
+{
+  "openai": {
+    "baseURL": "https://api.deepseek.com/v1",
+    "apiKey": "sk-xxxx",
+    "model": "deepseek-chat"
+  },
+  "code": {
+    "template": "default",          // 高亮主题
+    "fontFamily": "Consolas",       // 代码字体
+    "fontSize": "9.5pt",            // 字号
+    "lineNumbers": true,            // 是否显示行号
+    "tabSize": 4                    // Tab 展开空格数
+  },
+  "image": {
+    "align": "center",              // 图片默认对齐
+    "size": "max",                  // 默认宽度匹配版心
+    "maxWidth": 430                 // 版心宽度（pt）
+  },
+  "table": {
+    "theme": "academic",            // 表格主题：academic | grid | striped | clean
+    "header": true                  // 首行作为表头
+  }
+}
 ```
 
-### 编辑器（会话内精确定位）
-
-```ts
-import { createEditor } from "hustreport";
-
-const editor = await createEditor("./任务书.docx");
-editor.set({ styleId: 8 }, "U202612345");                 // 选择器
-editor.insertAfter(seg, "六、参考文献");                    // 默认复用目标样式
-editor.insertManyAfter(anchor, [{ text: "1. ..." }, { text: "2. ..." }]);
-editor.remove({ match: { contains: "占位" } }, { as: "run" });
-await editor.save("./out.docx");
-```
-
-编辑用**会话 anchor**（`AnchorRegistry`，ref 形如 `a21`），跨多次 `commit()` 稳定；插入/删除只操作 OOXML 元素，不经过虚拟树 patch。
-
-### 低级原语
-
-- `applyEdits(doc, { set, insert, delete })`：无损改写/插入/删除，未命中的选择器只记 `warnings` 不抛错；
-- `stampAnchors / readAnchors / stripAnchors`：持久书签锚点的注入/解析/剥离；
-- `runEditSandbox(editor, code)`：`node:vm` 沙盒执行 AI 生成的编辑代码（`EDITOR_API_DOC` 是给 AI 的 API 说明）。
+命令行参数 `--extra` 也支持覆盖上述配置（支持 JSON 语法或 `key=val` 扁平语法，例如 `--extra "code.lineNumbers=false"`）。
 
 ---
 
-## 已知说明
+## API 调用示例
 
-- `docx-edit` 解析空段落时会补一个空 `<w:r><w:t/></w:r>`，属其自身行为，语义无影响。
-- `edit` 的插入**不新建样式**：默认复用目标 segment 自己的样式，`useStyleId` 可显式指定。
+```ts
+import {
+  analyzeDocx,
+  createTemplate,
+  buildTemplateWithAi,
+  renderTemplateFile,
+  stripDocumentComments,
+} from "hustreport";
 
-## 测试
+// 1. 文档分析
+const { doc, analysis } = await analyzeDocx("./实验任务书.docx");
+
+// 2. AI 模板生成
+const aiResult = await buildTemplateWithAi({
+  input: "./实验任务书.docx",
+  outDir: "./tpl",
+  task: "生成计算机网络实验报告模板",
+});
+
+// 3. 填字与渲染成稿
+await renderTemplateFile(
+  "./tpl/template.docx",
+  "./tpl/template.json",
+  "./tpl/fill.md",
+  "./final.docx",
+  {
+    codeTemplate: "default",
+    stripComments: true, // 渲染完成自动清理批注
+  }
+);
+```
+
+---
+
+## 测试与质量保障
+
+项目配备了完整的自动化单元测试与类型检查套件：
 
 ```bash
-pnpm --filter hustreport typecheck
-pnpm --filter hustreport test
+pnpm typecheck   # TypeScript 类型全量检查
+pnpm test        # 执行所有单元测试（67+ 测试用例全部通过）
 ```
+
+测试覆盖了切分分析、CSV 转义、样式配方推断、AI 校验与沙盒、Markdown 填字语法、标题粘连拆分与自动目录、代码高亮、三线表格、图片尺寸探测以及批注剥离。

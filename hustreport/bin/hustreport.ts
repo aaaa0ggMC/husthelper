@@ -107,27 +107,23 @@ function parseArgs(argv: string[]): CliOptions {
 }
 
 function usage(): void {
-  console.log(`hustreport —— docx 样式分段 / CSV 导出 / 无损写入
+  console.log(`hustreport —— 基于 docx-edit 的报告文档样式分析与保格式渲染引擎
 
 用法：
-  hustreport analyze  <file.docx> [--out <dir>] [--parts body,header] [--include-empty] [--stdout]
-  hustreport edit     <file.docx> --out <out.docx> (--edits <edits.json> | --set <ref>=<text> ...)
-  hustreport template <file.docx> [--out <dir>]      # 生成 template.docx + template.json（无 AI）
+  hustreport analyze     <file.docx> [--out <dir>] [--parts body,header] [--include-empty] [--stdout]
+  hustreport edit        <file.docx> --out <out.docx> (--edits <edits.json> | --set <ref>=<text> ...)
+  hustreport template    <file.docx> [--out <dir>]
+      # 纯规则打底：注入持久书签锚点并推断默认 DSL，产出 template.docx + template.json（无 AI）
   hustreport ai-template <file.docx> [--out <dir>] [--task "说明"] [--preset generic|labReport] [--system-prompt prompt.md] [--extra "附加要求"]
-      # AI 生成 template + skeleton.md；--preset 选内置策略，--system-prompt 完全替换
-  hustreport render   <template.docx> --info <template.json> --md <fill.md> --out <out.docx>
-                      [--config <config.json>] [--extra "key=val"] [--code-template <name>]
-
-edits.json 形状（数组等价于 { "set": [...] }）：
-  {
-    "set":    [ { "ref": "body#0/p@AAAA/s1", "text": "计算机科学与技术" } ],
-    "insert": [ { "ref": "body#0/p@AAAA/s0", "text": "六、参考文献", "useStyleId": 26, "as": "paragraph", "position": "after" } ],
-    "delete": [ { "ref": "body#0/p@BBBB/s0", "as": "run" } ]
-  }
+      # AI 智能生成：提取样式表/批注要求 → AI 规范化剪裁 + 生成规则与 skeleton.md 填字稿
+  hustreport render      <template.docx> --info <template.json> --md <fill.md> --out <out.docx>
+                         [--config <config.json>] [--extra "key=val"] [--code-template <name>] [--keep-comments]
+      # 确定性渲染：按 template.json 规则渲染 Markdown，支持 TOC 目录同步生成更新、代码块语法高亮、图片排版与学术三线表
 
 说明：
-  analyze  解析 docx，输出 segments.csv / media.csv / styles.json / analysis.json
-  edit     按 ref 改写/插入/删除，插入只复用已有 XML Style ID，不新建样式
+  analyze      解析 docx，输出 segments.csv / media.csv / styles.json / analysis.json
+  ai-template  结合 AI 生成高保真模板，自动识别目录结构与样式规范，输出缺失样式诊断反馈
+  render       将 Markdown 填入模板，支持 --keep-comments 保留原底板批注，默认自动清理批注标记
 `);
 }
 
