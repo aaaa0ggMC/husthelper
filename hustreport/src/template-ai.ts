@@ -449,12 +449,25 @@ export function mergeTemplateAiResponse(text: string, info: TemplateInfo): Merge
 
   // 兜底安全性保障：通过纯文本语义分析，清理遗漏的面向写作者的引导语/说明/占位符
   const deletedRefs = new Set(validEdits.filter((e) => e.op === "delete").map((e) => e.ref));
+  let isUnderReferencesSection = false;
   for (const [ref, anchor] of Object.entries(next.anchors)) {
     if (deletedRefs.has(ref)) continue;
     // 保护：封面字段、目录等结构绝不误删
     if (anchor.tags?.includes("cover") || isCoverLabel(anchor.label ?? "")) continue;
     const textToCheck = anchor.paragraphText ?? anchor.label ?? "";
-    if (isInstructionalText(textToCheck)) {
+
+    // 检查是否进入“参考文献”章节
+    if (/^\s*(?:#*\s*)?参考文献\s*$/.test(textToCheck)) {
+      isUnderReferencesSection = true;
+      continue;
+    }
+    // 如果遇到新的章节标题，退出参考文献章节
+    if (isUnderReferencesSection && /^(?:第[一二三四五六七八九十0-9]+[章节部分]|[\d.]+\s+\S+|[一二三四五六七八九十]+[、.])/i.test(textToCheck)) {
+      isUnderReferencesSection = false;
+    }
+
+    const isExampleReference = isUnderReferencesSection && /^\s*\[\d+\]/.test(textToCheck);
+    if (isInstructionalText(textToCheck) || isExampleReference) {
       validEdits.push({ op: "delete", ref, as: "paragraph" });
       deletedRefs.add(ref);
       warnings.push(`自动清理未在 edits 中声明删除的引导/占位段落: ${ref} ("${textToCheck.slice(0, 30)}")`);

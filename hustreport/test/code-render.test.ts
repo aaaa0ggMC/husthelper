@@ -2,7 +2,12 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 import assert from "node:assert/strict";
 import test from "node:test";
-import { renderTemplate } from "../src/render.ts";
+import {
+  isPureTextCodeBlock,
+  looksLikeProgrammingCode,
+  parseDocument,
+  renderTemplate,
+} from "../src/render.ts";
 import type { TemplateInfo } from "../src/template.ts";
 
 const WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
@@ -169,4 +174,89 @@ test("代码块渲染 (隐藏行号 showLineNumbers: false)", () => {
   assert.equal(tables.length, 1);
   const tcList = tables[0].getElementsByTagNameNS(WORD_NS, "tc");
   assert.equal(tcList.length, 1, "隐藏行号时只有 1 列代码单元格");
+});
+
+test("纯文本代码块识别 (isPureTextCodeBlock & looksLikeProgrammingCode)", () => {
+  // 1. 无语言标记但具备参考文献 [2] 格式 -> 识别为纯文本
+  assert.equal(isPureTextCodeBlock("", "[2] 卢萍, 李开. C语言程序设计[M].\n[3] Kernighan. C."), true);
+  assert.equal(isPureTextCodeBlock("", "[2] xxxx\n[3] xxxx"), true);
+
+  // 2. 显式纯文本语言标记 -> 无论内容为何都是纯文本
+  assert.equal(isPureTextCodeBlock("text", "int main() { return 0; }"), true);
+  assert.equal(isPureTextCodeBlock("plain", "def foo(): pass"), true);
+  assert.equal(isPureTextCodeBlock("raw", "const x = 10;"), true);
+
+  // 3. 显式属性标记 -> 纯文本
+  assert.equal(isPureTextCodeBlock("", "def foo(): pass", { raw: "true" }), true);
+  assert.equal(isPureTextCodeBlock("", "def foo(): pass", { mode: "raw" }), true);
+
+  // 4. 显式代码语言 -> 绝非纯文本
+  assert.equal(isPureTextCodeBlock("python", "[2] xxxx\n[3] xxxx"), false);
+  assert.equal(isPureTextCodeBlock("c", "int main() { return 0; }"), false);
+
+  // 5. 无语言标记且具备典型编程代码特征 -> 识别为代码
+  assert.equal(looksLikeProgrammingCode("#include <stdio.h>\nint main() { return 0; }"), true);
+  assert.equal(looksLikeProgrammingCode("def foo():\n    return 42"), true);
+  assert.equal(looksLikeProgrammingCode("import os\nfrom sys import path"), true);
+  assert.equal(isPureTextCodeBlock("", "#include <stdio.h>\nint main() {\n    return 0;\n}"), false);
+
+  // 6. 无语言标记且为自然语言文字 -> 识别为纯文本
+  assert.equal(looksLikeProgrammingCode("这是实验总结与心得体会。\n本次实验掌握了结构体。"), false);
+  assert.equal(isPureTextCodeBlock("", "这是实验总结与心得体会。\n本次实验掌握了结构体。"), true);
+});
+
+test("代码块纯文本解析与渲染 (作为正文段落填入，避开 Markdown 解析冲突)", () => {
+  const mockDoc = createMockDoc();
+  const info: TemplateInfo = {
+    version: 2,
+    kind: "hustreport/template",
+    meta: { source: "test.docx", createdAt: "2026-01-01", generator: "test" },
+    anchorPrefix: "hrseg",
+    defaultProfile: "default",
+    anchors: { hrseg0001: { kind: "slot" } },
+    profiles: {
+      default: {
+        styles: { body: { anchor: "hrseg0001" } },
+        rules: [{ match: { type: "paragraph" }, style: { recipe: "body" } }],
+      },
+    },
+  };
+
+  const md = [
+    "[正文更新](ref:hrseg0001)",
+    "",
+    "``` {ref: hrseg0001}",
+    "[2] 卢萍, 李开. C语言程序设计*典型*题解[M]. 北京: 清华大学出版社, 2019.",
+    "[3] Brian W. Kernighan. The C [Programming] Language.",
+    "```",
+  ].join("\n");
+
+  const parsed = parseDocument(md);
+  // 围栏代码块应该被拆解为两个 paragraph 类型的 block，且附带 rawRuns
+  const rawBlocks = parsed.blocks.filter((b) => b.rawRuns);
+  assert.equal(rawBlocks.length, 2, "纯文本代码块应该拆为 2 个带 rawRuns 的段落 block");
+  assert.equal(rawBlocks[0].rawRuns![0].text, "[2] 卢萍, 李开. C语言程序设计*典型*题解[M]. 北京: 清华大学出版社, 2019.");
+
+  const result = renderTemplate(mockDoc as any, info, md, { strip: false });
+  assert.equal(result.inserted, 2, "应该插入 2 个纯文本段落");
+
+  const body = mockDoc.xmlDoc.getElementsByTagNameNS(WORD_NS, "body")[0];
+  const tables = body.getElementsByTagNameNS(WORD_NS, "tbl");
+  assert.equal(tables.length, 0, "纯文本代码块不应生成表格");
+
+  const paragraphs = body.getElementsByTagNameNS(WORD_NS, "p");
+  // 查找插入的段落文字
+  const pTexts = Array.from(paragraphs).map((p: any) => {
+    const tList = p.getElementsByTagNameNS(WORD_NS, "t");
+    return Array.from(tList).map((t: any) => t.textContent).join("");
+  });
+
+  assert.ok(
+    pTexts.some((t) => t.includes("[2] 卢萍, 李开. C语言程序设计*典型*题解[M].")),
+    "原始括号与星号应完整保留为纯文本，未被 Markdown 解析损坏",
+  );
+  assert.ok(
+    pTexts.some((t) => t.includes("[3] Brian W. Kernighan. The C [Programming] Language.")),
+    "第二条参考文献也应完整保留为纯文本",
+  );
 });

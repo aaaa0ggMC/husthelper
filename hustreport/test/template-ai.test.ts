@@ -168,6 +168,19 @@ test("mergeTemplateAiResponse: 兜底自动清理未在 edits 中声明删除的
     styleId: 0,
   };
 
+  info.anchors["hrseg0101"] = {
+    kind: "insert",
+    label: "参考文献",
+    paragraphText: "参考文献",
+    styleId: 0,
+  };
+  info.anchors["hrseg0102"] = {
+    kind: "insert",
+    label: "示例参考文献",
+    paragraphText: "[1] 卢萍,李开,王多强，甘早斌. C语言程序设计典型题解与实验指导,北京：清华大学出版社,2019",
+    styleId: 0,
+  };
+
   const aiOutput = JSON.stringify({
     rules: [{ match: { type: "paragraph" }, style: { anchor: "hrseg0001" } }],
     skeleton: "---\nprofile: default\n---\n[默认班级](ref:hrseg0001 | padding=cover)\n",
@@ -179,6 +192,8 @@ test("mergeTemplateAiResponse: 兜底自动清理未在 edits 中声明删除的
 
   assert.ok(deletedRefs.includes("hrseg0099"), "hrseg0099 应该被自动加入删除操作");
   assert.ok(deletedRefs.includes("hrseg0100"), "hrseg0100 应该被自动加入删除操作");
+  assert.ok(deletedRefs.includes("hrseg0102"), "hrseg0102 (参考文献下的示范条目) 应该被自动加入删除操作");
+  assert.ok(!deletedRefs.includes("hrseg0101"), "hrseg0101 (参考文献标题本身) 绝对不能被误删");
   assert.ok(deleteEdits.every((e) => e.as === "paragraph"), "删除方式应为整段 paragraph");
 });
 

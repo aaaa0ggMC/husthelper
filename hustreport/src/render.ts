@@ -89,6 +89,8 @@ export interface MarkdownBlock {
   /** 块级解析出的属性（如 align, size, width, height, header 等）。 */
   attrs?: Record<string, string>;
   extra?: string;
+  /** 纯文本正文段落（跳过 Markdown 行内解析，如由纯文本代码块生成）。 */
+  rawRuns?: InlineRun[];
 }
 
 export interface ParsedDocument {
@@ -138,6 +140,117 @@ const REF_PATTERN = /\[([^\]]*)\]\(\s*ref\s*:\s*([^)\s|]+)([^)]*)\)/g;
 const FILL_ONLY = /^\s*(\[[^\]]*\]\(\s*ref\s*:\s*[^)]+\)\s*)+$/;
 /** 段落里只要出现 ref 链接，就按“填空”处理，不再重复插入该段落。 */
 const HAS_REF_LINK = /\[[^\]]*\]\(\s*ref\s*:/;
+
+const PURE_TEXT_LANGS = new Set([
+  "text",
+  "plain",
+  "plaintext",
+  "txt",
+  "raw",
+  "pure",
+  "none",
+]);
+
+/**
+ * 启发式检测一段文本是否具备典型编程代码或脚本特征。
+ */
+export function looksLikeProgrammingCode(text: string): boolean {
+  // 1. 预处理与导入
+  if (/^\s*(?:#\s*(?:include|define|ifdef|ifndef|pragma)|(?:from\s+[\w.]+\s+)?import\s+[\w*{]|package\s+[\w.]+|using\s+namespace|export\s+(?:default\s+)?(?:function|class|const|let|var|interface|type)|use\s+[\w:]+;)/m.test(text)) {
+    return true;
+  }
+  // 2. 类/接口/结构体/命名空间定义
+  if (/\b(?:public\s+|private\s+|protected\s+|static\s+|abstract\s+)*(?:class|struct|interface|enum|namespace|trait|impl)\s+\w+[\s<:{]/m.test(text)) {
+    return true;
+  }
+  // 3. 函数定义
+  if (/\b(?:def|func|fn|function)\s+\w+\s*\(/.test(text)) {
+    return true;
+  }
+  if (/\b(?:int|void|float|double|char|bool|boolean|auto|string|String|long)\s+\w+\s*\([^)]*\)\s*\{/m.test(text)) {
+    return true;
+  }
+  // 4. 控制流与语句结构
+  if (/\b(?:for|while|switch)\s*\([^)]*\)\s*\{?/m.test(text)) {
+    return true;
+  }
+  // 5. 常见输出/调用特征
+  if (/\b(?:printf|scanf|std::cout|std::cin|System\.out\.print|console\.(?:log|warn|error)|echo)\b/.test(text)) {
+    return true;
+  }
+  // 6. 变量声明
+  if (/\b(?:const|let|var|val)\s+[\w$]+\s*[:=]/.test(text)) {
+    return true;
+  }
+  // 7. Shell / 终端命令特征
+  if (/^\s*(?:\$|#)\s+\S+/m.test(text)) {
+    return true;
+  }
+  if (/^\s*(?:npm|pnpm|yarn|pip|git|docker|curl|wget|cargo|go\s+(?:run|build|test)|python3?|node)\s+\S+/m.test(text)) {
+    return true;
+  }
+  // 8. SQL 语句特征
+  if (/\b(?:SELECT\s+.+?\s+FROM|INSERT\s+INTO|CREATE\s+TABLE|ALTER\s+TABLE|UPDATE\s+\w+\s+SET)\b/i.test(text)) {
+    return true;
+  }
+  // 9. HTML / XML 标签特征
+  if (/^\s*<(?:!DOCTYPE|html|head|body|div|p|span|table|tr|td|script|style)\b/im.test(text)) {
+    return true;
+  }
+
+  // 10. 代码标点密集度检查（连续以分号、大括号结尾）
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length >= 2) {
+    const codePunctuationLines = lines.filter((l) => /;\s*$|[{}]\s*$|=>/.test(l));
+    if (codePunctuationLines.length >= Math.ceil(lines.length * 0.6)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * 判断代码块是否为纯文本正文内容（应绕过 Markdown 行内解析，直接作为正文段落填入）。
+ */
+export function isPureTextCodeBlock(
+  lang: string,
+  text: string,
+  attrs: Record<string, string> = {},
+): boolean {
+  const normLang = (lang ?? "").trim().toLowerCase();
+  // 显式纯文本语言标记
+  if (PURE_TEXT_LANGS.has(normLang)) {
+    return true;
+  }
+  // 显式属性标记 (如 ``` {raw} 或 ``` {mode="raw"} 或 ``` {text} 或 ``` {plain})
+  if (
+    attrs.raw !== undefined ||
+    attrs.text !== undefined ||
+    attrs.plain !== undefined ||
+    attrs.pure !== undefined ||
+    attrs.mode === "raw" ||
+    attrs.mode === "text" ||
+    attrs.mode === "plain"
+  ) {
+    return true;
+  }
+
+  // 若显式指定了其他语言（如 python, c, cpp, js 等），绝不判定为纯文本
+  if (normLang) {
+    return false;
+  }
+
+  // 未指定语言 (无 lang) 时的智能识别：
+  // 1) 优先检测参考文献/引用列表格式（如以 [1]、[2]、[ref-1] 开头）
+  const hasRefPattern = /^\s*\[(?:\d+|[A-Za-z0-9_-]+)\]\s*/m.test(text);
+  if (hasRefPattern) {
+    return true;
+  }
+
+  // 2) 如果不具备典型编程代码特征，则直接作为纯文本正文处理
+  return !looksLikeProgrammingCode(text);
+}
 
 /* ------------------------------- 解析 ------------------------------- */
 
@@ -201,10 +314,25 @@ export function parseDocument(markdown: string, options: RenderOptions = {}): Pa
         i += 1;
       }
       i += 1;
+      const codeText = buffer.join("\n");
+      if (isPureTextCodeBlock(lang, codeText, attrs)) {
+        const nonBlank = buffer.filter((l) => l.trim().length > 0);
+        nonBlank.forEach((rawLine, idx) => {
+          blocks.push({
+            type: "paragraph",
+            text: rawLine,
+            rawRuns: [{ text: rawLine }],
+            ref: idx === 0 ? attrs.ref : undefined,
+            profile: attrs.profile ?? sectionProfile,
+            position: idx === 0 ? attrPosition(attrs.pos) : undefined,
+          });
+        });
+        continue;
+      }
       blocks.push({
         type: "code",
         lang,
-        text: buffer.join("\n"),
+        text: codeText,
         ref: attrs.ref,
         profile: attrs.profile ?? sectionProfile,
         position: attrPosition(attrs.pos),
@@ -468,7 +596,7 @@ function renderBlocks(
     defaultContainer?.ownerDocument ?? (anchorRanges.values().next().value as BookmarkRange | undefined)?.paragraphEl?.ownerDocument;
 
   for (const block of parsed.blocks) {
-    if (block.type === "paragraph" && (FILL_ONLY.test(block.text) || HAS_REF_LINK.test(block.text))) continue; // ref 链接按填空处理
+    if (block.type === "paragraph" && !block.rawRuns && (FILL_ONLY.test(block.text) || HAS_REF_LINK.test(block.text))) continue; // ref 链接按填空处理
 
 
     const profileName = block.profile ?? parsed.profile ?? info.defaultProfile;
@@ -1160,6 +1288,7 @@ interface ParagraphSpec {
 
 /** 把一个 block 拆成若干“段落”，每个段落是若干行内 run（含列表层级）。 */
 function blockParagraphSpecs(block: MarkdownBlock): ParagraphSpec[] {
+  if (block.rawRuns) return [{ runs: block.rawRuns }];
   if (block.type === "code") return block.text.split("\n").map((line) => ({ runs: [{ text: line }] }));
   if (block.type === "list") {
     const counters: number[] = [];
