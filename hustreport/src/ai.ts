@@ -1,4 +1,4 @@
-import axios from "axios";
+import OpenAI from "openai";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -18,46 +18,35 @@ export interface ChatConfig {
 /** 可注入的对话函数，便于测试或替换成别的模型服务。 */
 export type ChatFn = (messages: ChatMessage[]) => Promise<string>;
 
-interface ChatCompletionResponse {
-  choices?: Array<{
-    finish_reason?: string;
-    message?: { content?: string; reasoning_content?: string };
-  }>;
-}
-
 /** 构造一个调用 OpenAI 兼容 `/chat/completions` 的 `ChatFn`。 */
 export function chatCompletion(config: ChatConfig): ChatFn {
+  const client = new OpenAI({
+    baseURL: config.baseURL.replace(/\/+$/, ""),
+    apiKey: config.apiKey,
+    timeout: config.timeout ?? 300000,
+  });
+
   return async (messages) => {
-    let response;
+    let completion;
     try {
-      response = await axios.post<ChatCompletionResponse>(
-        `${config.baseURL.replace(/\/+$/, "")}/chat/completions`,
-        {
-          model: config.model,
-          temperature: config.temperature ?? 0.2,
-          max_tokens: config.maxTokens ?? 65536,
-          messages,
-        },
-        {
-          timeout: config.timeout ?? 300000,
-          headers: { Authorization: `Bearer ${config.apiKey}` },
-        },
+      completion = await client.chat.completions.create({
+        model: config.model,
+        temperature: config.temperature ?? 0.2,
+        max_tokens: config.maxTokens ?? 65536,
+        messages: messages.map((m) => ({
+          role: m.role,
+          content: m.content,
+        })),
+      });
+    } catch (error: any) {
+      const status = error.status ?? error.statusCode ?? "无响应";
+      const message = error.message ?? String(error);
+      throw new Error(
+        `OpenAI 接口请求失败 (${status}) model=${config.model} url=${config.baseURL}: ${message.slice(0, 800)}`,
       );
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        const status = error.response?.status ?? "无响应";
-        const body =
-          typeof error.response?.data === "string" ? error.response.data : JSON.stringify(error.response?.data);
-        throw new Error(
-          `AI 接口请求失败 (${status}) model=${config.model} url=${config.baseURL}: ${
-            (body && body !== "undefined" ? body : error.message).slice(0, 800)
-          }`,
-        );
-      }
-      throw error;
     }
 
-    const choice = response.data.choices?.[0];
+    const choice = completion.choices?.[0];
     const content = choice?.message?.content ?? "";
     if (!content) {
       const reasoning = (choice?.message as any)?.reasoning_content;

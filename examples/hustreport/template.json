@@ -1,0 +1,2231 @@
+{
+  "version": 2,
+  "kind": "hustreport/template",
+  "meta": {
+    "source": "c_programming_lab_report_template.docx",
+    "createdAt": "2026-09-19T07:19:06.766Z",
+    "generator": "hustreport/template"
+  },
+  "anchorPrefix": "hrseg",
+  "anchors": {
+    "hrseg0001": {
+      "kind": "insert",
+      "label": "封面图片/校徽",
+      "styleId": 0,
+      "style": {
+        "anchor": "hrseg0001"
+      },
+      "paragraphText": "img_0001",
+      "part": "body",
+      "paragraph": 0
+    },
+    "hrseg0002": {
+      "kind": "insert",
+      "label": "课",
+      "styleId": 1,
+      "style": {
+        "anchor": "hrseg0002"
+      },
+      "paragraphText": "课 程 实 验 报 告",
+      "part": "body",
+      "paragraph": 3
+    },
+    "hrseg0003": {
+      "kind": "slot",
+      "label": " ",
+      "example": " ",
+      "styleId": 2,
+      "style": {
+        "anchor": "hrseg0003"
+      },
+      "paragraphText": "课 程 实 验 报 告",
+      "part": "body",
+      "paragraph": 3
+    },
+    "hrseg0004": {
+      "kind": "insert",
+      "label": "程",
+      "styleId": 1,
+      "style": {
+        "anchor": "hrseg0004"
+      },
+      "paragraphText": "课 程 实 验 报 告",
+      "part": "body",
+      "paragraph": 3
+    },
+    "hrseg0005": {
+      "kind": "slot",
+      "label": " ",
+      "example": " ",
+      "styleId": 2,
+      "style": {
+        "anchor": "hrseg0005"
+      },
+      "paragraphText": "课 程 实 验 报 告",
+      "part": "body",
+      "paragraph": 3
+    },
+    "hrseg0006": {
+      "kind": "insert",
+      "label": "实",
+      "styleId": 1,
+      "style": {
+        "anchor": "hrseg0006"
+      },
+      "paragraphText": "课 程 实 验 报 告",
+      "part": "body",
+      "paragraph": 3
+    },
+    "hrseg0007": {
+      "kind": "slot",
+      "label": " ",
+      "example": " ",
+      "styleId": 2,
+      "style": {
+        "anchor": "hrseg0007"
+      },
+      "paragraphText": "课 程 实 验 报 告",
+      "part": "body",
+      "paragraph": 3
+    },
+    "hrseg0008": {
+      "kind": "insert",
+      "label": "验",
+      "styleId": 1,
+      "style": {
+        "anchor": "hrseg0008"
+      },
+      "paragraphText": "课 程 实 验 报 告",
+      "part": "body",
+      "paragraph": 3
+    },
+    "hrseg0009": {
+      "kind": "slot",
+      "label": " ",
+      "example": " ",
+      "styleId": 2,
+      "style": {
+        "anchor": "hrseg0009"
+      },
+      "paragraphText": "课 程 实 验 报 告",
+      "part": "body",
+      "paragraph": 3
+    },
+    "hrseg0010": {
+      "kind": "insert",
+      "label": "报",
+      "styleId": 1,
+      "style": {
+        "anchor": "hrseg0010"
+      },
+      "paragraphText": "课 程 实 验 报 告",
+      "part": "body",
+      "paragraph": 3
+    },
+    "hrseg0011": {
+      "kind": "slot",
+      "label": " ",
+      "example": " ",
+      "styleId": 2,
+      "style": {
+        "anchor": "hrseg0011"
+      },
+      "paragraphText": "课 程 实 验 报 告",
+      "part": "body",
+      "paragraph": 3
+    },
+    "hrseg0012": {
+      "kind": "insert",
+      "label": "告",
+      "styleId": 1,
+      "style": {
+        "anchor": "hrseg0012"
+      },
+      "paragraphText": "课 程 实 验 报 告",
+      "part": "body",
+      "paragraph": 3
+    },
+    "hrseg0013": {
+      "kind": "insert",
+      "label": "课程名称：",
+      "styleId": 3,
+      "style": {
+        "anchor": "hrseg0013"
+      },
+      "paragraphText": "课程名称：     C语言程序设计实验        ",
+      "part": "body",
+      "paragraph": 7
+    },
+    "hrseg0014": {
+      "kind": "slot",
+      "label": "课程名称（前段）",
+      "example": "     ",
+      "styleId": 4,
+      "style": {
+        "anchor": "hrseg0014"
+      },
+      "paragraphText": "课程名称：     C语言程序设计实验        ",
+      "part": "body",
+      "paragraph": 7
+    },
+    "hrseg0015": {
+      "kind": "slot",
+      "label": "课程名称",
+      "styleId": 5,
+      "style": {
+        "anchor": "hrseg0015"
+      },
+      "paragraphText": "课程名称：     C语言程序设计实验        ",
+      "part": "body",
+      "paragraph": 7
+    },
+    "hrseg0016": {
+      "kind": "slot",
+      "label": "课程名称（后段）",
+      "example": "        ",
+      "styleId": 4,
+      "style": {
+        "anchor": "hrseg0016"
+      },
+      "paragraphText": "课程名称：     C语言程序设计实验        ",
+      "part": "body",
+      "paragraph": 7
+    },
+    "hrseg0017": {
+      "kind": "insert",
+      "label": "专业班级：",
+      "styleId": 6,
+      "style": {
+        "anchor": "hrseg0017"
+      },
+      "paragraphText": "专业班级：                       ",
+      "part": "body",
+      "paragraph": 19
+    },
+    "hrseg0018": {
+      "kind": "slot",
+      "label": "专业班级",
+      "example": "                       ",
+      "styleId": 7,
+      "style": {
+        "anchor": "hrseg0018"
+      },
+      "paragraphText": "专业班级：                       ",
+      "part": "body",
+      "paragraph": 19,
+      "tags": [
+        "cover"
+      ]
+    },
+    "hrseg0019": {
+      "kind": "insert",
+      "label": "学",
+      "styleId": 6,
+      "style": {
+        "anchor": "hrseg0019"
+      },
+      "paragraphText": "学    号：                       ",
+      "part": "body",
+      "paragraph": 20
+    },
+    "hrseg0020": {
+      "kind": "slot",
+      "label": "    ",
+      "example": "    ",
+      "styleId": 8,
+      "style": {
+        "anchor": "hrseg0020"
+      },
+      "paragraphText": "学    号：                       ",
+      "part": "body",
+      "paragraph": 20
+    },
+    "hrseg0021": {
+      "kind": "insert",
+      "label": "号：",
+      "styleId": 6,
+      "style": {
+        "anchor": "hrseg0021"
+      },
+      "paragraphText": "学    号：                       ",
+      "part": "body",
+      "paragraph": 20
+    },
+    "hrseg0022": {
+      "kind": "slot",
+      "label": "学号",
+      "example": "                       ",
+      "styleId": 7,
+      "style": {
+        "anchor": "hrseg0022"
+      },
+      "paragraphText": "学    号：                       ",
+      "part": "body",
+      "paragraph": 20,
+      "tags": [
+        "cover"
+      ]
+    },
+    "hrseg0023": {
+      "kind": "insert",
+      "label": "姓",
+      "styleId": 6,
+      "style": {
+        "anchor": "hrseg0023"
+      },
+      "paragraphText": "姓    名：                       ",
+      "part": "body",
+      "paragraph": 21
+    },
+    "hrseg0024": {
+      "kind": "slot",
+      "label": "    ",
+      "example": "    ",
+      "styleId": 8,
+      "style": {
+        "anchor": "hrseg0024"
+      },
+      "paragraphText": "姓    名：                       ",
+      "part": "body",
+      "paragraph": 21
+    },
+    "hrseg0025": {
+      "kind": "insert",
+      "label": "名：",
+      "styleId": 6,
+      "style": {
+        "anchor": "hrseg0025"
+      },
+      "paragraphText": "姓    名：                       ",
+      "part": "body",
+      "paragraph": 21
+    },
+    "hrseg0026": {
+      "kind": "slot",
+      "label": "姓名",
+      "example": "                       ",
+      "styleId": 7,
+      "style": {
+        "anchor": "hrseg0026"
+      },
+      "paragraphText": "姓    名：                       ",
+      "part": "body",
+      "paragraph": 21,
+      "tags": [
+        "cover"
+      ]
+    },
+    "hrseg0027": {
+      "kind": "insert",
+      "label": "指导教师：",
+      "styleId": 6,
+      "style": {
+        "anchor": "hrseg0027"
+      },
+      "paragraphText": "指导教师：                       ",
+      "part": "body",
+      "paragraph": 22
+    },
+    "hrseg0028": {
+      "kind": "slot",
+      "label": "指导教师",
+      "example": "                       ",
+      "styleId": 7,
+      "style": {
+        "anchor": "hrseg0028"
+      },
+      "paragraphText": "指导教师：                       ",
+      "part": "body",
+      "paragraph": 22,
+      "tags": [
+        "cover"
+      ]
+    },
+    "hrseg0029": {
+      "kind": "insert",
+      "label": "报告日期：",
+      "styleId": 6,
+      "style": {
+        "anchor": "hrseg0029"
+      },
+      "paragraphText": "报告日期：                       ",
+      "part": "body",
+      "paragraph": 23
+    },
+    "hrseg0030": {
+      "kind": "slot",
+      "label": "报告日期",
+      "example": "                       ",
+      "styleId": 7,
+      "style": {
+        "anchor": "hrseg0030"
+      },
+      "paragraphText": "报告日期：                       ",
+      "part": "body",
+      "paragraph": 23,
+      "tags": [
+        "cover"
+      ]
+    },
+    "hrseg0031": {
+      "kind": "insert",
+      "label": "学院名称",
+      "styleId": 9,
+      "style": {
+        "anchor": "hrseg0031"
+      },
+      "paragraphText": "计算机科学与技术学院",
+      "part": "body",
+      "paragraph": 27
+    },
+    "hrseg0032": {
+      "kind": "slot",
+      "label": "\n",
+      "example": "\n",
+      "styleId": 10,
+      "style": {
+        "anchor": "hrseg0032"
+      },
+      "paragraphText": "\n",
+      "part": "body",
+      "paragraph": 28
+    },
+    "hrseg0033": {
+      "kind": "insert",
+      "label": "目录标题",
+      "styleId": 11,
+      "style": {
+        "anchor": "hrseg0033"
+      },
+      "paragraphText": "目 录",
+      "part": "body",
+      "paragraph": 29
+    },
+    "hrseg0034": {
+      "kind": "insert",
+      "label": "1 ",
+      "styleId": 12,
+      "style": {
+        "anchor": "hrseg0034"
+      },
+      "paragraphText": "1 实验6 指针程序设计实验\t1",
+      "part": "body",
+      "paragraph": 31
+    },
+    "hrseg0035": {
+      "kind": "insert",
+      "label": "实验",
+      "styleId": 13,
+      "style": {
+        "anchor": "hrseg0035"
+      },
+      "paragraphText": "1 实验6 指针程序设计实验\t1",
+      "part": "body",
+      "paragraph": 31
+    },
+    "hrseg0036": {
+      "kind": "insert",
+      "label": "6 ",
+      "styleId": 12,
+      "style": {
+        "anchor": "hrseg0036"
+      },
+      "paragraphText": "1 实验6 指针程序设计实验\t1",
+      "part": "body",
+      "paragraph": 31
+    },
+    "hrseg0037": {
+      "kind": "insert",
+      "label": "指针程序设计实验",
+      "styleId": 13,
+      "style": {
+        "anchor": "hrseg0037"
+      },
+      "paragraphText": "1 实验6 指针程序设计实验\t1",
+      "part": "body",
+      "paragraph": 31
+    },
+    "hrseg0038": {
+      "kind": "insert",
+      "label": "\t1",
+      "styleId": 12,
+      "style": {
+        "anchor": "hrseg0038"
+      },
+      "paragraphText": "1 实验6 指针程序设计实验\t1",
+      "part": "body",
+      "paragraph": 31
+    },
+    "hrseg0039": {
+      "kind": "insert",
+      "label": "1.1 程序改错与跟踪调试",
+      "styleId": 14,
+      "style": {
+        "anchor": "hrseg0039"
+      },
+      "paragraphText": "1.1 程序改错与跟踪调试\t1",
+      "part": "body",
+      "paragraph": 32
+    },
+    "hrseg0040": {
+      "kind": "insert",
+      "label": "\t1",
+      "styleId": 15,
+      "style": {
+        "anchor": "hrseg0040"
+      },
+      "paragraphText": "1.1 程序改错与跟踪调试\t1",
+      "part": "body",
+      "paragraph": 32
+    },
+    "hrseg0041": {
+      "kind": "insert",
+      "label": "1.2 程序完善与修改替换",
+      "styleId": 14,
+      "style": {
+        "anchor": "hrseg0041"
+      },
+      "paragraphText": "1.2 程序完善与修改替换\t1",
+      "part": "body",
+      "paragraph": 33
+    },
+    "hrseg0042": {
+      "kind": "insert",
+      "label": "\t1",
+      "styleId": 15,
+      "style": {
+        "anchor": "hrseg0042"
+      },
+      "paragraphText": "1.2 程序完善与修改替换\t1",
+      "part": "body",
+      "paragraph": 33
+    },
+    "hrseg0043": {
+      "kind": "insert",
+      "label": "1.3 程序设计",
+      "styleId": 14,
+      "style": {
+        "anchor": "hrseg0043"
+      },
+      "paragraphText": "1.3 程序设计\t1",
+      "part": "body",
+      "paragraph": 34
+    },
+    "hrseg0044": {
+      "kind": "insert",
+      "label": "\t1",
+      "styleId": 15,
+      "style": {
+        "anchor": "hrseg0044"
+      },
+      "paragraphText": "1.3 程序设计\t1",
+      "part": "body",
+      "paragraph": 34
+    },
+    "hrseg0045": {
+      "kind": "insert",
+      "label": "1.4 小结",
+      "styleId": 14,
+      "style": {
+        "anchor": "hrseg0045"
+      },
+      "paragraphText": "1.4 小结\t2",
+      "part": "body",
+      "paragraph": 35
+    },
+    "hrseg0046": {
+      "kind": "insert",
+      "label": "\t2",
+      "styleId": 15,
+      "style": {
+        "anchor": "hrseg0046"
+      },
+      "paragraphText": "1.4 小结\t2",
+      "part": "body",
+      "paragraph": 35
+    },
+    "hrseg0047": {
+      "kind": "insert",
+      "label": "2 ",
+      "styleId": 12,
+      "style": {
+        "anchor": "hrseg0047"
+      },
+      "paragraphText": "2 实验7 结构与联合\t3",
+      "part": "body",
+      "paragraph": 36
+    },
+    "hrseg0048": {
+      "kind": "insert",
+      "label": "实验",
+      "styleId": 13,
+      "style": {
+        "anchor": "hrseg0048"
+      },
+      "paragraphText": "2 实验7 结构与联合\t3",
+      "part": "body",
+      "paragraph": 36
+    },
+    "hrseg0049": {
+      "kind": "insert",
+      "label": "7 ",
+      "styleId": 12,
+      "style": {
+        "anchor": "hrseg0049"
+      },
+      "paragraphText": "2 实验7 结构与联合\t3",
+      "part": "body",
+      "paragraph": 36
+    },
+    "hrseg0050": {
+      "kind": "insert",
+      "label": "结构与联合",
+      "styleId": 13,
+      "style": {
+        "anchor": "hrseg0050"
+      },
+      "paragraphText": "2 实验7 结构与联合\t3",
+      "part": "body",
+      "paragraph": 36
+    },
+    "hrseg0051": {
+      "kind": "insert",
+      "label": "\t3",
+      "styleId": 12,
+      "style": {
+        "anchor": "hrseg0051"
+      },
+      "paragraphText": "2 实验7 结构与联合\t3",
+      "part": "body",
+      "paragraph": 36
+    },
+    "hrseg0052": {
+      "kind": "insert",
+      "label": "2.1 表达式求值的程序验证",
+      "styleId": 14,
+      "style": {
+        "anchor": "hrseg0052"
+      },
+      "paragraphText": "2.1 表达式求值的程序验证\t3",
+      "part": "body",
+      "paragraph": 37
+    },
+    "hrseg0053": {
+      "kind": "insert",
+      "label": "\t3",
+      "styleId": 15,
+      "style": {
+        "anchor": "hrseg0053"
+      },
+      "paragraphText": "2.1 表达式求值的程序验证\t3",
+      "part": "body",
+      "paragraph": 37
+    },
+    "hrseg0054": {
+      "kind": "insert",
+      "label": "2.2 源程序修改替换",
+      "styleId": 14,
+      "style": {
+        "anchor": "hrseg0054"
+      },
+      "paragraphText": "2.2 源程序修改替换\t3",
+      "part": "body",
+      "paragraph": 38
+    },
+    "hrseg0055": {
+      "kind": "insert",
+      "label": "\t3",
+      "styleId": 15,
+      "style": {
+        "anchor": "hrseg0055"
+      },
+      "paragraphText": "2.2 源程序修改替换\t3",
+      "part": "body",
+      "paragraph": 38
+    },
+    "hrseg0056": {
+      "kind": "insert",
+      "label": "2.3 程序设计",
+      "styleId": 14,
+      "style": {
+        "anchor": "hrseg0056"
+      },
+      "paragraphText": "2.3 程序设计\t3",
+      "part": "body",
+      "paragraph": 39
+    },
+    "hrseg0057": {
+      "kind": "insert",
+      "label": "\t3",
+      "styleId": 15,
+      "style": {
+        "anchor": "hrseg0057"
+      },
+      "paragraphText": "2.3 程序设计\t3",
+      "part": "body",
+      "paragraph": 39
+    },
+    "hrseg0058": {
+      "kind": "insert",
+      "label": "2.4小结",
+      "styleId": 14,
+      "style": {
+        "anchor": "hrseg0058"
+      },
+      "paragraphText": "2.4小结\t3",
+      "part": "body",
+      "paragraph": 40
+    },
+    "hrseg0059": {
+      "kind": "insert",
+      "label": "\t3",
+      "styleId": 15,
+      "style": {
+        "anchor": "hrseg0059"
+      },
+      "paragraphText": "2.4小结\t3",
+      "part": "body",
+      "paragraph": 40
+    },
+    "hrseg0060": {
+      "kind": "insert",
+      "label": "参考文献",
+      "styleId": 16,
+      "style": {
+        "anchor": "hrseg0060"
+      },
+      "paragraphText": "参考文献\t4",
+      "part": "body",
+      "paragraph": 41
+    },
+    "hrseg0061": {
+      "kind": "insert",
+      "label": "\t4",
+      "styleId": 17,
+      "style": {
+        "anchor": "hrseg0061"
+      },
+      "paragraphText": "参考文献\t4",
+      "part": "body",
+      "paragraph": 41
+    },
+    "hrseg0067": {
+      "kind": "insert",
+      "label": "章标题：实验6 指针程序设计实验",
+      "styleId": 21,
+      "style": {
+        "anchor": "hrseg0067"
+      },
+      "paragraphText": "实验6 指针程序设计实验1.1 程序改错与跟踪调试",
+      "part": "body",
+      "paragraph": 50,
+      "tags": [
+        "heading1"
+      ]
+    },
+    "hrseg0068": {
+      "kind": "insert",
+      "label": "6 ",
+      "styleId": 22,
+      "style": {
+        "anchor": "hrseg0068"
+      },
+      "paragraphText": "实验6 指针程序设计实验1.1 程序改错与跟踪调试",
+      "part": "body",
+      "paragraph": 50
+    },
+    "hrseg0069": {
+      "kind": "insert",
+      "label": "指针程序设计实验",
+      "styleId": 21,
+      "style": {
+        "anchor": "hrseg0069"
+      },
+      "paragraphText": "实验6 指针程序设计实验1.1 程序改错与跟踪调试",
+      "part": "body",
+      "paragraph": 50
+    },
+    "hrseg0070": {
+      "kind": "insert",
+      "label": "节标题：1.1 程序改错与跟踪调试",
+      "styleId": 23,
+      "style": {
+        "anchor": "hrseg0070"
+      },
+      "paragraphText": "实验6 指针程序设计实验1.1 程序改错与跟踪调试",
+      "part": "body",
+      "paragraph": 50,
+      "tags": [
+        "heading2"
+      ]
+    },
+    "hrseg0074": {
+      "kind": "insert",
+      "label": "节标题：1.2 程序完善与修改替换",
+      "styleId": 26,
+      "style": {
+        "anchor": "hrseg0074"
+      },
+      "paragraphText": "1.2 程序完善与修改替换",
+      "part": "body",
+      "paragraph": 52,
+      "tags": [
+        "heading2"
+      ]
+    },
+    "hrseg0080": {
+      "kind": "insert",
+      "label": "节标题：1.3 程序设计",
+      "styleId": 26,
+      "style": {
+        "anchor": "hrseg0080"
+      },
+      "paragraphText": "1.3 程序设计",
+      "part": "body",
+      "paragraph": 54,
+      "tags": [
+        "heading2"
+      ]
+    },
+    "hrseg0099": {
+      "kind": "insert",
+      "label": "节标题：1.4 小结",
+      "styleId": 26,
+      "style": {
+        "anchor": "hrseg0099"
+      },
+      "paragraphText": "1.4 小结",
+      "part": "body",
+      "paragraph": 68,
+      "tags": [
+        "heading2"
+      ]
+    },
+    "hrseg0101": {
+      "kind": "slot",
+      "label": "\n",
+      "example": "\n",
+      "styleId": 10,
+      "style": {
+        "anchor": "hrseg0101"
+      },
+      "paragraphText": "\n",
+      "part": "body",
+      "paragraph": 73
+    },
+    "hrseg0102": {
+      "kind": "insert",
+      "label": "章标题：2 实验7 结构与联合",
+      "styleId": 37,
+      "style": {
+        "anchor": "hrseg0102"
+      },
+      "paragraphText": "2 实验7 结构与联合",
+      "part": "body",
+      "paragraph": 74,
+      "tags": [
+        "heading1"
+      ]
+    },
+    "hrseg0103": {
+      "kind": "insert",
+      "label": "节标题：2.1 表达式求值的程序验证",
+      "styleId": 26,
+      "style": {
+        "anchor": "hrseg0103"
+      },
+      "paragraphText": "2.1 表达式求值的程序验证",
+      "part": "body",
+      "paragraph": 75,
+      "tags": [
+        "heading2"
+      ]
+    },
+    "hrseg0109": {
+      "kind": "insert",
+      "label": "节标题：2.2 源程序修改替换",
+      "styleId": 26,
+      "style": {
+        "anchor": "hrseg0109"
+      },
+      "paragraphText": "2.2 源程序修改替换",
+      "part": "body",
+      "paragraph": 78,
+      "tags": [
+        "heading2"
+      ]
+    },
+    "hrseg0114": {
+      "kind": "insert",
+      "label": "节标题：2.3 程序设计",
+      "styleId": 26,
+      "style": {
+        "anchor": "hrseg0114"
+      },
+      "paragraphText": "2.3 程序设计",
+      "part": "body",
+      "paragraph": 80,
+      "tags": [
+        "heading2"
+      ]
+    },
+    "hrseg0119": {
+      "kind": "insert",
+      "label": "节标题：2.4小结",
+      "styleId": 26,
+      "style": {
+        "anchor": "hrseg0119"
+      },
+      "paragraphText": "2.4小结",
+      "part": "body",
+      "paragraph": 82,
+      "tags": [
+        "heading2"
+      ]
+    },
+    "hrseg0121": {
+      "kind": "slot",
+      "label": "\n",
+      "example": "\n",
+      "styleId": 10,
+      "style": {
+        "anchor": "hrseg0121"
+      },
+      "paragraphText": "\n",
+      "part": "body",
+      "paragraph": 84
+    },
+    "hrseg0122": {
+      "kind": "insert",
+      "label": "参考文献",
+      "styleId": 37,
+      "style": {
+        "anchor": "hrseg0122"
+      },
+      "paragraphText": "参考文献",
+      "part": "body",
+      "paragraph": 85,
+      "tags": [
+        "heading1"
+      ]
+    },
+    "hrseg0127": {
+      "kind": "insert",
+      "label": "6",
+      "styleId": 41,
+      "style": {
+        "anchor": "hrseg0127"
+      },
+      "paragraphText": "6",
+      "part": "footer",
+      "paragraph": 0
+    }
+  },
+  "defaultProfile": "default",
+  "profiles": {
+    "default": {
+      "label": "自动推断",
+      "styles": {
+        "body": {
+          "ooxmlStyleId": "Normal"
+        }
+      },
+      "rules": [
+        {
+          "match": {
+            "type": "heading",
+            "level": 1
+          },
+          "style": {
+            "anchor": "hrseg0067"
+          }
+        },
+        {
+          "match": {
+            "type": "heading",
+            "level": 2
+          },
+          "style": {
+            "anchor": "hrseg0074"
+          }
+        },
+        {
+          "match": {
+            "type": "paragraph"
+          },
+          "style": {
+            "recipe": "body"
+          }
+        },
+        {
+          "match": {
+            "type": "code"
+          },
+          "theme": ""
+        },
+        {
+          "match": {
+            "type": "image"
+          },
+          "options": {
+            "captionRef": "hrseg0094",
+            "align": "center",
+            "size": "max"
+          }
+        },
+        {
+          "match": {
+            "type": "caption"
+          },
+          "style": {
+            "ooxmlStyleId": "Normal"
+          }
+        },
+        {
+          "match": {
+            "type": "table"
+          },
+          "options": {
+            "theme": "academic",
+            "header": true
+          }
+        },
+        {
+          "match": {
+            "type": "heading",
+            "level": 1
+          },
+          "style": {
+            "anchor": "hrseg0102"
+          }
+        },
+        {
+          "match": {
+            "type": "heading",
+            "level": 2
+          },
+          "style": {
+            "anchor": "hrseg0067"
+          }
+        },
+        {
+          "match": {
+            "type": "paragraph"
+          },
+          "style": {
+            "ooxmlStyleId": "Normal"
+          }
+        }
+      ],
+      "defaults": {
+        "style": {
+          "anchor": "hrseg0071"
+        },
+        "use": "both"
+      },
+      "extensions": {
+        "headingCandidates": [
+          {
+            "anchor": "hrseg0002"
+          },
+          {
+            "anchor": "hrseg0003"
+          },
+          {
+            "anchor": "hrseg0013"
+          },
+          {
+            "anchor": "hrseg0014"
+          },
+          {
+            "anchor": "hrseg0015"
+          },
+          {
+            "anchor": "hrseg0033"
+          },
+          {
+            "anchor": "hrseg0067"
+          },
+          {
+            "anchor": "hrseg0068"
+          },
+          {
+            "anchor": "hrseg0017"
+          },
+          {
+            "anchor": "hrseg0018"
+          },
+          {
+            "anchor": "hrseg0020"
+          },
+          {
+            "anchor": "hrseg0031"
+          },
+          {
+            "anchor": "hrseg0062"
+          }
+        ]
+      }
+    }
+  },
+  "comments": [
+    {
+      "id": "0",
+      "author": "指导教师",
+      "text": "章标题：黑体小2加粗，居中，间距前后0.5行",
+      "paragraphRef": "hrseg0067",
+      "paragraphText": "实验6 指针程序设计实验1.1 程序改错与跟踪调试"
+    },
+    {
+      "id": "1",
+      "author": "指导教师",
+      "text": "节标题：黑体4号加粗，间距前后0.5行",
+      "paragraphRef": "hrseg0067",
+      "paragraphText": "实验6 指针程序设计实验1.1 程序改错与跟踪调试"
+    },
+    {
+      "id": "2",
+      "author": "指导教师",
+      "text": "正文：宋体小4号，行间距固定1.5倍行距，字符间距为标准，段落前后0行，首行缩进2汉字",
+      "paragraphRef": "hrseg0071",
+      "paragraphText": "对于程序改错，下划线（或其他方式）指出有错的代码行，分析错误原因，给出改正方案。对于跟踪调试，截图给出题目要求的各观察点的有关变量的值，根据跟踪结果分析程序中存"
+    },
+    {
+      "id": "3",
+      "author": "指导教师",
+      "text": "图标题：位于图下方，黑体5号，字母、阿拉伯数字为Time New Roman 5号",
+      "paragraphRef": "hrseg0094",
+      "paragraphText": "图1-1 程序设计题1的流程图"
+    }
+  ],
+  "styleSchema": [
+    {
+      "styleId": 0,
+      "summary": "pStyle=Normal 对齐=center；中文=Source Han Serif CN / 西文=Liberation Serif 字号=小四 (12pt) 颜色=#000000",
+      "anchorRef": "hrseg0001",
+      "examples": [
+        "img_0001"
+      ],
+      "paragraphDirect": {
+        "styleId": "Normal",
+        "alignment": "center"
+      },
+      "runDirect": {},
+      "ooxmlStyleId": "Normal"
+    },
+    {
+      "styleId": 1,
+      "summary": "pStyle=Normal 对齐=center；中文=FangSong;方正仿宋_GBK / 西文=FangSong;方正仿宋_GBK 字号=初号 (42pt) 加粗 颜色=#000000",
+      "anchorRef": "hrseg0002",
+      "examples": [
+        "课",
+        "程"
+      ],
+      "paragraphDirect": {
+        "styleId": "Normal",
+        "alignment": "center"
+      },
+      "runDirect": {
+        "bold": true,
+        "fontSize": "84",
+        "fontFamily": {
+          "ascii": "FangSong;方正仿宋_GBK",
+          "hAnsi": "FangSong;方正仿宋_GBK",
+          "eastAsia": "FangSong;方正仿宋_GBK",
+          "cs": "FangSong;方正仿宋_GBK"
+        }
+      },
+      "ooxmlStyleId": "Normal"
+    },
+    {
+      "styleId": 2,
+      "summary": "pStyle=Normal 对齐=center；中文=FangSong;方正仿宋_GBK / 西文=FangSong;方正仿宋_GBK 字号=二号 (22pt) 加粗 颜色=#000000",
+      "anchorRef": "hrseg0003",
+      "examples": [],
+      "paragraphDirect": {
+        "styleId": "Normal",
+        "alignment": "center"
+      },
+      "runDirect": {
+        "bold": true,
+        "fontSize": "44",
+        "fontFamily": {
+          "ascii": "FangSong;方正仿宋_GBK",
+          "hAnsi": "FangSong;方正仿宋_GBK",
+          "eastAsia": "FangSong;方正仿宋_GBK",
+          "cs": "FangSong;方正仿宋_GBK"
+        }
+      },
+      "ooxmlStyleId": "Normal"
+    },
+    {
+      "styleId": 3,
+      "summary": "pStyle=Normal 对齐=both 缩进={\"firstLine\":\"354\"}；中文=黑体;微软雅黑 / 西文=黑体;微软雅黑 字号=小二 (18pt) 加粗 颜色=#000000",
+      "anchorRef": "hrseg0013",
+      "examples": [
+        "课程名称："
+      ],
+      "paragraphDirect": {
+        "styleId": "Normal",
+        "indent": {
+          "firstLine": "354"
+        }
+      },
+      "runDirect": {
+        "bold": true,
+        "fontSize": "36",
+        "fontFamily": {
+          "ascii": "黑体;微软雅黑",
+          "hAnsi": "黑体;微软雅黑",
+          "eastAsia": "黑体;微软雅黑",
+          "cs": "黑体;微软雅黑"
+        }
+      },
+      "ooxmlStyleId": "Normal"
+    },
+    {
+      "styleId": 4,
+      "summary": "pStyle=Normal 对齐=both 缩进={\"firstLine\":\"354\"}；中文=Times New Roman / 西文=Liberation Serif 字号=小二 (18pt) 加粗 下划线=single 颜色=#000000",
+      "anchorRef": "hrseg0014",
+      "examples": [],
+      "paragraphDirect": {
+        "styleId": "Normal",
+        "indent": {
+          "firstLine": "354"
+        }
+      },
+      "runDirect": {
+        "bold": true,
+        "underline": "single",
+        "fontSize": "36",
+        "fontFamily": {
+          "eastAsia": "Times New Roman"
+        }
+      },
+      "ooxmlStyleId": "Normal"
+    },
+    {
+      "styleId": 5,
+      "summary": "pStyle=Normal 对齐=both 缩进={\"firstLine\":\"354\"}；中文=Source Han Serif CN / 西文=Liberation Serif 字号=小二 (18pt) 加粗 下划线=single 颜色=#000000",
+      "anchorRef": "hrseg0015",
+      "examples": [
+        "C语言程序设计实验"
+      ],
+      "paragraphDirect": {
+        "styleId": "Normal",
+        "indent": {
+          "firstLine": "354"
+        }
+      },
+      "runDirect": {
+        "bold": true,
+        "underline": "single",
+        "fontSize": "36"
+      },
+      "ooxmlStyleId": "Normal"
+    },
+    {
+      "styleId": 6,
+      "summary": "pStyle=Normal 对齐=both 缩进={\"firstLine\":\"1805\"}；中文=Source Han Serif CN / 西文=Liberation Serif 字号=四号 (14pt) 加粗 颜色=#000000",
+      "anchorRef": "hrseg0017",
+      "examples": [
+        "专业班级：",
+        "学"
+      ],
+      "paragraphDirect": {
+        "styleId": "Normal",
+        "indent": {
+          "firstLine": "1805"
+        }
+      },
+      "runDirect": {
+        "bold": true,
+        "fontSize": "28"
+      },
+      "ooxmlStyleId": "Normal"
+    },
+    {
+      "styleId": 7,
+      "summary": "pStyle=Normal 对齐=both 缩进={\"firstLine\":\"1805\"}；中文=Times New Roman / 西文=Liberation Serif 字号=四号 (14pt) 加粗 下划线=single 颜色=#000000",
+      "anchorRef": "hrseg0018",
+      "examples": [],
+      "paragraphDirect": {
+        "styleId": "Normal",
+        "indent": {
+          "firstLine": "1805"
+        }
+      },
+      "runDirect": {
+        "bold": true,
+        "underline": "single",
+        "fontSize": "28",
+        "fontFamily": {
+          "eastAsia": "Times New Roman"
+        }
+      },
+      "ooxmlStyleId": "Normal"
+    },
+    {
+      "styleId": 8,
+      "summary": "pStyle=Normal 对齐=both 缩进={\"firstLine\":\"1805\"}；中文=Times New Roman / 西文=Liberation Serif 字号=四号 (14pt) 加粗 颜色=#000000",
+      "anchorRef": "hrseg0020",
+      "examples": [],
+      "paragraphDirect": {
+        "styleId": "Normal",
+        "indent": {
+          "firstLine": "1805"
+        }
+      },
+      "runDirect": {
+        "bold": true,
+        "fontSize": "28",
+        "fontFamily": {
+          "eastAsia": "Times New Roman"
+        }
+      },
+      "ooxmlStyleId": "Normal"
+    },
+    {
+      "styleId": 9,
+      "summary": "pStyle=Normal 对齐=center；中文=Source Han Serif CN / 西文=Liberation Serif 字号=四号 (14pt) 加粗 颜色=#000000",
+      "anchorRef": "hrseg0031",
+      "examples": [
+        "计算机科学与技术学院"
+      ],
+      "paragraphDirect": {
+        "styleId": "Normal",
+        "alignment": "center"
+      },
+      "runDirect": {
+        "bold": true,
+        "fontSize": "28"
+      },
+      "ooxmlStyleId": "Normal"
+    },
+    {
+      "styleId": 10,
+      "summary": "pStyle=Normal 对齐=both；中文=Source Han Serif CN / 西文=Liberation Serif 字号=小四 (12pt) 颜色=#000000",
+      "anchorRef": "hrseg0032",
+      "examples": [],
+      "paragraphDirect": {
+        "styleId": "Normal"
+      },
+      "runDirect": {},
+      "ooxmlStyleId": "Normal"
+    },
+    {
+      "styleId": 11,
+      "summary": "pStyle=Normal 对齐=center 间距=line:300；中文=黑体;微软雅黑 / 西文=黑体;微软雅黑 字号=小二 (18pt) rStyle=1Char 加粗 颜色=#000000",
+      "anchorRef": "hrseg0033",
+      "examples": [
+        "目 录"
+      ],
+      "paragraphDirect": {
+        "styleId": "Normal",
+        "alignment": "center",
+        "spacing": {
+          "line": "300",
+          "lineRule": "auto"
+        }
+      },
+      "runDirect": {
+        "styleId": "1Char",
+        "fontSize": "36",
+        "fontFamily": {
+          "ascii": "黑体;微软雅黑",
+          "hAnsi": "黑体;微软雅黑",
+          "eastAsia": "黑体;微软雅黑",
+          "cs": "黑体;微软雅黑"
+        }
+      },
+      "ooxmlStyleId": "Normal"
+    },
+    {
+      "styleId": 12,
+      "summary": "pStyle=TOC1 对齐=both 间距=line:360；中文=SimSun / 西文=SimSun 字号=小四 (12pt) rStyle=IndexLink 加粗 颜色=#000000",
+      "anchorRef": "hrseg0034",
+      "examples": [
+        "1 ",
+        "6 "
+      ],
+      "paragraphDirect": {
+        "styleId": "TOC1",
+        "keepNext": false,
+        "keepLines": false,
+        "pageBreakBefore": false,
+        "widowControl": false,
+        "spacing": {
+          "line": "360",
+          "lineRule": "auto"
+        }
+      },
+      "runDirect": {
+        "styleId": "IndexLink",
+        "bold": true,
+        "fontSize": "24",
+        "fontFamily": {
+          "ascii": "SimSun",
+          "hAnsi": "SimSun",
+          "eastAsia": "SimSun",
+          "cs": "SimSun"
+        }
+      },
+      "ooxmlStyleId": "TOC1"
+    },
+    {
+      "styleId": 13,
+      "summary": "pStyle=TOC1 对齐=both 间距=line:360；中文=Source Han Serif CN / 西文=SimSun 字号=小四 (12pt) rStyle=IndexLink 加粗 颜色=#000000",
+      "anchorRef": "hrseg0035",
+      "examples": [
+        "实验",
+        "指针程序设计实验"
+      ],
+      "paragraphDirect": {
+        "styleId": "TOC1",
+        "keepNext": false,
+        "keepLines": false,
+        "pageBreakBefore": false,
+        "widowControl": false,
+        "spacing": {
+          "line": "360",
+          "lineRule": "auto"
+        }
+      },
+      "runDirect": {
+        "styleId": "IndexLink",
+        "bold": true,
+        "fontSize": "24",
+        "fontFamily": {
+          "ascii": "SimSun",
+          "hAnsi": "SimSun",
+          "cs": "SimSun"
+        }
+      },
+      "ooxmlStyleId": "TOC1"
+    },
+    {
+      "styleId": 14,
+      "summary": "pStyle=TOC2 对齐=both 间距=line:360 缩进={\"hanging\":\"0\"}；中文=Source Han Serif CN / 西文=黑体;微软雅黑 字号=小四 (12pt) rStyle=IndexLink 颜色=#000000",
+      "anchorRef": "hrseg0039",
+      "examples": [
+        "1.1 程序改错与跟踪调试",
+        "1.2 程序完善与修改替换"
+      ],
+      "paragraphDirect": {
+        "styleId": "TOC2",
+        "keepNext": false,
+        "keepLines": false,
+        "pageBreakBefore": false,
+        "widowControl": false,
+        "spacing": {
+          "line": "360",
+          "lineRule": "auto"
+        }
+      },
+      "runDirect": {
+        "styleId": "IndexLink",
+        "fontSize": "24",
+        "fontFamily": {
+          "ascii": "黑体;微软雅黑",
+          "hAnsi": "黑体;微软雅黑",
+          "cs": "黑体;微软雅黑"
+        }
+      },
+      "ooxmlStyleId": "TOC2"
+    },
+    {
+      "styleId": 15,
+      "summary": "pStyle=TOC2 对齐=both 间距=line:360 缩进={\"hanging\":\"0\"}；中文=Source Han Serif CN / 西文=Liberation Serif 字号=小四 (12pt) rStyle=IndexLink 颜色=#000000",
+      "anchorRef": "hrseg0040",
+      "examples": [
+        "\t1",
+        "\t1"
+      ],
+      "paragraphDirect": {
+        "styleId": "TOC2",
+        "keepNext": false,
+        "keepLines": false,
+        "pageBreakBefore": false,
+        "widowControl": false,
+        "spacing": {
+          "line": "360",
+          "lineRule": "auto"
+        }
+      },
+      "runDirect": {
+        "styleId": "IndexLink",
+        "fontSize": "24"
+      },
+      "ooxmlStyleId": "TOC2"
+    },
+    {
+      "styleId": 16,
+      "summary": "pStyle=TOC1 对齐=both 间距=line:360；中文=黑体;微软雅黑 / 西文=黑体;微软雅黑 字号=小四 (12pt) rStyle=IndexLink 颜色=#000000",
+      "anchorRef": "hrseg0060",
+      "examples": [
+        "参考文献"
+      ],
+      "paragraphDirect": {
+        "styleId": "TOC1",
+        "keepNext": false,
+        "keepLines": false,
+        "pageBreakBefore": false,
+        "widowControl": false,
+        "spacing": {
+          "line": "360",
+          "lineRule": "auto"
+        }
+      },
+      "runDirect": {
+        "styleId": "IndexLink",
+        "fontSize": "24",
+        "fontFamily": {
+          "ascii": "黑体;微软雅黑",
+          "hAnsi": "黑体;微软雅黑",
+          "eastAsia": "黑体;微软雅黑",
+          "cs": "黑体;微软雅黑"
+        }
+      },
+      "ooxmlStyleId": "TOC1"
+    },
+    {
+      "styleId": 17,
+      "summary": "pStyle=TOC1 对齐=both 间距=line:360；中文=Source Han Serif CN / 西文=Liberation Serif 字号=小四 (12pt) rStyle=IndexLink 颜色=#000000",
+      "anchorRef": "hrseg0061",
+      "examples": [
+        "\t4"
+      ],
+      "paragraphDirect": {
+        "styleId": "TOC1",
+        "keepNext": false,
+        "keepLines": false,
+        "pageBreakBefore": false,
+        "widowControl": false,
+        "spacing": {
+          "line": "360",
+          "lineRule": "auto"
+        }
+      },
+      "runDirect": {
+        "styleId": "IndexLink",
+        "fontSize": "24"
+      },
+      "ooxmlStyleId": "TOC1"
+    },
+    {
+      "styleId": 18,
+      "summary": "pStyle=TOC1 对齐=both 间距=before:156,after:156；中文=黑体;微软雅黑 / 西文=黑体;微软雅黑 字号=四号 (14pt) 加粗 颜色=#FF0000",
+      "anchorRef": "hrseg0062",
+      "examples": [
+        "注意："
+      ],
+      "paragraphDirect": {
+        "styleId": "TOC1",
+        "widowControl": true,
+        "spacing": {
+          "before": "156",
+          "after": "156"
+        }
+      },
+      "runDirect": {
+        "bold": true,
+        "color": "FF0000",
+        "fontSize": "28",
+        "fontFamily": {
+          "ascii": "黑体;微软雅黑",
+          "hAnsi": "黑体;微软雅黑",
+          "eastAsia": "黑体;微软雅黑",
+          "cs": "黑体;微软雅黑"
+        }
+      },
+      "ooxmlStyleId": "TOC1"
+    },
+    {
+      "styleId": 19,
+      "summary": "pStyle=Normal 对齐=both；中文=黑体;微软雅黑 / 西文=黑体;微软雅黑 字号=四号 (14pt) 颜色=#FF0000",
+      "anchorRef": "hrseg0063",
+      "examples": [
+        "1、按照《C语言程序设计典型题解与实验指导》书中题目撰写报告，书中未发布到头歌的题目不写；",
+        "3、节后面的页码应为正文实际页码；"
+      ],
+      "paragraphDirect": {
+        "styleId": "Normal"
+      },
+      "runDirect": {
+        "color": "FF0000",
+        "fontSize": "28",
+        "fontFamily": {
+          "ascii": "黑体;微软雅黑",
+          "hAnsi": "黑体;微软雅黑",
+          "eastAsia": "黑体;微软雅黑",
+          "cs": "黑体;微软雅黑"
+        }
+      },
+      "ooxmlStyleId": "Normal"
+    },
+    {
+      "styleId": 20,
+      "summary": "pStyle=TOC1 对齐=both；中文=黑体;微软雅黑 / 西文=黑体;微软雅黑 字号=四号 (14pt) 颜色=#FF0000",
+      "anchorRef": "hrseg0064",
+      "examples": [
+        "2、请将所有红色文字和批注删除，否则扣分；"
+      ],
+      "paragraphDirect": {
+        "styleId": "TOC1",
+        "widowControl": true
+      },
+      "runDirect": {
+        "color": "FF0000",
+        "fontSize": "28",
+        "fontFamily": {
+          "ascii": "黑体;微软雅黑",
+          "hAnsi": "黑体;微软雅黑",
+          "eastAsia": "黑体;微软雅黑",
+          "cs": "黑体;微软雅黑"
+        }
+      },
+      "ooxmlStyleId": "TOC1"
+    },
+    {
+      "styleId": 21,
+      "summary": "标题2 pStyle=Heading2 对齐=center 间距=before:156,after:156,line:360 缩进={\"hanging\":\"0\"}；中文=SimSun / 西文=黑体;微软雅黑 字号=小二 (18pt) rStyle=1Char 加粗 颜色=#000000",
+      "anchorRef": "hrseg0067",
+      "examples": [
+        "实验",
+        "指针程序设计实验"
+      ],
+      "paragraphDirect": {
+        "styleId": "Heading2",
+        "alignment": "center",
+        "spacing": {
+          "before": "156",
+          "after": "156",
+          "line": "360",
+          "lineRule": "auto"
+        },
+        "indent": {
+          "hanging": "0"
+        }
+      },
+      "runDirect": {
+        "styleId": "1Char",
+        "fontSize": "36",
+        "fontFamily": {
+          "ascii": "黑体;微软雅黑",
+          "hAnsi": "黑体;微软雅黑",
+          "cs": "黑体;微软雅黑"
+        }
+      },
+      "ooxmlStyleId": "Heading2"
+    },
+    {
+      "styleId": 22,
+      "summary": "标题2 pStyle=Heading2 对齐=center 间距=before:156,after:156,line:360 缩进={\"hanging\":\"0\"}；中文=黑体;微软雅黑 / 西文=黑体;微软雅黑 字号=小二 (18pt) rStyle=1Char 加粗 颜色=#000000",
+      "anchorRef": "hrseg0068",
+      "examples": [
+        "6 "
+      ],
+      "paragraphDirect": {
+        "styleId": "Heading2",
+        "alignment": "center",
+        "spacing": {
+          "before": "156",
+          "after": "156",
+          "line": "360",
+          "lineRule": "auto"
+        },
+        "indent": {
+          "hanging": "0"
+        }
+      },
+      "runDirect": {
+        "styleId": "1Char",
+        "bold": true,
+        "fontSize": "36",
+        "fontFamily": {
+          "ascii": "黑体;微软雅黑",
+          "hAnsi": "黑体;微软雅黑",
+          "eastAsia": "黑体;微软雅黑",
+          "cs": "黑体;微软雅黑"
+        }
+      },
+      "ooxmlStyleId": "Heading2"
+    },
+    {
+      "styleId": 23,
+      "summary": "标题2 pStyle=Heading2 对齐=center 间距=before:156,after:156,line:360 缩进={\"hanging\":\"0\"}；中文=Source Han Serif CN / 西文=黑体;微软雅黑 字号=四号 (14pt) 颜色=#000000",
+      "anchorRef": "hrseg0070",
+      "examples": [
+        "1.1 程序改错与跟踪调试"
+      ],
+      "paragraphDirect": {
+        "styleId": "Heading2",
+        "alignment": "center",
+        "spacing": {
+          "before": "156",
+          "after": "156",
+          "line": "360",
+          "lineRule": "auto"
+        },
+        "indent": {
+          "hanging": "0"
+        }
+      },
+      "runDirect": {
+        "bold": false,
+        "fontSize": "28",
+        "fontFamily": {
+          "ascii": "黑体;微软雅黑",
+          "hAnsi": "黑体;微软雅黑",
+          "cs": "黑体;微软雅黑"
+        }
+      },
+      "ooxmlStyleId": "Heading2"
+    },
+    {
+      "styleId": 24,
+      "summary": "pStyle=Normal 对齐=both 间距=line:360 缩进={\"firstLine\":\"480\"}；中文=Source Han Serif CN / 西文=SimSun 字号=小四 (12pt) 颜色=#FF0000",
+      "anchorRef": "hrseg0071",
+      "examples": [
+        "对于程序改错，下划线（或其他方式）指出有错的代码行，分析错误原因，给出改正方案",
+        "对于跟踪调试，截图给出题目要求的各观察点的有关变量的值，根据跟踪结果分析程序中存在的错误，给出改正方案。"
+      ],
+      "paragraphDirect": {
+        "styleId": "Normal",
+        "spacing": {
+          "line": "360",
+          "lineRule": "auto"
+        },
+        "indent": {
+          "firstLine": "480"
+        }
+      },
+      "runDirect": {
+        "color": "FF0000",
+        "fontSize": "24",
+        "fontFamily": {
+          "ascii": "SimSun",
+          "hAnsi": "SimSun",
+          "cs": "SimSun"
+        }
+      },
+      "ooxmlStyleId": "Normal"
+    },
+    {
+      "styleId": 25,
+      "summary": "pStyle=Normal 对齐=both 间距=line:360 缩进={\"firstLine\":\"480\"}；中文=Source Han Serif CN / 西文=Liberation Serif 字号=小四 (12pt) 颜色=#000000",
+      "anchorRef": "hrseg0072",
+      "examples": [
+        "。"
+      ],
+      "paragraphDirect": {
+        "styleId": "Normal",
+        "spacing": {
+          "line": "360",
+          "lineRule": "auto"
+        },
+        "indent": {
+          "firstLine": "480"
+        }
+      },
+      "runDirect": {
+        "fontSize": "24"
+      },
+      "ooxmlStyleId": "Normal"
+    },
+    {
+      "styleId": 26,
+      "summary": "标题2 pStyle=Heading2 对齐=both 间距=before:156,after:156,line:360 缩进={\"hanging\":\"0\"}；中文=Source Han Serif CN / 西文=黑体;微软雅黑 字号=四号 (14pt) 颜色=#000000",
+      "anchorRef": "hrseg0074",
+      "examples": [
+        "1.2 程序完善与修改替换",
+        "1.3 程序设计"
+      ],
+      "paragraphDirect": {
+        "styleId": "Heading2",
+        "spacing": {
+          "before": "156",
+          "after": "156",
+          "line": "360",
+          "lineRule": "auto"
+        },
+        "indent": {
+          "hanging": "0"
+        }
+      },
+      "runDirect": {
+        "bold": false,
+        "fontSize": "28",
+        "fontFamily": {
+          "ascii": "黑体;微软雅黑",
+          "hAnsi": "黑体;微软雅黑",
+          "cs": "黑体;微软雅黑"
+        }
+      },
+      "ooxmlStyleId": "Heading2"
+    },
+    {
+      "styleId": 27,
+      "summary": "pStyle=Normal 对齐=both 间距=line:360 缩进={\"firstLine\":\"480\"}；中文=Source Han Serif CN / 西文=Liberation Serif 字号=小四 (12pt) 颜色=#FF0000",
+      "anchorRef": "hrseg0076",
+      "examples": [
+        "给一个运行截图说明答案的正确性。",
+        "。"
+      ],
+      "paragraphDirect": {
+        "styleId": "Normal",
+        "spacing": {
+          "line": "360",
+          "lineRule": "auto"
+        },
+        "indent": {
+          "firstLine": "480"
+        }
+      },
+      "runDirect": {
+        "color": "FF0000",
+        "fontSize": "24",
+        "fontFamily": {
+          "cs": "SimSun"
+        }
+      },
+      "ooxmlStyleId": "Normal"
+    },
+    {
+      "styleId": 28,
+      "summary": "pStyle=Normal 对齐=both 间距=line:360 缩进={\"firstLine\":\"480\"}；中文=Times New Roman / 西文=Liberation Serif 字号=小四 (12pt) 颜色=#000000",
+      "anchorRef": "hrseg0077",
+      "examples": [],
+      "paragraphDirect": {
+        "styleId": "Normal",
+        "spacing": {
+          "line": "360",
+          "lineRule": "auto"
+        },
+        "indent": {
+          "firstLine": "480"
+        }
+      },
+      "runDirect": {
+        "fontSize": "24",
+        "fontFamily": {
+          "eastAsia": "Times New Roman"
+        }
+      },
+      "ooxmlStyleId": "Normal"
+    },
+    {
+      "styleId": 29,
+      "summary": "pStyle=Normal 对齐=both 间距=line:360；中文=Source Han Serif CN / 西文=SimSun 字号=小四 (12pt) 颜色=#000000",
+      "anchorRef": "hrseg0081",
+      "examples": [
+        "1. 题目",
+        "[1] 卢萍,李开,王多强，甘早斌. C语言程序设计典型题解与实验指导,北京：清华大学出版社,2019"
+      ],
+      "paragraphDirect": {
+        "styleId": "Normal",
+        "spacing": {
+          "line": "360",
+          "lineRule": "auto"
+        }
+      },
+      "runDirect": {
+        "fontSize": "24",
+        "fontFamily": {
+          "ascii": "SimSun",
+          "hAnsi": "SimSun",
+          "cs": "SimSun"
+        }
+      },
+      "ooxmlStyleId": "Normal"
+    },
+    {
+      "styleId": 30,
+      "summary": "pStyle=Normal 对齐=both 间距=line:360 缩进={\"firstLine\":\"480\"}；中文=SimSun / 西文=SimSun 字号=小四 (12pt) 颜色=#FF0000",
+      "anchorRef": "hrseg0083",
+      "examples": [
+        "1",
+        "visio"
+      ],
+      "paragraphDirect": {
+        "styleId": "Normal",
+        "spacing": {
+          "line": "360",
+          "lineRule": "auto"
+        },
+        "indent": {
+          "firstLine": "480"
+        }
+      },
+      "runDirect": {
+        "color": "FF0000",
+        "fontSize": "24",
+        "fontFamily": {
+          "ascii": "SimSun",
+          "hAnsi": "SimSun",
+          "eastAsia": "SimSun",
+          "cs": "SimSun"
+        }
+      },
+      "ooxmlStyleId": "Normal"
+    },
+    {
+      "styleId": 31,
+      "summary": "pStyle=Normal 对齐=center 间距=line:360 缩进={\"hanging\":\"105\"}；中文=Source Han Serif CN / 西文=Liberation Serif 字号=小四 (12pt) 颜色=#000000",
+      "anchorRef": "hrseg0093",
+      "examples": [
+        "img_0002"
+      ],
+      "paragraphDirect": {
+        "styleId": "Normal",
+        "alignment": "center",
+        "spacing": {
+          "line": "360",
+          "lineRule": "auto"
+        },
+        "indent": {
+          "hanging": "105"
+        }
+      },
+      "runDirect": {},
+      "ooxmlStyleId": "Normal"
+    },
+    {
+      "styleId": 32,
+      "summary": "pStyle=Normal 对齐=center 间距=line:360 缩进={\"hanging\":\"105\"}；中文=黑体;微软雅黑 / 西文=Liberation Serif 字号=五号 (10.5pt) 颜色=#000000",
+      "anchorRef": "hrseg0094",
+      "examples": [
+        "图1-1 程序设计题1的流程图"
+      ],
+      "paragraphDirect": {
+        "styleId": "Normal",
+        "alignment": "center",
+        "spacing": {
+          "line": "360",
+          "lineRule": "auto"
+        },
+        "indent": {
+          "hanging": "105"
+        }
+      },
+      "runDirect": {
+        "fontSize": "21",
+        "fontFamily": {
+          "eastAsia": "黑体;微软雅黑"
+        }
+      },
+      "ooxmlStyleId": "Normal"
+    },
+    {
+      "styleId": 33,
+      "summary": "pStyle=Normal 对齐=center 间距=line:300 缩进={\"firstLine\":\"420\"}；中文=仿宋_GB2312;方正仿宋_GBK / 西文=仿宋_GB2312;方正仿宋_GBK 字号=小四 (12pt) 颜色=#FF0000",
+      "anchorRef": "hrseg0095",
+      "examples": [
+        "（图号按章编，例如 图1-1,图1-2，图2-1，图2-2 等）"
+      ],
+      "paragraphDirect": {
+        "styleId": "Normal",
+        "alignment": "center",
+        "spacing": {
+          "line": "300",
+          "lineRule": "exact"
+        },
+        "indent": {
+          "firstLine": "420"
+        }
+      },
+      "runDirect": {
+        "color": "FF0000",
+        "fontFamily": {
+          "ascii": "仿宋_GB2312;方正仿宋_GBK",
+          "hAnsi": "仿宋_GB2312;方正仿宋_GBK",
+          "eastAsia": "仿宋_GB2312;方正仿宋_GBK",
+          "cs": "SimSun"
+        }
+      },
+      "ooxmlStyleId": "Normal"
+    },
+    {
+      "styleId": 34,
+      "summary": "pStyle=Normal 对齐=both 间距=line:360 缩进={\"hanging\":\"0\"}；中文=Source Han Serif CN / 西文=SimSun 字号=小四 (12pt) 颜色=#000000",
+      "anchorRef": "hrseg0096",
+      "examples": [
+        "2.题目"
+      ],
+      "paragraphDirect": {
+        "styleId": "Normal",
+        "spacing": {
+          "line": "360",
+          "lineRule": "auto"
+        },
+        "indent": {
+          "hanging": "0"
+        }
+      },
+      "runDirect": {
+        "fontSize": "24",
+        "fontFamily": {
+          "ascii": "SimSun",
+          "hAnsi": "SimSun",
+          "cs": "SimSun"
+        }
+      },
+      "ooxmlStyleId": "Normal"
+    },
+    {
+      "styleId": 35,
+      "summary": "pStyle=Normal 对齐=both 间距=line:360 缩进={\"firstLine\":\"480\"}；中文=Source Han Serif CN / 西文=SimSun 字号=小四 (12pt) 颜色=#000000",
+      "anchorRef": "hrseg0097",
+      "examples": [
+        "×××××××××××××××××××××××××××××××××××××××××××××××××××××××××××××××。",
+        "××××××××××××××××××××××××××××××××××××××××××××××××××××××××××××××××××××××××××××,×××××××××××××××××××××××××"
+      ],
+      "paragraphDirect": {
+        "styleId": "Normal",
+        "spacing": {
+          "line": "360",
+          "lineRule": "auto"
+        },
+        "indent": {
+          "firstLine": "480"
+        }
+      },
+      "runDirect": {
+        "fontSize": "24",
+        "fontFamily": {
+          "ascii": "SimSun",
+          "hAnsi": "SimSun",
+          "cs": "SimSun"
+        }
+      },
+      "ooxmlStyleId": "Normal"
+    },
+    {
+      "styleId": 36,
+      "summary": "pStyle=Normal 对齐=both 间距=line:360 缩进={\"hanging\":\"0\"}；中文=Source Han Serif CN / 西文=SimSun 字号=小四 (12pt) 颜色=#FF0000",
+      "anchorRef": "hrseg0098",
+      "examples": [
+        "......(省略号代表后续题目，每道题都要写，要求一样，重在设计思路、解题方法的文字描述，而不是仅简单地粘贴代码）"
+      ],
+      "paragraphDirect": {
+        "styleId": "Normal",
+        "spacing": {
+          "line": "360",
+          "lineRule": "auto"
+        },
+        "indent": {
+          "hanging": "0"
+        }
+      },
+      "runDirect": {
+        "color": "FF0000",
+        "fontSize": "24",
+        "fontFamily": {
+          "ascii": "SimSun",
+          "hAnsi": "SimSun",
+          "cs": "SimSun"
+        }
+      },
+      "ooxmlStyleId": "Normal"
+    },
+    {
+      "styleId": 37,
+      "summary": "标题1 pStyle=Heading1 对齐=center 间距=before:156,after:156,line:360 缩进={\"hanging\":\"0\"}；中文=黑体;微软雅黑 / 西文=黑体;微软雅黑 字号=小二 (18pt) 颜色=#000000",
+      "anchorRef": "hrseg0102",
+      "examples": [
+        "2 实验7 结构与联合",
+        "参考文献"
+      ],
+      "paragraphDirect": {
+        "styleId": "Heading1",
+        "alignment": "center",
+        "spacing": {
+          "before": "156",
+          "after": "156",
+          "line": "360",
+          "lineRule": "auto"
+        },
+        "indent": {
+          "hanging": "0"
+        }
+      },
+      "runDirect": {
+        "bold": false,
+        "fontSize": "36",
+        "fontFamily": {
+          "ascii": "黑体;微软雅黑",
+          "hAnsi": "黑体;微软雅黑",
+          "eastAsia": "黑体;微软雅黑",
+          "cs": "黑体;微软雅黑"
+        }
+      },
+      "ooxmlStyleId": "Heading1"
+    },
+    {
+      "styleId": 38,
+      "summary": "pStyle=Normal 对齐=both 间距=line:360 缩进={\"firstLine\":\"480\"}；中文=Source Han Serif CN / 西文=SimSun 字号=小四 (12pt) 颜色=#000000",
+      "anchorRef": "hrseg0110",
+      "examples": [
+        "××××××××××××××××××××××××××××××××××××××××××××××××××××××××××××××××××××××××××××,×××××××××××××××××××××××××",
+        "××××××××××××××××××××××××××××××××××××××××××××××××××××××××××××××××××××××××××××,×××××××××××××××××××××××××"
+      ],
+      "paragraphDirect": {
+        "styleId": "Normal",
+        "keepNext": false,
+        "keepLines": false,
+        "pageBreakBefore": false,
+        "widowControl": false,
+        "spacing": {
+          "line": "360",
+          "lineRule": "auto"
+        },
+        "indent": {
+          "firstLine": "480"
+        }
+      },
+      "runDirect": {
+        "fontSize": "24",
+        "fontFamily": {
+          "ascii": "SimSun",
+          "hAnsi": "SimSun",
+          "cs": "SimSun"
+        }
+      },
+      "ooxmlStyleId": "Normal"
+    },
+    {
+      "styleId": 39,
+      "summary": "pStyle=Normal 对齐=both 间距=line:360 缩进={\"firstLine\":\"480\"}；中文=Source Han Serif CN / 西文=SimSun 字号=小四 (12pt) 颜色=#FF0000",
+      "anchorRef": "hrseg0111",
+      "examples": [
+        "（同",
+        "）"
+      ],
+      "paragraphDirect": {
+        "styleId": "Normal",
+        "keepNext": false,
+        "keepLines": false,
+        "pageBreakBefore": false,
+        "widowControl": false,
+        "spacing": {
+          "line": "360",
+          "lineRule": "auto"
+        },
+        "indent": {
+          "firstLine": "480"
+        }
+      },
+      "runDirect": {
+        "color": "FF0000",
+        "fontSize": "24",
+        "fontFamily": {
+          "ascii": "SimSun",
+          "hAnsi": "SimSun",
+          "cs": "SimSun"
+        }
+      },
+      "ooxmlStyleId": "Normal"
+    },
+    {
+      "styleId": 40,
+      "summary": "pStyle=Normal 对齐=both 间距=line:360 缩进={\"firstLine\":\"480\"}；中文=SimSun / 西文=SimSun 字号=小四 (12pt) 颜色=#FF0000",
+      "anchorRef": "hrseg0112",
+      "examples": [
+        "1.2",
+        "1.3"
+      ],
+      "paragraphDirect": {
+        "styleId": "Normal",
+        "keepNext": false,
+        "keepLines": false,
+        "pageBreakBefore": false,
+        "widowControl": false,
+        "spacing": {
+          "line": "360",
+          "lineRule": "auto"
+        },
+        "indent": {
+          "firstLine": "480"
+        }
+      },
+      "runDirect": {
+        "color": "FF0000",
+        "fontSize": "24",
+        "fontFamily": {
+          "ascii": "SimSun",
+          "hAnsi": "SimSun",
+          "eastAsia": "SimSun",
+          "cs": "SimSun"
+        }
+      },
+      "ooxmlStyleId": "Normal"
+    },
+    {
+      "styleId": 41,
+      "summary": "pStyle=Footer 对齐=start；中文=Source Han Serif CN / 西文=Liberation Serif 字号=小四 (12pt) 颜色=#000000",
+      "anchorRef": "hrseg0127",
+      "examples": [
+        "6"
+      ],
+      "paragraphDirect": {
+        "styleId": "Footer"
+      },
+      "runDirect": {},
+      "ooxmlStyleId": "Footer"
+    },
+    {
+      "styleId": 42,
+      "summary": "对齐=start；中文=楷体_GB2312;宋体 / 西文=楷体_GB2312;宋体 字号=五号 (10.5pt) 颜色=#FF0000",
+      "anchorRef": "hrseg0128",
+      "examples": [
+        "章标题：黑体小2加粗，居中，间距前后0.5行",
+        "间距前后0.5行"
+      ],
+      "paragraphDirect": {
+        "alignment": "start"
+      },
+      "runDirect": {
+        "color": "FF0000",
+        "fontSize": "21",
+        "fontFamily": {
+          "ascii": "楷体_GB2312;宋体",
+          "hAnsi": "楷体_GB2312;宋体",
+          "eastAsia": "楷体_GB2312;宋体",
+          "cs": "Times New Roman"
+        }
+      }
+    },
+    {
+      "styleId": 43,
+      "summary": "对齐=start；中文=楷体_GB2312;宋体 / 西文=楷体_GB2312;宋体 字号=五号 (10.5pt) 颜色=#FF0000",
+      "anchorRef": "hrseg0129",
+      "examples": [
+        "节标题：黑体4号加粗，",
+        "正文：宋体小4号，行间距固定1.5倍行距，字符间距为标准，"
+      ],
+      "paragraphDirect": {
+        "alignment": "start"
+      },
+      "runDirect": {
+        "color": "FF0000",
+        "fontSize": "21",
+        "fontFamily": {
+          "ascii": "楷体_GB2312;宋体",
+          "hAnsi": "楷体_GB2312;宋体",
+          "eastAsia": "楷体_GB2312;宋体",
+          "cs": "SimSun"
+        }
+      }
+    }
+  ],
+  "feedback": {
+    "missingStyles": [
+      {
+        "name": "代码块（源代码）",
+        "requirement": "等宽字体（如 Consolas / Courier New，五号或小四），单倍行距、无首行缩进，可带浅灰底纹",
+        "instruction": "原文档中未检测到任何等宽代码样式，但本实验报告需要在 1.2 程序完善与修改替换、1.3 程序设计、2.2 源程序修改替换、2.3 程序设计等节粘贴 C 源程序。请在 Word 模板文档末尾另起一行写入一段 C 代码示例（如 int main() { return 0; }），将其字体设为 Consolas 或 Courier New、五号、单倍行距、无首行缩进，保存后重新执行 hustreport ai-template，以便系统记录代码块样式。"
+      }
+    ],
+    "notes": "封面课程名称“C语言程序设计实验”为固定内容，无需填写；封面下划线字段（专业班级 / 学号 / 姓名 / 指导教师 / 报告日期）请统一使用 padding=cover 以保证同列下划线对齐。正文字体取自批注2 所指向段落中的黑色正文样式 hrseg0072（仿宋体系小四、1.5 倍行距、首行缩进 2 字符）；章标题取 hrseg0067（黑体小二加粗居中，符合批注0），节标题取 hrseg0074（黑体四号，符合批注1）。图标题样式（黑体五号，符合批注3）在文档中仅有示范图注 hrseg0094 一处样本，该示范图注及其配套示范流程图已按“删除示范内容”规范从底板中清除，规则仍以其作为图注样式来源。"
+  }
+}

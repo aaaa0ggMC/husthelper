@@ -175,7 +175,7 @@ function topLevelChild(paragraphEl: XmlElement, runEl: XmlElement): XmlElement {
   return node;
 }
 
-function runsBetween(paragraphEl: XmlElement, start: XmlElement, end: XmlElement | null): XmlElement[] {
+export function runsBetween(paragraphEl: XmlElement, start: XmlElement, end: XmlElement | null): XmlElement[] {
   const children = elementList(paragraphEl.childNodes);
   const startIndex = children.indexOf(start);
   const endIndex = end ? children.indexOf(end) : children.length;

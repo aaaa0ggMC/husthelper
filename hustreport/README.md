@@ -1,5 +1,9 @@
 # hustreport
 
+> ⚠️ **项目现状与开发状态说明**：
+> 目前 `hustreport` **仍是半成品阶段，内部 BUG 较多**，很多边缘场景与复杂排版正在持续探索与重构中，请勿直接用于严肃生产环境。
+> 欢迎在 [`examples/hustreport/`](../examples/hustreport/) 查看当前可运行的完整流程示例，或提交 Issue 共同改进！
+
 基于 [`docx-edit`](https://github.com/CZ600/docxEdit) 的报告文档处理模块。核心目标：**保格式**地把 Markdown 内容填进已有的 Word 模板，不新建样式、不改乱排版。
 
 整条链路（AI 只在抽模板时用一次，之后完全确定性）：

@@ -11,7 +11,7 @@ import {
   type InlineRun,
 } from "./edits.ts";
 import type { StyleObject } from "./types.ts";
-import { readAnchors, stripAnchors, type BookmarkRange } from "./stamp.ts";
+import { readAnchors, runsBetween, stripAnchors, type BookmarkRange } from "./stamp.ts";
 import { resolveProfile, type StyleRef, type TemplateInfo, type TemplateProfile, type TemplateRule } from "./template.ts";
 import { highlightCode } from "./highlight.ts";
 import { loadCodeThemeSync, parseFontSizeToHalfPoints, type CodeTokenStyle } from "./code-theme.ts";
@@ -578,6 +578,152 @@ export function renderTemplate(
   };
 }
 
+function hasVisibleTextBefore(p: XmlElement, node: XmlElement): boolean {
+  let child = p.firstChild;
+  while (child && child !== node) {
+    if (child.nodeName === "w:r" || child.nodeName === "w:hyperlink") {
+      const text = child.textContent?.replace(/\s+/g, "");
+      if (text && text.length > 0) return true;
+    }
+    child = child.nextSibling;
+  }
+  return false;
+}
+
+function splitParagraphBeforeAnchor(
+  anchorRange: BookmarkRange,
+  info: TemplateInfo,
+  anchorRanges: Map<string, BookmarkRange>,
+): XmlElement | null {
+  const p = anchorRange.paragraphEl;
+  const splitTarget = anchorRange.start;
+  const ownerDoc = p.ownerDocument;
+
+  let child = p.firstChild;
+  let lastRunBefore: XmlElement | null = null;
+  while (child && child !== splitTarget) {
+    if (child.nodeName === "w:r" || child.nodeName === "w:hyperlink") {
+      if (child.textContent?.replace(/\s+/g, "").length > 0) {
+        lastRunBefore = child;
+      }
+    }
+    child = child.nextSibling;
+  }
+  if (!lastRunBefore) return null;
+
+  let firstRunAfter: XmlElement | null = null;
+  child = splitTarget;
+  while (child) {
+    if (child.nodeName === "w:r" || child.nodeName === "w:hyperlink") {
+      if (child.textContent?.replace(/\s+/g, "").length > 0) {
+        firstRunAfter = child;
+        break;
+      }
+    }
+    child = child.nextSibling;
+  }
+
+  const bookmarkStartsBefore = new Set<string>();
+  child = p.firstChild;
+  while (child && child !== lastRunBefore.nextSibling) {
+    if (child.nodeName === "w:bookmarkStart") {
+      const id = child.getAttribute?.("w:id") || child.getAttribute?.("id");
+      if (id) bookmarkStartsBefore.add(id);
+    }
+    child = child.nextSibling;
+  }
+
+  const p1BookmarkEnds: XmlElement[] = [];
+  child = lastRunBefore.nextSibling;
+  while (child && child !== firstRunAfter) {
+    if (child.nodeName === "w:bookmarkEnd") {
+      const id = child.getAttribute?.("w:id") || child.getAttribute?.("id");
+      if (id && bookmarkStartsBefore.has(id)) {
+        p1BookmarkEnds.push(child);
+      }
+    }
+    child = child.nextSibling;
+  }
+
+  let insertAnchor = lastRunBefore;
+  for (const endNode of p1BookmarkEnds) {
+    if (endNode.previousSibling !== insertAnchor) {
+      p.insertBefore(endNode, insertAnchor.nextSibling);
+    }
+    insertAnchor = endNode;
+  }
+
+  const cutNode = insertAnchor.nextSibling;
+  if (!cutNode) return null;
+
+  const p2 = ownerDoc.createElementNS(WORD_NS, "w:p");
+  const pPr = p.getElementsByTagName?.("w:pPr")?.[0];
+  if (pPr) {
+    const pPr2 = pPr.cloneNode(true);
+    const anchorMeta = info.anchors?.[anchorRange.ref];
+    const isSubHeading =
+      anchorMeta?.tags?.some((t) => t === "heading2" || t === "heading3" || t === "heading4") ||
+      anchorMeta?.label?.includes("节标题");
+    if (isSubHeading) {
+      const jc = pPr2.getElementsByTagName?.("w:jc")?.[0];
+      if (jc) jc.parentNode?.removeChild(jc);
+    }
+    p2.appendChild(pPr2);
+  }
+
+  let curr = cutNode;
+  while (curr) {
+    const next = curr.nextSibling;
+    p2.appendChild(curr);
+    curr = next;
+  }
+
+  p.parentNode.insertBefore(p2, p.nextSibling);
+
+  for (const ar of anchorRanges.values()) {
+    if (ar.paragraphEl === p) {
+      if (ar.start.parentNode === p2) {
+        ar.paragraphEl = p2;
+        if (ar.end && ar.end.parentNode === p2) {
+          ar.runEls = runsBetween(p2, ar.start, ar.end);
+        }
+      } else {
+        if (ar.end && ar.end.parentNode === p) {
+          ar.runEls = runsBetween(p, ar.start, ar.end);
+        }
+      }
+    }
+  }
+
+  return p2;
+}
+
+function normalizeGluedParagraphAnchors(
+  parsed: ParsedDocument,
+  info: TemplateInfo,
+  anchorRanges: Map<string, BookmarkRange>,
+): void {
+  for (const block of parsed.blocks) {
+    if (!block.ref) continue;
+    const range = anchorRanges.get(block.ref);
+    if (!range) continue;
+    if (hasVisibleTextBefore(range.paragraphEl, range.start)) {
+      splitParagraphBeforeAnchor(range, info, anchorRanges);
+    }
+  }
+
+  for (const range of anchorRanges.values()) {
+    const meta = info.anchors?.[range.ref];
+    const isHeading =
+      meta?.tags?.some((t) => t.startsWith("heading")) ||
+      meta?.label?.includes("章标题") ||
+      meta?.label?.includes("节标题");
+    if (isHeading && hasVisibleTextBefore(range.paragraphEl, range.start)) {
+      splitParagraphBeforeAnchor(range, info, anchorRanges);
+    }
+  }
+}
+
 function renderBlocks(
   doc: VirtualWordDocument,
   info: TemplateInfo,
@@ -594,6 +740,8 @@ function renderBlocks(
   const defaultContainer = findDefaultContainer(anchorRanges);
   const ownerDoc: XmlElement =
     defaultContainer?.ownerDocument ?? (anchorRanges.values().next().value as BookmarkRange | undefined)?.paragraphEl?.ownerDocument;
+
+  normalizeGluedParagraphAnchors(parsed, info, anchorRanges);
 
   for (const block of parsed.blocks) {
     if (block.type === "paragraph" && !block.rawRuns && (FILL_ONLY.test(block.text) || HAS_REF_LINK.test(block.text))) continue; // ref 链接按填空处理

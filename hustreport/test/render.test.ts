@@ -1,6 +1,8 @@
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { displayWidth, padToWidth, parseDocument, parseInline, parseSkeleton } from "../src/render.ts";
+import { displayWidth, padToWidth, parseDocument, parseInline, parseSkeleton, renderTemplate } from "../src/render.ts";
 
 test("解析 [文字](ref:锚点) 与 frontmatter profile", () => {
   const markdown = [
@@ -151,3 +153,71 @@ test("解析有序列表层级", () => {
     ["二点一", 1, true],
   ]);
 });
+
+test("renderTemplate: 同一段落黏连的多个标题能自动切分，避免标题重复与错位", () => {
+  const docxEditRequire = createRequire(require.resolve("docx-edit"));
+  const { DOMParser } = docxEditRequire("@xmldom/xmldom");
+  const WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+  const xml =
+    `<?xml version="1.0" encoding="UTF-8"?>` +
+    `<w:document xmlns:w="${WORD_NS}">` +
+    `<w:body>` +
+    `<w:p>` +
+    `<w:pPr><w:jc w:val="center"/></w:pPr>` +
+    `<w:bookmarkStart w:id="1" w:name="hrseg0001"/>` +
+    `<w:r><w:t>实验6 指针程序设计实验</w:t></w:r>` +
+    `<w:bookmarkEnd w:id="1"/>` +
+    `<w:bookmarkStart w:id="2" w:name="hrseg0002"/>` +
+    `<w:r><w:t>1.1 程序改错与跟踪调试</w:t></w:r>` +
+    `<w:bookmarkEnd w:id="2"/>` +
+    `</w:p>` +
+    `</w:body></w:document>`;
+  const doc = new DOMParser().parseFromString(xml, "application/xml");
+  const mockDoc = {
+    partsData: [{ xmlDocument: doc, path: "word/document.xml" }],
+    xmlDoc: doc,
+  };
+
+  const info: any = {
+    version: 2,
+    kind: "hustreport/template",
+    defaultProfile: "default",
+    anchors: {
+      hrseg0001: { kind: "insert", label: "章标题", tags: ["heading1"] },
+      hrseg0002: { kind: "insert", label: "节标题", tags: ["heading2"] },
+    },
+    profiles: {
+      default: {
+        styles: {
+          body: { inline: { paragraph: { styleId: "Normal" } } },
+        },
+        rules: [
+          { match: { type: "heading", level: 1 }, style: { anchor: "hrseg0001" } },
+          { match: { type: "heading", level: 2 }, style: { anchor: "hrseg0002" } },
+          { match: { type: "paragraph" }, style: { anchor: "hrseg0001" } },
+        ],
+      },
+    },
+  };
+
+  const md = [
+    "# 实验6 指针程序设计实验 {ref:hrseg0001}",
+    "",
+    "## 1.1 程序改错与跟踪调试 {ref:hrseg0002}",
+    "",
+    "正文调试记录分析。",
+  ].join("\n");
+
+  const result = renderTemplate(mockDoc as any, info, md, { strip: false });
+  assert.equal(result.warnings.length, 0);
+
+  const body = doc.getElementsByTagName("w:body")[0];
+  const paragraphs = Array.from(body.getElementsByTagName("w:p")) as any[];
+
+  // 应该有两个标题段落 + 一个正文段落 = 3 个段落，且没有重复标题
+  assert.equal(paragraphs.length, 3);
+  assert.equal(paragraphs[0].textContent, "实验6 指针程序设计实验");
+  assert.equal(paragraphs[1].textContent, "1.1 程序改错与跟踪调试");
+  assert.equal(paragraphs[2].textContent, "正文调试记录分析。");
+});
+
