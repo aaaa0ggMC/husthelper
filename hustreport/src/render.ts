@@ -11,6 +11,9 @@ import {
 import type { StyleObject } from "./types.ts";
 import { readAnchors, stripAnchors, type BookmarkRange } from "./stamp.ts";
 import { resolveProfile, type StyleRef, type TemplateInfo, type TemplateProfile, type TemplateRule } from "./template.ts";
+import { highlightCode } from "./highlight.ts";
+import { loadCodeThemeSync, parseFontSizeToHalfPoints, type CodeTokenStyle } from "./code-theme.ts";
+import { resolveReportConfigSync, type CodeBlockConfig, type ReportConfig } from "./config.ts";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type XmlElement = any;
@@ -68,6 +71,8 @@ export interface MarkdownBlock {
   ref?: string;
   profile?: string;
   position?: "before" | "after";
+  /** 指定代码块高亮主题/模板。 */
+  theme?: string;
 }
 
 export interface ParsedDocument {
@@ -84,6 +89,18 @@ export interface RenderOptions {
   structured?: boolean;
   /** 没有 ref 也没有前置锚点的块是否追加到文末（默认 false：跳过并告警，避免重复内容）。 */
   appendUnanchored?: boolean;
+  /** 代码高亮模板名称或 CSS 文件路径（默认 "default"）。 */
+  codeTemplate?: string;
+  /** 代码块详细定制配置（支持 fontFamily, fontSize, lineNumbers, tabSize 等）。 */
+  codeConfig?: CodeBlockConfig;
+  /** 是否显示代码行号（默认 true）。 */
+  showLineNumbers?: boolean;
+  /** 配置文件路径（--config）。 */
+  configFile?: string;
+  /** 覆盖配置项（--extra，支持 JSON 或 key=val）。 */
+  extra?: string;
+  /** 全局合并后的配置对象。 */
+  config?: ReportConfig;
 }
 
 export interface RenderResult {
@@ -151,9 +168,10 @@ export function parseDocument(markdown: string, options: RenderOptions = {}): Pa
     }
 
     // 围栏代码块
-    const fence = /^\s*```+\s*(\S*)\s*$/.exec(line);
+    const fence = /^\s*```+\s*([^\s{]*)\s*(?:\{([^}]*)\})?\s*$/.exec(line);
     if (fence) {
       const lang = fence[1] ?? "";
+      const attrs = fence[2] ? parseAttrs(fence[2]) : {};
       const buffer: string[] = [];
       i += 1;
       while (i < lines.length && !/^\s*```/.test(lines[i])) {
@@ -161,7 +179,15 @@ export function parseDocument(markdown: string, options: RenderOptions = {}): Pa
         i += 1;
       }
       i += 1;
-      blocks.push({ type: "code", lang, text: buffer.join("\n"), profile: sectionProfile });
+      blocks.push({
+        type: "code",
+        lang,
+        text: buffer.join("\n"),
+        ref: attrs.ref,
+        profile: attrs.profile ?? sectionProfile,
+        position: attrPosition(attrs.pos),
+        theme: attrs.theme ?? attrs.template,
+      });
       continue;
     }
 
@@ -288,7 +314,16 @@ export function renderTemplate(
   markdown: string,
   options: RenderOptions = {},
 ): RenderResult {
-  const parsed = parseDocument(markdown, options);
+  const effectiveConfig =
+    options.config ?? resolveReportConfigSync({ configFile: options.configFile, extra: options.extra });
+  const effectiveOptions: RenderOptions = {
+    ...options,
+    config: effectiveConfig,
+    codeConfig: { ...(effectiveConfig.code ?? {}), ...(options.codeConfig ?? {}) },
+    codeTemplate: options.codeTemplate,
+    showLineNumbers: options.showLineNumbers ?? effectiveConfig.code?.lineNumbers ?? true,
+  };
+  const parsed = parseDocument(markdown, effectiveOptions);
   const warnings: string[] = [];
   const anchorRanges = new Map(readAnchors(doc, info.anchorPrefix).map((range) => [range.ref, range]));
 
@@ -328,8 +363,16 @@ export function renderTemplate(
 
   // 2) 结构化插入
   let inserted = 0;
-  if (options.structured ?? true) {
-    inserted = renderBlocks(doc, info, parsed, anchorRanges, warnings, options.appendUnanchored ?? false);
+  if (effectiveOptions.structured ?? true) {
+    inserted = renderBlocks(
+      doc,
+      info,
+      parsed,
+      anchorRanges,
+      warnings,
+      effectiveOptions.appendUnanchored ?? false,
+      effectiveOptions,
+    );
   }
 
   if (options.strip ?? true) stripAnchors(doc, info.anchorPrefix);
@@ -351,6 +394,7 @@ function renderBlocks(
   anchorRanges: Map<string, BookmarkRange>,
   warnings: string[],
   appendUnanchored: boolean,
+  options: RenderOptions = {},
 ): number {
   let count = 0;
   let cursorLast: XmlElement | null = null;
@@ -375,13 +419,6 @@ function renderBlocks(
     }
 
     const rule = matchRule(profile.rules, block);
-    const sample = styleRefToSample(rule?.style ?? profile.defaults?.style, profile, anchorRanges);
-    if (!sample) {
-      warnings.push(`${describeBlock(block)} 找不到可用样式（rules/profile 未覆盖），已跳过`);
-      continue;
-    }
-    const inlineCodeRule = matchRule(profile.rules, { type: "inlineCode" });
-    const inlineCodeSample = inlineCodeRule ? styleRefToSample(inlineCodeRule.style, profile, anchorRanges) : null;
 
     // 计算插入位置：container + refNode（refNode=null 表示追加）
     const position = block.position ?? "after";
@@ -423,6 +460,52 @@ function renderBlocks(
         continue;
       }
     }
+
+    const sample = styleRefToSample(rule?.style ?? profile.defaults?.style, profile, anchorRanges);
+
+    if (block.type === "code") {
+      const hasExplicitTheme = Boolean(
+        block.theme ||
+        (rule?.theme && rule.theme.trim().length > 0) ||
+        options.codeTemplate,
+      );
+      const hasDocumentStyle = Boolean(sample && (rule?.style || profile.styles?.code));
+
+      if (hasDocumentStyle && !hasExplicitTheme) {
+        // 模式 A：文档已明确代码样式（XML Style ID），套用原文档样式，按 lint 设置进行语法着色
+        const { lastEl, lineCount } = renderStyledCodeParagraphs(
+          block,
+          rule ?? { match: { type: "code" } },
+          sample!,
+          options,
+          container,
+          refNode,
+          ownerDoc,
+        );
+        if (lastEl) {
+          cursorLast = lastEl;
+          if (anchored) cursorFallback = container;
+        }
+        count += lineCount;
+        continue;
+      } else {
+        // 模式 B：代码卡片表格（CodeInWord 风格，带行号栏、外边框与主题底色）
+        const codeTable = buildCodeTable(block, rule, sample, options, ownerDoc);
+        container.insertBefore(codeTable, refNode);
+        cursorLast = codeTable;
+        if (anchored) cursorFallback = container;
+        count += 1;
+        continue;
+      }
+    }
+
+    if (!sample) {
+      warnings.push(`${describeBlock(block)} 找不到可用样式（rules/profile 未覆盖），已跳过`);
+      continue;
+    }
+
+    const inlineCodeRule = matchRule(profile.rules, { type: "inlineCode" });
+    const inlineCodeSample = inlineCodeRule ? styleRefToSample(inlineCodeRule.style, profile, anchorRanges) : null;
 
     if (block.type === "hr") {
       const ruleEl = buildHorizontalRule(sample, ownerDoc);
@@ -528,6 +611,385 @@ function buildHorizontalRule(sample: StyleSample, ownerDoc: XmlElement): XmlElem
   }
   addBottomBorder(paragraphEl, ownerDoc);
   return paragraphEl;
+}
+
+function extractSampleFont(sample: StyleSample | null): { family?: string; size?: number } {
+  if (!sample?.runEl) return {};
+  const rPr = childElementsOf(sample.runEl).find((c) => c.nodeName === "w:rPr");
+  if (!rPr) return {};
+  const rFonts = childElementsOf(rPr).find((c) => c.nodeName === "w:rFonts");
+  const sz = childElementsOf(rPr).find((c) => c.nodeName === "w:sz");
+  return {
+    family: rFonts?.getAttribute?.("w:ascii") || rFonts?.getAttribute?.("w:eastAsia") || undefined,
+    size: sz?.getAttribute?.("w:val") ? parseInt(sz.getAttribute("w:val"), 10) : undefined,
+  };
+}
+
+const STANDARD_LINT_COLORS: Record<string, { color?: string; bold?: boolean; italic?: boolean }> = {
+  keyword: { color: "006699", bold: true },
+  string: { color: "032F62" },
+  comment: { color: "008200", italic: true },
+  comments: { color: "008200", italic: true },
+  function: { color: "6F42C1" },
+  functions: { color: "6F42C1" },
+  number: { color: "005CC5" },
+  value: { color: "005CC5" },
+  operator: { color: "D73A49" },
+  variable: { color: "E36209" },
+  "class-name": { color: "6F42C1", bold: true },
+  boolean: { color: "006699", bold: true },
+  preprocessor: { color: "22863A" },
+};
+
+function renderStyledCodeParagraphs(
+  block: MarkdownBlock,
+  rule: TemplateRule,
+  sample: StyleSample,
+  options: RenderOptions,
+  container: XmlElement,
+  refNode: XmlElement | null,
+  ownerDoc: XmlElement,
+): { lastEl: XmlElement | null; lineCount: number } {
+  const isLint = rule.lint !== false;
+  const tabSize = options.codeConfig?.tabSize ?? 4;
+  const hl = highlightCode(block.text, { lang: block.lang, tabSize });
+
+  let last: XmlElement | null = null;
+  for (const line of hl.lines) {
+    let paragraphEl: XmlElement;
+    if (sample.inline) {
+      paragraphEl = createParagraphFromStyles(ownerDoc, sample.inline.paragraph ?? {}, sample.inline.run ?? {}, []);
+    } else {
+      paragraphEl = sample.paragraphEl!.cloneNode(true) as XmlElement;
+      paragraphEl.removeAttribute("w14:paraId");
+      paragraphEl.removeAttribute("w14:textId");
+      for (const child of childElementsOf(paragraphEl)) {
+        if (child.nodeName !== "w:pPr") paragraphEl.removeChild(child);
+      }
+    }
+
+    if (line.runs.length === 0) {
+      const emptyRun = cloneRunWithText(sample.runEl as XmlElement, "");
+      paragraphEl.appendChild(emptyRun);
+    } else {
+      for (const run of line.runs) {
+        let styleMods: { color?: string; bold?: boolean; italic?: boolean } = {};
+        if (isLint) {
+          for (const cls of run.classes) {
+            if (STANDARD_LINT_COLORS[cls]) {
+              styleMods = STANDARD_LINT_COLORS[cls];
+              break;
+            }
+          }
+        }
+        const runEl = cloneRunWithText(sample.runEl as XmlElement, run.text, styleMods);
+        paragraphEl.appendChild(runEl);
+      }
+    }
+
+    container.insertBefore(paragraphEl, last ? last.nextSibling : refNode);
+    last = paragraphEl;
+  }
+
+  return { lastEl: last, lineCount: hl.lines.length };
+}
+
+function buildCodeTable(
+  block: MarkdownBlock,
+  rule: TemplateRule | undefined,
+  sample: StyleSample | null,
+  options: RenderOptions,
+  ownerDoc: XmlElement,
+): XmlElement {
+  const codeConfig = options.codeConfig ?? options.config?.code ?? {};
+  const themeFromRule = rule?.theme && rule.theme.trim().length > 0 ? rule.theme.trim() : undefined;
+  const themeName =
+    block.theme ??
+    themeFromRule ??
+    options.codeTemplate ??
+    codeConfig.template ??
+    "default";
+  const theme = loadCodeThemeSync(themeName);
+
+  const sampleFont = extractSampleFont(sample);
+
+  // 字体配置：支持 "inherit" 随正文/代码样板字体
+  let fontFamily = codeConfig.fontFamily ?? theme.container.fontFamily;
+  if (fontFamily === "inherit") fontFamily = sampleFont.family || "Consolas";
+  if (!fontFamily) fontFamily = "Consolas";
+
+  // 字号配置：支持 "inherit" 随正文字号
+  let fontSize: number;
+  if (codeConfig.fontSize === "inherit") {
+    fontSize = sampleFont.size ?? theme.container.fontSize ?? 19;
+  } else if (typeof codeConfig.fontSize === "number") {
+    fontSize = codeConfig.fontSize;
+  } else if (typeof codeConfig.fontSize === "string") {
+    fontSize = parseFontSizeToHalfPoints(codeConfig.fontSize, theme.container.fontSize ?? 19);
+  } else {
+    fontSize = theme.container.fontSize ?? 19;
+  }
+
+  const tabSize = codeConfig.tabSize ?? 4;
+  const showLineNumbers = options.showLineNumbers ?? codeConfig.lineNumbers ?? true;
+
+  const hl = highlightCode(block.text, { lang: block.lang, tabSize });
+
+  const containerBg = theme.container.backgroundColor ?? "FAFBFC";
+  const borderColor = theme.container.borderColor ?? "E1E4E8";
+  const borderSize = String(theme.container.borderSize ?? 4);
+
+  const gutterBg = theme.gutter.backgroundColor ?? "F6F8FA";
+  const gutterColor = theme.gutter.color ?? "959DA5";
+  const gutterBorderColor = theme.gutter.borderRightColor ?? "52C41A";
+  const gutterBorderSize = String(theme.gutter.borderRightSize ?? 18);
+  const defaultColor = theme.container.color ?? "24292E";
+
+  const digits = Math.max(2, String(hl.lines.length).length);
+  const gutterWidth = 360 + digits * 140;
+  const codeWidth = 9000 - (showLineNumbers ? gutterWidth : 0);
+
+  const tbl = ownerDoc.createElementNS(WORD_NS, "w:tbl");
+
+  // tblPr
+  const tblPr = ownerDoc.createElementNS(WORD_NS, "w:tblPr");
+  const tblW = ownerDoc.createElementNS(WORD_NS, "w:tblW");
+  tblW.setAttribute("w:w", "5000");
+  tblW.setAttribute("w:type", "pct");
+  tblPr.appendChild(tblW);
+
+  const jc = ownerDoc.createElementNS(WORD_NS, "w:jc");
+  jc.setAttribute("w:val", "center");
+  tblPr.appendChild(jc);
+
+  const tblBorders = ownerDoc.createElementNS(WORD_NS, "w:tblBorders");
+  for (const side of ["top", "left", "bottom", "right"]) {
+    const b = ownerDoc.createElementNS(WORD_NS, `w:${side}`);
+    b.setAttribute("w:val", "single");
+    b.setAttribute("w:sz", borderSize);
+    b.setAttribute("w:space", "0");
+    b.setAttribute("w:color", borderColor);
+    tblBorders.appendChild(b);
+  }
+  for (const side of ["insideH", "insideV"]) {
+    const b = ownerDoc.createElementNS(WORD_NS, `w:${side}`);
+    b.setAttribute("w:val", "none");
+    tblBorders.appendChild(b);
+  }
+  tblPr.appendChild(tblBorders);
+
+  const tblCellMar = ownerDoc.createElementNS(WORD_NS, "w:tblCellMar");
+  for (const side of ["top", "bottom"]) {
+    const m = ownerDoc.createElementNS(WORD_NS, `w:${side}`);
+    m.setAttribute("w:w", "30");
+    m.setAttribute("w:type", "dxa");
+    tblCellMar.appendChild(m);
+  }
+  for (const side of ["left", "right"]) {
+    const m = ownerDoc.createElementNS(WORD_NS, `w:${side}`);
+    m.setAttribute("w:w", "80");
+    m.setAttribute("w:type", "dxa");
+    tblCellMar.appendChild(m);
+  }
+  tblPr.appendChild(tblCellMar);
+  tbl.appendChild(tblPr);
+
+  // tblGrid
+  const tblGrid = ownerDoc.createElementNS(WORD_NS, "w:tblGrid");
+  if (showLineNumbers) {
+    const col1 = ownerDoc.createElementNS(WORD_NS, "w:gridCol");
+    col1.setAttribute("w:w", String(gutterWidth));
+    tblGrid.appendChild(col1);
+  }
+  const col2 = ownerDoc.createElementNS(WORD_NS, "w:gridCol");
+  col2.setAttribute("w:w", String(codeWidth));
+  tblGrid.appendChild(col2);
+  tbl.appendChild(tblGrid);
+
+  // rows
+  for (const line of hl.lines) {
+    const tr = ownerDoc.createElementNS(WORD_NS, "w:tr");
+    const trPr = ownerDoc.createElementNS(WORD_NS, "w:trPr");
+    const cantSplit = ownerDoc.createElementNS(WORD_NS, "w:cantSplit");
+    trPr.appendChild(cantSplit);
+    tr.appendChild(trPr);
+
+    if (showLineNumbers) {
+      const tcGutter = ownerDoc.createElementNS(WORD_NS, "w:tc");
+      const tcPr = ownerDoc.createElementNS(WORD_NS, "w:tcPr");
+      const tcW = ownerDoc.createElementNS(WORD_NS, "w:tcW");
+      tcW.setAttribute("w:w", String(gutterWidth));
+      tcW.setAttribute("w:type", "dxa");
+      tcPr.appendChild(tcW);
+
+      const shd = ownerDoc.createElementNS(WORD_NS, "w:shd");
+      shd.setAttribute("w:val", "clear");
+      shd.setAttribute("w:color", "auto");
+      shd.setAttribute("w:fill", gutterBg);
+      tcPr.appendChild(shd);
+
+      const tcBorders = ownerDoc.createElementNS(WORD_NS, "w:tcBorders");
+      for (const side of ["top", "left", "bottom"]) {
+        const b = ownerDoc.createElementNS(WORD_NS, `w:${side}`);
+        b.setAttribute("w:val", "none");
+        tcBorders.appendChild(b);
+      }
+      const bRight = ownerDoc.createElementNS(WORD_NS, "w:right");
+      bRight.setAttribute("w:val", "single");
+      bRight.setAttribute("w:sz", gutterBorderSize);
+      bRight.setAttribute("w:space", "0");
+      bRight.setAttribute("w:color", gutterBorderColor);
+      tcBorders.appendChild(bRight);
+      tcPr.appendChild(tcBorders);
+
+      const tcMar = ownerDoc.createElementNS(WORD_NS, "w:tcMar");
+      for (const [s, w] of [["top", "20"], ["bottom", "20"], ["left", "40"], ["right", "80"]]) {
+        const m = ownerDoc.createElementNS(WORD_NS, `w:${s}`);
+        m.setAttribute("w:w", w);
+        m.setAttribute("w:type", "dxa");
+        tcMar.appendChild(m);
+      }
+      tcPr.appendChild(tcMar);
+      tcGutter.appendChild(tcPr);
+
+      const pGutter = ownerDoc.createElementNS(WORD_NS, "w:p");
+      const pPr = ownerDoc.createElementNS(WORD_NS, "w:pPr");
+      const sp = ownerDoc.createElementNS(WORD_NS, "w:spacing");
+      sp.setAttribute("w:before", "0");
+      sp.setAttribute("w:after", "0");
+      sp.setAttribute("w:line", "240");
+      sp.setAttribute("w:lineRule", "auto");
+      pPr.appendChild(sp);
+      const jcLine = ownerDoc.createElementNS(WORD_NS, "w:jc");
+      jcLine.setAttribute("w:val", "right");
+      pPr.appendChild(jcLine);
+      pGutter.appendChild(pPr);
+
+      const rGutter = ownerDoc.createElementNS(WORD_NS, "w:r");
+      const rPr = ownerDoc.createElementNS(WORD_NS, "w:rPr");
+      const rFonts = ownerDoc.createElementNS(WORD_NS, "w:rFonts");
+      rFonts.setAttribute("w:ascii", fontFamily);
+      rFonts.setAttribute("w:hAnsi", fontFamily);
+      rPr.appendChild(rFonts);
+      const colEl = ownerDoc.createElementNS(WORD_NS, "w:color");
+      colEl.setAttribute("w:val", gutterColor);
+      rPr.appendChild(colEl);
+      const szEl = ownerDoc.createElementNS(WORD_NS, "w:sz");
+      szEl.setAttribute("w:val", String(fontSize));
+      rPr.appendChild(szEl);
+      rGutter.appendChild(rPr);
+
+      const tGutter = ownerDoc.createElementNS(WORD_NS, "w:t");
+      tGutter.textContent = String(line.lineNumber);
+      rGutter.appendChild(tGutter);
+      pGutter.appendChild(rGutter);
+
+      tcGutter.appendChild(pGutter);
+      tr.appendChild(tcGutter);
+    }
+
+    // Code Cell
+    const tcCode = ownerDoc.createElementNS(WORD_NS, "w:tc");
+    const tcPr = ownerDoc.createElementNS(WORD_NS, "w:tcPr");
+    const tcW = ownerDoc.createElementNS(WORD_NS, "w:tcW");
+    tcW.setAttribute("w:w", String(codeWidth));
+    tcW.setAttribute("w:type", "dxa");
+    tcPr.appendChild(tcW);
+
+    const shd = ownerDoc.createElementNS(WORD_NS, "w:shd");
+    shd.setAttribute("w:val", "clear");
+    shd.setAttribute("w:color", "auto");
+    shd.setAttribute("w:fill", containerBg);
+    tcPr.appendChild(shd);
+
+    const tcBorders = ownerDoc.createElementNS(WORD_NS, "w:tcBorders");
+    for (const side of ["top", "left", "bottom", "right"]) {
+      const b = ownerDoc.createElementNS(WORD_NS, `w:${side}`);
+      b.setAttribute("w:val", "none");
+      tcBorders.appendChild(b);
+    }
+    tcPr.appendChild(tcBorders);
+
+    const tcMar = ownerDoc.createElementNS(WORD_NS, "w:tcMar");
+    for (const [s, w] of [["top", "20"], ["bottom", "20"], ["left", "120"], ["right", "60"]]) {
+      const m = ownerDoc.createElementNS(WORD_NS, `w:${s}`);
+      m.setAttribute("w:w", w);
+      m.setAttribute("w:type", "dxa");
+      tcMar.appendChild(m);
+    }
+    tcPr.appendChild(tcMar);
+    tcCode.appendChild(tcPr);
+
+    const pCode = ownerDoc.createElementNS(WORD_NS, "w:p");
+    const pPr = ownerDoc.createElementNS(WORD_NS, "w:pPr");
+    const sp = ownerDoc.createElementNS(WORD_NS, "w:spacing");
+    sp.setAttribute("w:before", "0");
+    sp.setAttribute("w:after", "0");
+    sp.setAttribute("w:line", "240");
+    sp.setAttribute("w:lineRule", "auto");
+    pPr.appendChild(sp);
+    pCode.appendChild(pPr);
+
+    if (line.runs.length === 0) {
+      const emptyRun = ownerDoc.createElementNS(WORD_NS, "w:r");
+      const emptyPr = ownerDoc.createElementNS(WORD_NS, "w:rPr");
+      const emptySz = ownerDoc.createElementNS(WORD_NS, "w:sz");
+      emptySz.setAttribute("w:val", String(fontSize));
+      emptyPr.appendChild(emptySz);
+      emptyRun.appendChild(emptyPr);
+      const emptyT = ownerDoc.createElementNS(WORD_NS, "w:t");
+      emptyT.textContent = "";
+      emptyRun.appendChild(emptyT);
+      pCode.appendChild(emptyRun);
+    } else {
+      for (const run of line.runs) {
+        let tokenStyle: CodeTokenStyle | undefined;
+        for (const cls of run.classes) {
+          if (theme.tokens[cls]) {
+            tokenStyle = theme.tokens[cls];
+            break;
+          }
+        }
+        const color = tokenStyle?.color ?? defaultColor;
+        const bold = tokenStyle?.bold ?? false;
+        const italic = tokenStyle?.italic ?? false;
+
+        const runEl = ownerDoc.createElementNS(WORD_NS, "w:r");
+        const rPr = ownerDoc.createElementNS(WORD_NS, "w:rPr");
+
+        const rFonts = ownerDoc.createElementNS(WORD_NS, "w:rFonts");
+        rFonts.setAttribute("w:ascii", fontFamily);
+        rFonts.setAttribute("w:hAnsi", fontFamily);
+        rPr.appendChild(rFonts);
+
+        const colEl = ownerDoc.createElementNS(WORD_NS, "w:color");
+        colEl.setAttribute("w:val", color);
+        rPr.appendChild(colEl);
+
+        const szEl = ownerDoc.createElementNS(WORD_NS, "w:sz");
+        szEl.setAttribute("w:val", String(fontSize));
+        rPr.appendChild(szEl);
+
+        if (bold) rPr.appendChild(ownerDoc.createElementNS(WORD_NS, "w:b"));
+        if (italic) rPr.appendChild(ownerDoc.createElementNS(WORD_NS, "w:i"));
+
+        runEl.appendChild(rPr);
+
+        const tEl = ownerDoc.createElementNS(WORD_NS, "w:t");
+        tEl.textContent = run.text;
+        tEl.setAttribute("xml:space", "preserve");
+        runEl.appendChild(tEl);
+
+        pCode.appendChild(runEl);
+      }
+    }
+
+    tcCode.appendChild(pCode);
+    tr.appendChild(tcCode);
+    tbl.appendChild(tr);
+  }
+
+  return tbl;
 }
 
 function addBottomBorder(paragraphEl: XmlElement, ownerDoc: XmlElement): void {

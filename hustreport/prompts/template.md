@@ -38,6 +38,8 @@
   - `{ "styleName": "Normal" }` / `{ "ooxmlStyleId": "1" }` —— 按命名样式 / w:pStyle 匹配
   - `{ "inline": { "paragraph": {...}, "run": {...} } }` —— 直接给 pPr/rPr（不产生命名样式）
 - `use`：`paragraph` | `run` | `both`（默认 both）
+- `theme`：可选代码块高亮主题名称（`"default"` | `"classic"` | `"eclipse"` | `"dark"`）。若不确定或希望由用户通过命令行/config.json 统一指定，请填 `""`。
+- `lint`：布尔值。对于代码块（`type: "code"`），如果文档中明确了代码样式（如存在代码段落/XML Style ID），请直接输出 `style`（绑定该锚点或 XML Style ID）并附带 `"lint": true`（保留原文档的段落/字体排版，同时用标准语法色做 Token 着色）或 `"lint": false`（不着色）。此时不需要额外的 CSS 背景/边框配置。若原文档无专用代码样式，则可输出 `"theme"` 或 `""` 使用代码卡片表格。
 
 ## styles：命名配方
 
@@ -94,7 +96,7 @@
 
 - `use:<recipe 或锚点>`：指定填充后的样式，覆盖锚点原有格式。
   用在「锚点原本是引导行/说明文字、格式与正文不一致」的槽上。
-- `padding:<组名>`：**分组，不是长度**。同组所有填字会补齐到组内最宽文本的显示宽度，用于让一列字段对齐（如封面的院系/专业班级/学号/姓名/指导教师都写 `padding=cover`）。
+- `padding:<组名>`：**分组，不是长度**。同组所有填字会补齐到组内最宽文本的显示宽度，用于让一列字段对齐（如封面的院系/专业班级/学号/姓名/指导教师都写 `padding=cover`）。注意：即使某些字段已有预填文字（如院系已写「计算机科学与技术」），也必须写入 skeleton 参与同一 padding 分组，否则会导致该列各行下划线无法对齐！
 - `align:left|center|right`：组内对齐，默认 left。
 - `profile:<名>`：该填字使用哪套 profile。
 

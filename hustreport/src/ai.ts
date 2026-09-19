@@ -19,7 +19,10 @@ export interface ChatConfig {
 export type ChatFn = (messages: ChatMessage[]) => Promise<string>;
 
 interface ChatCompletionResponse {
-  choices?: Array<{ message?: { content?: string } }>;
+  choices?: Array<{
+    finish_reason?: string;
+    message?: { content?: string; reasoning_content?: string };
+  }>;
 }
 
 /** 构造一个调用 OpenAI 兼容 `/chat/completions` 的 `ChatFn`。 */
@@ -32,11 +35,11 @@ export function chatCompletion(config: ChatConfig): ChatFn {
         {
           model: config.model,
           temperature: config.temperature ?? 0.2,
-          max_tokens: config.maxTokens ?? 4096,
+          max_tokens: config.maxTokens ?? 65536,
           messages,
         },
         {
-          timeout: config.timeout ?? 120000,
+          timeout: config.timeout ?? 300000,
           headers: { Authorization: `Bearer ${config.apiKey}` },
         },
       );
@@ -54,8 +57,15 @@ export function chatCompletion(config: ChatConfig): ChatFn {
       throw error;
     }
 
-    const content = response.data.choices?.[0]?.message?.content ?? "";
-    if (!content) throw new Error("AI 返回为空");
+    const choice = response.data.choices?.[0];
+    const content = choice?.message?.content ?? "";
+    if (!content) {
+      const reasoning = (choice?.message as any)?.reasoning_content;
+      console.error("AI 响应异常：", JSON.stringify(choice, null, 2));
+      throw new Error(
+        `AI 返回为空 (finish_reason=${choice?.finish_reason}, reasoning_length=${reasoning?.length ?? 0})`,
+      );
+    }
     return content;
   };
 }

@@ -1,0 +1,38 @@
+/* hustreport 代码高亮模板：eclipse (经典 IDE 风格) */
+
+.syntaxhighlighter,
+.code-block {
+  background-color: #ffffff;
+  border: 1px solid #d4d0c8;
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 9.5pt;
+  line-height: 1.35;
+  color: #000000;
+}
+
+.gutter,
+.line-numbers {
+  background-color: #f0f0f0;
+  color: #787878;
+  border-right: 3px solid #d4d0c8;
+  text-align: right;
+  padding-right: 8px;
+}
+
+.code {
+  padding-left: 10px;
+}
+
+.plain { color: #000000; }
+.keyword { color: #7f0055; font-weight: bold; }
+.string { color: #2a00ff; }
+.comment, .comments { color: #3f5fbf; font-style: italic; }
+.function, .functions { color: #000000; }
+.number, .value { color: #000000; }
+.operator { color: #000000; }
+.punctuation { color: #000000; }
+.variable { color: #6a3e3e; }
+.class-name { color: #000000; font-weight: bold; }
+.boolean { color: #7f0055; font-weight: bold; }
+.preprocessor { color: #646464; }
+.constants { color: #0066cc; }

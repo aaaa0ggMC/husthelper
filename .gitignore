@@ -15,3 +15,5 @@ session.json
 audit.jsonl
 ecard_ledger.json
 docs/platform_auth/
+hustreport/test-analyze/
+hustreport/output-ai-template/

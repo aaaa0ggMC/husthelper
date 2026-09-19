@@ -78,6 +78,10 @@ export interface TemplateRule {
   use?: "paragraph" | "run" | "both";
   /** 构造选项，如表格 { header: true }、代码 { wrap: false }。 */
   options?: Record<string, unknown>;
+  /** 代码高亮模板名称（如 "default", "classic", "eclipse", "dark"），不确定时填 "" 回退到 CLI/config.json。 */
+  theme?: string;
+  /** 代码块是否启用语法着色（Token 区分高亮）。若为 true 则在保留原文档样式基础上做语法着色。 */
+  lint?: boolean;
 }
 
 export interface TemplateDefaults {

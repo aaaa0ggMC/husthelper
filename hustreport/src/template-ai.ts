@@ -263,12 +263,12 @@ export function buildTemplateContext(info: TemplateInfo, options: TemplatePrompt
     .map((anchor) => `${anchor.ref}\tstyle=${anchor.styleId}\t${anchor.kind}\t${JSON.stringify(anchor.label)}`)
     .join("\n");
 
-  const schemaHint = `示例（注意 skeleton 很精简：只列要填的封面字段和要补写的章节，固定的任务正文不出现）：
+  const schemaHint = `示例（注意 skeleton 很精简：只列要填的封面字段和要补写的章节，固定的任务正文不出现；封面一列字段统一加 padding=cover 保证等宽对齐）：
 {
   "rules": [
     {"match":{"type":"heading","level":1},"style":{"anchor":"hrseg0007"}},
     {"match":{"type":"paragraph"},"style":{"recipe":"body"}},
-    {"match":{"type":"code"},"style":{"anchor":"hrseg0042"}}
+    {"match":{"type":"code"},"style":{"anchor":"hrseg0042"},"lint":true}
   ],
   "styles": {"body": {"anchor": "hrseg0012"}},
   "anchors": {
@@ -276,7 +276,7 @@ export function buildTemplateContext(info: TemplateInfo, options: TemplatePrompt
     "hrseg0091": {"kind":"insert","label":"实验记录"}
   },
   "edits": [ {"op":"delete","ref":"hrseg0033","as":"paragraph"} ],
-  "skeleton": "---\\nprofile: default\\n---\\n\\n[计算机科学与技术学院](ref:hrseg0019)\\n\\n# 三、实验记录及问题回答 {ref:hrseg0091}\\n\\n(在此记录实验过程与结果)\\n\\n# 四、体会 {ref:hrseg0094}\\n\\n(在此填写心得体会)\\n"
+  "skeleton": "---\\nprofile: default\\n---\\n\\n[计算机科学与技术学院](ref:hrseg0017 | padding=cover)\\n[网络空间安全2401班](ref:hrseg0019 | padding=cover)\\n[U202412345](ref:hrseg0021 | padding=cover)\\n[张三](ref:hrseg0023 | padding=cover)\\n[李老师](ref:hrseg0025 | padding=cover)\\n\\n# 三、实验记录及问题回答 {ref:hrseg0091}\\n\\n(在此记录实验过程与结果)\\n\\n# 四、体会 {ref:hrseg0094}\\n\\n(在此填写心得体会)\\n"
 }`;
 
   return [

@@ -32,6 +32,8 @@ interface CliOptions {
   systemPromptFile?: string;
   extra?: string;
   preset?: string;
+  configFile?: string;
+  codeTemplate?: string;
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -73,6 +75,14 @@ function parseArgs(argv: string[]): CliOptions {
       case "--extra":
         options.extra = rest[++i];
         break;
+      case "--config":
+      case "-c":
+        options.configFile = rest[++i];
+        break;
+      case "--code-template":
+      case "--code-theme":
+        options.codeTemplate = rest[++i];
+        break;
       case "--set":
         options.sets.push(rest[++i]);
         break;
@@ -102,6 +112,7 @@ function usage(): void {
   hustreport ai-template <file.docx> [--out <dir>] [--task "说明"] [--preset generic|labReport] [--system-prompt prompt.md] [--extra "附加要求"]
       # AI 生成 template + skeleton.md；--preset 选内置策略，--system-prompt 完全替换
   hustreport render   <template.docx> --info <template.json> --md <fill.md> --out <out.docx>
+                      [--config <config.json>] [--extra "key=val"] [--code-template <name>]
 
 edits.json 形状（数组等价于 { "set": [...] }）：
   {
@@ -127,11 +138,18 @@ async function loadChatConfig(): Promise<ChatConfig> {
   const baseURL = process.env.HUST_AI_BASE_URL ?? ai.baseURL;
   const apiKey = process.env.HUST_AI_API_KEY ?? ai.apiKey;
   const model = process.env.HUST_AI_MODEL ?? ai.model;
-  const maxTokens = Number(process.env.HUST_AI_MAX_TOKENS ?? ai.maxTokens ?? 0);
+  const maxTokens = Number(process.env.HUST_AI_MAX_TOKENS ?? ai.maxTokens ?? 65536);
+  const timeout = Number(process.env.HUST_AI_TIMEOUT ?? ai.timeout ?? 0);
   if (!baseURL || !apiKey || !model) {
     throw new Error("缺少 AI 配置：请在 config.json 的 openai 段或环境变量 HUST_AI_BASE_URL / HUST_AI_API_KEY / HUST_AI_MODEL 中提供");
   }
-  return { baseURL, apiKey, model, ...(maxTokens > 0 ? { maxTokens } : {}) };
+  return {
+    baseURL,
+    apiKey,
+    model,
+    ...(maxTokens > 0 ? { maxTokens } : {}),
+    ...(timeout > 0 ? { timeout } : {}),
+  };
 }
 
 async function readPlan(options: CliOptions): Promise<EditPlan> {
@@ -184,7 +202,11 @@ async function main(): Promise<void> {
   if (options.command === "render") {
     if (!options.infoFile || !options.mdFile) throw new Error("render 需要 --info <template.json> 与 --md <fill.md>");
     const outFile = options.outFile ?? path.join(process.cwd(), "report-rendered.docx");
-    const result = await renderTemplateFile(options.file, options.infoFile, options.mdFile, outFile);
+    const result = await renderTemplateFile(options.file, options.infoFile, options.mdFile, outFile, {
+      codeTemplate: options.codeTemplate,
+      configFile: options.configFile,
+      extra: options.extra,
+    });
     console.log(`已渲染 ${result.filled} 处（profile=${result.profile}）-> ${outFile}`);
     for (const warning of result.warnings) console.log(`  警告: ${warning}`);
     return;

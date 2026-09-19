@@ -143,3 +143,36 @@ export type {
   StyleObject,
   StyleSnapshot,
 } from "./src/types.ts";
+
+export { highlightCode } from "./src/highlight.ts";
+export type {
+  CodeHighlightLine,
+  CodeHighlightResult,
+  CodeHighlightRun,
+  HighlightOptions,
+} from "./src/highlight.ts";
+
+export {
+  getCodeTemplatesDir,
+  loadCodeTheme,
+  loadCodeThemeSync,
+  normalizeHexColor,
+  parseBorderSizeToEighths,
+  parseCodeThemeCss,
+  parseFontSizeToHalfPoints,
+} from "./src/code-theme.ts";
+export type {
+  CodeTheme,
+  CodeThemeContainer,
+  CodeThemeGutter,
+  CodeTokenStyle,
+} from "./src/code-theme.ts";
+
+export {
+  mergeConfig,
+  parseExtraConfig,
+  resolveReportConfig,
+  resolveReportConfigSync,
+} from "./src/config.ts";
+export type { CodeBlockConfig, ReportConfig } from "./src/config.ts";
+
