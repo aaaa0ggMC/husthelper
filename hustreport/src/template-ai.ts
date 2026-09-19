@@ -20,7 +20,7 @@ import { extractJson, type ChatFn, type ChatMessage } from "./ai.ts";
 import { parseDocument } from "./render.ts";
 import { readAnchors } from "./stamp.ts";
 import { writeRunElements } from "./edits.ts";
-import { stripDocumentComments } from "./comments.ts";
+import { stripCommentElements, stripCommentElementsById, stripDocumentComments } from "./comments.ts";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type XmlElement = any;
@@ -37,13 +37,17 @@ type XmlElement = any;
 /** 规范化操作：把原始 docx 清理成标准模板（例如删掉“请在此填写”之类的引导内容）。 */
 export type TemplateEdit =
   | { op: "set"; ref: string; text: string; mode?: "replace" | "append" | "prepend" }
-  | { op: "delete"; ref: string; as?: "run" | "paragraph" };
+  | { op: "delete"; ref: string; as?: "run" | "paragraph" }
+  | { op: "delete"; target: "comment"; id: string }
+  | { op: "delete"; target: "comments" };
 
 export interface TemplateAiResponse {
   /** 只覆盖锚点的 kind/label/tags 等元信息（style 仍由锚点自身决定）。 */
   anchors?: Record<string, { kind?: string; label?: string; tags?: string[] }>;
   /** 规范化建议：删除/清空引导与占位内容，让 docx 变成干净的模板。 */
   edits?: TemplateEdit[];
+  /** 是否清理文档中的指导性批注（默认 true）。 */
+  stripComments?: boolean;
   /** markdown 结构 → 已有样式的规则。 */
   rules?: TemplateRule[];
   /** 命名格式配方。 */
@@ -83,6 +87,8 @@ export interface BuildTemplateAiOptions {
   systemPrompt?: string;
   /** 追加到用户消息末尾的额外要求。 */
   extraInstructions?: string;
+  /** 是否清理模板中的批注（默认优先尊重 AI 判断 merged.info.stripComments，未指定时默认为 true）。 */
+  stripComments?: boolean;
   onMessages?: (messages: ChatMessage[]) => void;
 }
 
@@ -131,7 +137,10 @@ export async function buildTemplateWithAi(options: BuildTemplateAiOptions): Prom
   const templatePath = path.join(options.outDir, "template.docx");
   const infoPath = path.join(options.outDir, "template.json");
   const skeletonPath = path.join(options.outDir, "skeleton.md");
-  await stripDocumentComments(doc);
+  const shouldStrip = options.stripComments ?? merged.info.stripComments ?? true;
+  if (shouldStrip) {
+    await stripDocumentComments(doc);
+  }
   await doc.saveAs(templatePath);
   await writeFile(infoPath, JSON.stringify(merged.info, null, 2), "utf-8");
   await writeFile(skeletonPath, merged.skeleton, "utf-8");
@@ -170,6 +179,23 @@ export function applyNormalization(
   let deleted = 0;
 
   for (const edit of edits) {
+    if (edit.op === "delete" && "target" in edit) {
+      if (edit.target === "comment") {
+        const id = edit.id;
+        if (id !== undefined) {
+          if (stripCommentElementsById(doc, String(id))) {
+            deleted += 1;
+          } else {
+            warnings.push(`规范化：未找到批注 id=${id}，已忽略`);
+          }
+        }
+      } else if (edit.target === "comments") {
+        const count = stripCommentElements(doc);
+        if (count > 0) deleted += count;
+      }
+      continue;
+    }
+
     const range = ranges.get(edit.ref);
     if (!range) {
       warnings.push(`规范化：未知锚点 ${edit.ref}，已忽略`);
@@ -454,8 +480,21 @@ export function mergeTemplateAiResponse(text: string, info: TemplateInfo): Merge
   // 规范化操作校验
   const validEdits: TemplateEdit[] = [];
   for (const edit of parsed?.edits ?? []) {
-    if (!edit || (edit.op !== "set" && edit.op !== "delete") || !edit.ref) {
+    if (!edit || (edit.op !== "set" && edit.op !== "delete")) {
       warnings.push("丢弃一条非法的规范化操作");
+      continue;
+    }
+    const anyEdit = edit as any;
+    if (anyEdit.target === "comment" || anyEdit.target === "comments") {
+      if (edit.op === "delete") {
+        validEdits.push(edit);
+      } else {
+        warnings.push(`批注操作仅支持 delete，已忽略`);
+      }
+      continue;
+    }
+    if (!("ref" in edit) || !edit.ref) {
+      warnings.push("丢弃一条缺少 ref 的规范化操作");
       continue;
     }
     if (!next.anchors[edit.ref]) {
@@ -471,6 +510,11 @@ export function mergeTemplateAiResponse(text: string, info: TemplateInfo): Merge
       ...(next.toc ?? { enabled: true }),
       ...parsed.toc,
     };
+  }
+
+  // 批注清理配置
+  if (typeof parsed?.stripComments === "boolean") {
+    next.stripComments = parsed.stripComments;
   }
 
   return { info: next, skeleton, edits: validEdits, warnings };

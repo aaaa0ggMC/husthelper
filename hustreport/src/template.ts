@@ -127,6 +127,8 @@ export interface TemplateInfo {
   variables?: Record<string, unknown>;
   /** 原文档中提取的批注列表（来自教师或原作者）。 */
   comments?: DocumentComment[];
+  /** 是否清理文档中的批注标记与部件（默认为 true）。若为 false 则保留批注。 */
+  stripComments?: boolean;
   /** 文档已检测到的样式 Schema 表。 */
   styleSchema?: StyleSchemaEntry[];
   /** AI 或系统对模板的反馈（如缺少的样式指导）。 */
@@ -195,6 +197,8 @@ export interface BuildTemplateOptions extends StampOptions {
   defaultProfile?: string;
   meta?: Record<string, unknown>;
   source?: string;
+  /** 是否清理模板中的批注（默认为 true）。 */
+  stripComments?: boolean;
 }
 
 export interface TemplateBundle {
@@ -490,7 +494,10 @@ export async function createTemplate(
     ...options,
     source: options.source ?? (typeof input === "string" ? input : "(buffer)"),
   });
-  await stripDocumentComments(doc);
+  const shouldStrip = options.stripComments ?? info.stripComments ?? true;
+  if (shouldStrip) {
+    await stripDocumentComments(doc);
+  }
   await doc.saveAs(templatePath);
   const fs = await import("node:fs/promises");
   await fs.writeFile(infoPath, JSON.stringify(info, null, 2), "utf-8");

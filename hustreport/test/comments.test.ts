@@ -202,3 +202,38 @@ test("stripDocumentComments: 彻底移除批注部件、DOM标记、rels 与 Con
   assert.equal(files["[Content_Types].xml"].includes("comments"), false);
 });
 
+test("mergeTemplateAiResponse: 支持 comment 删除 edits 与 stripComments 配置", () => {
+  const info: TemplateInfo = {
+    version: 2,
+    kind: "hustreport/template",
+    meta: { source: "test.docx", createdAt: "2026-01-01", generator: "test" },
+    anchorPrefix: "hrseg",
+    defaultProfile: "default",
+    anchors: {
+      hrseg0001: { kind: "slot", label: "测试" },
+    },
+    profiles: {
+      default: { styles: {}, rules: [] },
+    },
+  };
+
+  const aiOutput = JSON.stringify({
+    rules: [],
+    edits: [
+      { op: "delete", target: "comment", id: "0" },
+      { op: "delete", target: "comments" },
+      { op: "delete", ref: "hrseg0001", as: "paragraph" },
+    ],
+    stripComments: false,
+    skeleton: "# 标题\n",
+  });
+
+  const merged = mergeTemplateAiResponse(aiOutput, info);
+  assert.equal(merged.edits.length, 3);
+  assert.deepEqual(merged.edits[0], { op: "delete", target: "comment", id: "0" });
+  assert.deepEqual(merged.edits[1], { op: "delete", target: "comments" });
+  assert.deepEqual(merged.edits[2], { op: "delete", ref: "hrseg0001", as: "paragraph" });
+  assert.equal(merged.info.stripComments, false);
+});
+
+

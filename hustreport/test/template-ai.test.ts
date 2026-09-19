@@ -126,8 +126,9 @@ test("mergeTemplateAiResponse: 正确验证并接收 AI 声明的 edits 操作",
 
   const merged = mergeTemplateAiResponse(aiOutput, info);
   assert.equal(merged.edits.length, 1);
-  assert.equal(merged.edits[0]?.ref, "hrseg0003");
-  assert.equal(merged.edits[0]?.op, "delete");
+  const firstEdit = merged.edits[0];
+  assert.equal(firstEdit?.op, "delete");
+  assert.equal((firstEdit as any)?.ref, "hrseg0003");
   assert.ok(merged.warnings.some((w) => w.includes("nonexistent_anchor")));
   assert.ok(merged.warnings.some((w) => w.includes("非法")));
 });

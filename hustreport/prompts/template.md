@@ -99,7 +99,11 @@
 { "op": "delete", "ref": "hrseg0012", "as": "paragraph" }   // 删整段
 { "op": "delete", "ref": "hrseg0012", "as": "run" }         // 只删内容
 { "op": "set",    "ref": "hrseg0012", "text": "" }          // 清空
+{ "op": "delete", "target": "comment", "id": "0" }           // 显式删除某条批注（气泡与内容）
+{ "op": "delete", "target": "comments" }                     // 显式删除全部批注
 ```
+
+如果原模板带有批注（Comment），且这些批注是给模板使用者的指导性说明（如排版格式说明、要求等），你可以在 `edits` 中显式指定删除，或者在根字段输出 `"stripComments": true`。
 
 ## toc：目录配置（可选）
 

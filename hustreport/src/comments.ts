@@ -131,6 +131,82 @@ export function stripCommentElements(doc: VirtualWordDocument): number {
 }
 
 /**
+ * 从 Word 文档的 DOM 树中定向清除指定 ID 的批注引用与实体。
+ */
+export function stripCommentElementsById(doc: VirtualWordDocument, commentId: string): boolean {
+  let found = false;
+  const anyDoc = doc as unknown as { partsData?: Array<{ path: string; xmlDocument: XmlElement }> };
+  if (!Array.isArray(anyDoc.partsData)) return false;
+
+  const targetId = String(commentId);
+
+  for (const part of anyDoc.partsData) {
+    if (!part.xmlDocument) continue;
+    const toRemove: XmlElement[] = [];
+    for (const tag of ["w:commentReference", "w:commentRangeStart", "w:commentRangeEnd"]) {
+      const els = part.xmlDocument.getElementsByTagName(tag);
+      for (let i = 0; i < els.length; i += 1) {
+        if (els[i].getAttribute("w:id") === targetId) {
+          toRemove.push(els[i]);
+        }
+      }
+    }
+    for (const el of toRemove) {
+      found = true;
+      const parent = el.parentNode;
+      if (parent) {
+        if (parent.nodeName === "w:r") {
+          const children = Array.from(parent.childNodes || []) as XmlElement[];
+          const meaningful = children.filter((c) => {
+            if (c === el) return false;
+            if (c.nodeName === "w:rPr") return false;
+            if (c.nodeType === 3 && (!c.nodeValue || c.nodeValue.trim() === "")) return false;
+            return true;
+          });
+          if (meaningful.length === 0) {
+            parent.parentNode?.removeChild(parent);
+            continue;
+          }
+        }
+        parent.removeChild(el);
+      }
+    }
+
+    if (part.path === "word/comments.xml") {
+      const comments = part.xmlDocument.getElementsByTagName("w:comment");
+      const toRemoveComment: XmlElement[] = [];
+      for (let i = 0; i < comments.length; i += 1) {
+        if (comments[i].getAttribute("w:id") === targetId) {
+          toRemoveComment.push(comments[i]);
+        }
+      }
+      for (const c of toRemoveComment) {
+        found = true;
+        c.parentNode?.removeChild(c);
+      }
+    }
+  }
+
+  return found;
+}
+
+/**
+ * 按 comment id 从文档中定向彻底清除指定批注，并在批注全部清空时自动清理部件关联。
+ */
+export async function stripCommentById(doc: VirtualWordDocument, commentId: string): Promise<boolean> {
+  const found = stripCommentElementsById(doc, commentId);
+  const anyDoc = doc as unknown as { partsData?: Array<{ path: string; xmlDocument: XmlElement }> };
+  const commentsPart = anyDoc.partsData?.find((p) => p.path === "word/comments.xml");
+  if (commentsPart?.xmlDocument) {
+    const remaining = commentsPart.xmlDocument.getElementsByTagName("w:comment");
+    if (!remaining || remaining.length === 0) {
+      await stripDocumentComments(doc);
+    }
+  }
+  return found;
+}
+
+/**
  * 从 Word 文档中彻底清除所有批注（Comments）及其引用，包括：
  * 1. 清除正文及各 part 中的 <w:commentReference>、<w:commentRangeStart>、<w:commentRangeEnd> 及空 run；
  * 2. 从 partsData / parts 中移除 word/comments*.xml 部件；
@@ -147,6 +223,7 @@ export async function stripDocumentComments(doc: VirtualWordDocument): Promise<n
       file: (name: string, content?: string) => any;
       remove: (name: string) => any;
     };
+    relationshipsByPartPath?: Map<string, any>;
   };
 
   // 2. 从 partsData 与 parts 中移除 comments 部件

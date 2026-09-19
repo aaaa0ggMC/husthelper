@@ -103,6 +103,8 @@ export interface ParsedDocument {
 export interface RenderOptions {
   profile?: string;
   strip?: boolean;
+  /** 是否清理批注（默认由模板配置或 options.strip 决定，设为 false 可保留批注）。 */
+  stripComments?: boolean;
   decodeEntities?: boolean;
   /** 是否做结构化插入（默认 true）。 */
   structured?: boolean;
@@ -569,6 +571,10 @@ export function renderTemplate(
 
   if (options.strip ?? true) {
     stripAnchors(doc, info.anchorPrefix);
+  }
+
+  const shouldStripComments = options.stripComments ?? info.stripComments ?? (options.strip ?? true);
+  if (shouldStripComments) {
     stripCommentElements(doc);
   }
 
@@ -1745,7 +1751,10 @@ export async function renderTemplateFile(
   if (info.toc?.enabled) {
     await enableDocxUpdateFields(doc);
   }
-  await stripDocumentComments(doc);
+  const shouldStripComments = options.stripComments ?? info.stripComments ?? (options.strip ?? true);
+  if (shouldStripComments) {
+    await stripDocumentComments(doc);
+  }
   await doc.saveAs(outputPath);
   return result;
 }
@@ -2405,6 +2414,7 @@ async function ensureDocxTocStyles(doc: VirtualWordDocument): Promise<void> {
     zip?: {
       file: (name: string, content?: string) => any;
     };
+    stylesData?: any;
   };
   if (!anyDoc.zip || typeof anyDoc.zip.file !== "function") return;
 

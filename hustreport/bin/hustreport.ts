@@ -34,6 +34,7 @@ interface CliOptions {
   preset?: string;
   configFile?: string;
   codeTemplate?: string;
+  keepComments?: boolean;
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -82,6 +83,9 @@ function parseArgs(argv: string[]): CliOptions {
       case "--code-template":
       case "--code-theme":
         options.codeTemplate = rest[++i];
+        break;
+      case "--keep-comments":
+        options.keepComments = true;
         break;
       case "--set":
         options.sets.push(rest[++i]);
@@ -218,6 +222,7 @@ async function main(): Promise<void> {
       codeTemplate: options.codeTemplate,
       configFile: options.configFile,
       extra: options.extra,
+      stripComments: options.keepComments ? false : undefined,
     });
     console.log(`已渲染 ${result.filled} 处（profile=${result.profile}）-> ${outFile}`);
     for (const warning of result.warnings) console.log(`  警告: ${warning}`);
