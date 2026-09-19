@@ -23,6 +23,7 @@ import {
   type TableBlockConfig,
 } from "./config.ts";
 import { calculateImageEmuSize, getImageDimensions } from "./image-size.ts";
+import { stripCommentElements, stripDocumentComments } from "./comments.ts";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type XmlElement = any;
@@ -566,7 +567,10 @@ export function renderTemplate(
     );
   }
 
-  if (options.strip ?? true) stripAnchors(doc, info.anchorPrefix);
+  if (options.strip ?? true) {
+    stripAnchors(doc, info.anchorPrefix);
+    stripCommentElements(doc);
+  }
 
   return {
     profile: parsed.profile ?? info.defaultProfile,
@@ -1741,6 +1745,7 @@ export async function renderTemplateFile(
   if (info.toc?.enabled) {
     await enableDocxUpdateFields(doc);
   }
+  await stripDocumentComments(doc);
   await doc.saveAs(outputPath);
   return result;
 }

@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 import test from "node:test";
 import assert from "node:assert/strict";
-import { extractDocumentComments } from "../src/comments.ts";
+import { extractDocumentComments, stripCommentElements, stripDocumentComments } from "../src/comments.ts";
 import { buildTemplateContext, mergeTemplateAiResponse } from "../src/template-ai.ts";
 import type { TemplateInfo } from "../src/template.ts";
 
@@ -142,3 +142,63 @@ test("mergeTemplateAiResponse: 正确保留 AI 返回的 feedback 诊断建议",
   assert.equal(merged.info.feedback.missingStyles?.[0].name, "代码块");
   assert.equal(merged.info.feedback.notes, "已自动绑定图标题");
 });
+
+test("stripCommentElements: 同步彻底清除正文中的批注标记和包裹批注的空 run", () => {
+  const mockDoc = createMockDocWithComments();
+  const removed = stripCommentElements(mockDoc as any);
+  assert.equal(removed, 2);
+
+  const docPart = mockDoc.partsData.find((p) => p.path === "word/document.xml");
+  const docXml = docPart!.xmlDocument;
+  assert.equal(docXml.getElementsByTagName("w:commentReference").length, 0);
+  assert.equal(docXml.getElementsByTagName("w:commentRangeStart").length, 0);
+  assert.equal(docXml.getElementsByTagName("w:commentRangeEnd").length, 0);
+
+  // 正文文字依然完好保留
+  assert.match(docXml.documentElement.textContent, /章标题内容/);
+  assert.match(docXml.documentElement.textContent, /图1 示例流程图/);
+});
+
+test("stripDocumentComments: 彻底移除批注部件、DOM标记、rels 与 Content_Types 映射", async () => {
+  const mockDoc = createMockDocWithComments() as any;
+  mockDoc.parts = [{ type: "document" }, { type: "comments" }];
+  const files: Record<string, string> = {
+    "word/comments.xml": "<w:comments/>",
+    "word/commentsExtended.xml": "<w15:commentsEx/>",
+    "word/commentsIds.xml": "<w16cid:commentsIds/>",
+    "word/_rels/document.xml.rels": `<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="comments.xml"/></Relationships>`,
+    "[Content_Types].xml": `<Types><Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/></Types>`,
+  };
+  mockDoc.zip = {
+    remove: (name: string) => {
+      delete files[name];
+    },
+    file: (name: string, content?: string) => {
+      if (content !== undefined) {
+        files[name] = content;
+        return;
+      }
+      if (!(name in files)) return null;
+      return {
+        async: async (type: string) => files[name],
+      };
+    },
+  };
+
+  const removed = await stripDocumentComments(mockDoc);
+  assert.equal(removed, 2);
+
+  // partsData 与 parts 中的 comments 已被过滤
+  assert.equal(mockDoc.partsData.some((p: any) => p.path === "word/comments.xml"), false);
+  assert.equal(mockDoc.parts.some((p: any) => p.type === "comments"), false);
+
+  // zip 中的 comments 文件已被移除
+  assert.equal("word/comments.xml" in files, false);
+  assert.equal("word/commentsExtended.xml" in files, false);
+  assert.equal("word/commentsIds.xml" in files, false);
+
+  // rels 和 Content_Types 对应行已清理
+  assert.equal(files["word/_rels/document.xml.rels"].includes("comments"), false);
+  assert.equal(files["[Content_Types].xml"].includes("comments"), false);
+});
+

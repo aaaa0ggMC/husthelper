@@ -191,3 +191,11 @@ export {
 } from "./src/image-size.ts";
 export type { ImageDimensions, ImageEmuSize } from "./src/image-size.ts";
 
+export {
+  extractDocumentComments,
+  stripDocumentComments,
+  stripCommentElements,
+} from "./src/comments.ts";
+export type { DocumentComment } from "./src/comments.ts";
+
+

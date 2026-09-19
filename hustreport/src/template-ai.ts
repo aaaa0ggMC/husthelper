@@ -20,6 +20,7 @@ import { extractJson, type ChatFn, type ChatMessage } from "./ai.ts";
 import { parseDocument } from "./render.ts";
 import { readAnchors } from "./stamp.ts";
 import { writeRunElements } from "./edits.ts";
+import { stripDocumentComments } from "./comments.ts";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type XmlElement = any;
@@ -130,6 +131,7 @@ export async function buildTemplateWithAi(options: BuildTemplateAiOptions): Prom
   const templatePath = path.join(options.outDir, "template.docx");
   const infoPath = path.join(options.outDir, "template.json");
   const skeletonPath = path.join(options.outDir, "skeleton.md");
+  await stripDocumentComments(doc);
   await doc.saveAs(templatePath);
   await writeFile(infoPath, JSON.stringify(merged.info, null, 2), "utf-8");
   await writeFile(skeletonPath, merged.skeleton, "utf-8");

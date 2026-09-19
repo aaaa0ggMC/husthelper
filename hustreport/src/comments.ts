@@ -86,3 +86,117 @@ export function extractDocumentComments(doc: VirtualWordDocument): DocumentComme
 
   return comments;
 }
+
+/**
+ * 从 Word 文档的 DOM 树中同步清除所有批注引用与范围标记（w:commentReference、w:commentRangeStart、w:commentRangeEnd）。
+ * 若包裹 commentReference 的 <w:r> 仅包含批注标记或无其它正文文本，同步移除该空 run。
+ */
+export function stripCommentElements(doc: VirtualWordDocument): number {
+  let count = 0;
+  const anyDoc = doc as unknown as { partsData?: Array<{ path: string; xmlDocument: XmlElement }> };
+  if (!Array.isArray(anyDoc.partsData)) return 0;
+
+  for (const part of anyDoc.partsData) {
+    if (!part.xmlDocument) continue;
+    const toRemove: XmlElement[] = [];
+    for (const tag of ["w:commentReference", "w:commentRangeStart", "w:commentRangeEnd"]) {
+      const els = part.xmlDocument.getElementsByTagName(tag);
+      for (let i = 0; i < els.length; i += 1) {
+        toRemove.push(els[i]);
+      }
+    }
+    for (const el of toRemove) {
+      if (el.nodeName === "w:commentReference") count += 1;
+      const parent = el.parentNode;
+      if (parent) {
+        if (parent.nodeName === "w:r") {
+          const children = Array.from(parent.childNodes || []) as XmlElement[];
+          const meaningful = children.filter((c) => {
+            if (c === el) return false;
+            if (c.nodeName === "w:rPr") return false;
+            if (c.nodeType === 3 && (!c.nodeValue || c.nodeValue.trim() === "")) return false;
+            return true;
+          });
+          if (meaningful.length === 0) {
+            parent.parentNode?.removeChild(parent);
+            continue;
+          }
+        }
+        parent.removeChild(el);
+      }
+    }
+  }
+
+  return count;
+}
+
+/**
+ * 从 Word 文档中彻底清除所有批注（Comments）及其引用，包括：
+ * 1. 清除正文及各 part 中的 <w:commentReference>、<w:commentRangeStart>、<w:commentRangeEnd> 及空 run；
+ * 2. 从 partsData / parts 中移除 word/comments*.xml 部件；
+ * 3. 从 zip 中移除 word/comments.xml 等相关文件；
+ * 4. 从 word/_rels/document.xml.rels 中移除对 comments 的关联；
+ * 5. 从 [Content_Types].xml 中清理 comments 相关 Override。
+ */
+export async function stripDocumentComments(doc: VirtualWordDocument): Promise<number> {
+  const count = stripCommentElements(doc);
+  const anyDoc = doc as unknown as {
+    partsData?: Array<{ path: string; xmlDocument: XmlElement }>;
+    parts?: any[];
+    zip?: {
+      file: (name: string, content?: string) => any;
+      remove: (name: string) => any;
+    };
+  };
+
+  // 2. 从 partsData 与 parts 中移除 comments 部件
+  if (Array.isArray(anyDoc.partsData)) {
+    anyDoc.partsData = anyDoc.partsData.filter((p) => !/^word\/comments.*\.xml$/.test(p.path));
+  }
+  if (Array.isArray(anyDoc.parts)) {
+    anyDoc.parts = anyDoc.parts.filter((p) => p.type !== "comments");
+  }
+
+  // 3. 从 zip 中移除 comments 文件
+  if (anyDoc.zip && typeof anyDoc.zip.remove === "function") {
+    anyDoc.zip.remove("word/comments.xml");
+    anyDoc.zip.remove("word/commentsExtended.xml");
+    anyDoc.zip.remove("word/commentsIds.xml");
+  }
+
+  // 4. 清理 relationshipsByPartPath 与 word/_rels/document.xml.rels 中的关联
+  if (anyDoc.relationshipsByPartPath) {
+    for (const rels of anyDoc.relationshipsByPartPath.values()) {
+      if (rels?.relationships instanceof Map) {
+        for (const [id, rel] of rels.relationships.entries()) {
+          if (rel?.target && /comments.*\.xml$/.test(rel.target)) {
+            rels.relationships.delete(id);
+          }
+        }
+      }
+    }
+  }
+
+  if (anyDoc.zip && typeof anyDoc.zip.file === "function") {
+    const relsFile = anyDoc.zip.file("word/_rels/document.xml.rels");
+    if (relsFile && typeof relsFile.async === "function") {
+      let relsText: string = await relsFile.async("text");
+      if (relsText.includes("comments")) {
+        relsText = relsText.replace(/<Relationship[^>]*Target="comments[^"]*"[^>]*\/>/g, "");
+        anyDoc.zip.file("word/_rels/document.xml.rels", relsText);
+      }
+    }
+
+    // 5. 清理 [Content_Types].xml 中的 Override
+    const ctFile = anyDoc.zip.file("[Content_Types].xml");
+    if (ctFile && typeof ctFile.async === "function") {
+      let ctText: string = await ctFile.async("text");
+      if (ctText.includes("comments")) {
+        ctText = ctText.replace(/<Override[^>]*PartName="\/word\/comments[^"]*"[^>]*\/>/g, "");
+        anyDoc.zip.file("[Content_Types].xml", ctText);
+      }
+    }
+  }
+
+  return count;
+}

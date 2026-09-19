@@ -3,7 +3,7 @@ import { analyzeDocument } from "./analyze.ts";
 import { openDocx } from "./docx.ts";
 import { stampAnchors, type StampOptions, type StampedAnchor } from "./stamp.ts";
 import type { DocumentAnalysis, Segment, StyleObject } from "./types.ts";
-import { extractDocumentComments, type DocumentComment } from "./comments.ts";
+import { extractDocumentComments, stripDocumentComments, type DocumentComment } from "./comments.ts";
 import { summarizeStylePair } from "./util.ts";
 
 /**
@@ -490,6 +490,7 @@ export async function createTemplate(
     ...options,
     source: options.source ?? (typeof input === "string" ? input : "(buffer)"),
   });
+  await stripDocumentComments(doc);
   await doc.saveAs(templatePath);
   const fs = await import("node:fs/promises");
   await fs.writeFile(infoPath, JSON.stringify(info, null, 2), "utf-8");
