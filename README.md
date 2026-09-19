@@ -5,7 +5,7 @@
 <h1 align="center">husthelper</h1>
 
 <p align="center">
-  <strong>专为华中科技大学（HUST）打造的现代化认证套件与校园网络工具箱</strong>
+  <strong>专为华中科技大学（HUST）打造的现代化认证套件与校园网络工具箱（包含嵌入式极简C）</strong>
 </p>
 
 <p align="center">

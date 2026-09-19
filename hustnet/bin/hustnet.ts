@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
+import { fileURLToPath } from "node:url";
 import hustnet, { isNetError, type NetUserInfo } from "../index.ts";
 
 /**
@@ -34,11 +35,20 @@ interface CliOptions {
   service?: string;
   dumpFile?: string;
   save: boolean;
+  outputFile?: string;
+  templateFile?: string;
+  modulus?: string;
+  exponent?: string;
+  stdout?: boolean;
 }
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 const DEFAULT_CONFIG = "hustnet.json";
 const DEFAULT_SESSION = ".hustnet-session.json";
-const COMMANDS = new Set(["status", "info", "login", "logout", "keepalive"]);
+const DEFAULT_C_TEMPLATE = path.resolve(__dirname, "../c-template/hustnet_minimal.h");
+const DEFAULT_C_OUTPUT = "hustnet_minimal.h";
+const COMMANDS = new Set(["status", "info", "login", "logout", "keepalive", "generate_c"]);
 
 const HELP = `校园网认证 CLI
 
@@ -51,10 +61,11 @@ const HELP = `校园网认证 CLI
   login         登录并输出本人信息
   logout        下线（best-effort，始终清理本地会话）
   keepalive     执行一次保活
+  generate_c    生成嵌入式最小 C 语言 SDK 头文件（hustnet minimal c）
   whoami        同 info
   help          显示本帮助
 
-选项：
+通用选项：
   -c, --config <file>   配置文件，默认 ${DEFAULT_CONFIG}
   -s, --session <file>  会话文件，默认 ${DEFAULT_SESSION}
   -p, --probe <url>     覆盖探测地址（默认 http://123.123.123.123/）
@@ -64,9 +75,17 @@ const HELP = `校园网认证 CLI
       --dump <file>     将 keepalive 的原始响应写入文件（排查用）
       --no-save         交互输入的账号密码不写入配置文件
 
+generate_c 专属选项：
+  -o, --output <file>   输出 C 头文件路径，默认 ${DEFAULT_C_OUTPUT}
+      --template <file> 模板文件路径，默认内置模板
+  -m, --modulus <hex>   手动指定公钥模数（离线生成，跳过联机请求）
+  -e, --exponent <hex>  手动指定公钥指数，默认 10001
+      --stdout          直接输出生成的 C 代码到控制台
+
 示例：
   pnpm net status
   pnpm net login --probe http://123.123.123.123/
+  pnpm net generate_c -o esp32/hustnet_minimal.h
 `;
 
 function parseArgs(argv: string[]): CliOptions {
@@ -113,6 +132,24 @@ function parseArgs(argv: string[]): CliOptions {
       case "--dump":
         options.dumpFile = value();
         break;
+      case "-o":
+      case "--output":
+        options.outputFile = value();
+        break;
+      case "--template":
+        options.templateFile = value();
+        break;
+      case "-m":
+      case "--modulus":
+        options.modulus = value();
+        break;
+      case "-e":
+      case "--exponent":
+        options.exponent = value();
+        break;
+      case "--stdout":
+        options.stdout = true;
+        break;
       case "--no-save":
         options.save = false;
         break;
@@ -126,6 +163,7 @@ function parseArgs(argv: string[]): CliOptions {
     }
   }
   if (options.command === "whoami") options.command = "info";
+  if (options.command === "generate-c" || options.command === "genc") options.command = "generate_c";
   return options;
 }
 
@@ -266,6 +304,118 @@ function report(error: unknown): number {
   return 1;
 }
 
+async function handleGenerateC(options: CliOptions, rawConfig: CliConfig): Promise<void> {
+  const templatePath = options.templateFile ? path.resolve(options.templateFile) : DEFAULT_C_TEMPLATE;
+  if (!fs.existsSync(templatePath)) {
+    throw new Error(`找不到 C 语言模板文件：${templatePath}`);
+  }
+
+  let modulus = options.modulus?.trim();
+  let exponent = options.exponent?.trim() || "10001";
+  let source = "命令行参数";
+
+  if (!modulus) {
+    console.log("正在从校园网门户获取 RSA 公钥 (exponential / modulo)...");
+    const portal = options.portal || rawConfig.portal;
+    const queryString = options.queryString || rawConfig.queryString;
+    const probeUrl = options.probeUrl || rawConfig.probeUrl;
+
+    // 1. 尝试直接获取
+    try {
+      const client = hustnet.auth({
+        username: rawConfig.username || "anonymous",
+        password: rawConfig.password || "anonymous",
+        probeUrl,
+        portal,
+        queryString,
+      });
+      const pageInfo = await client.fetchPageInfo();
+      if (pageInfo.publicKeyModulus) {
+        modulus = pageInfo.publicKeyModulus;
+        if (pageInfo.publicKeyExponent) exponent = pageInfo.publicKeyExponent;
+        source = client.portal?.base ?? "在线门户";
+      }
+    } catch {
+      // 忽略直接拉取失败
+    }
+
+    // 2. 尝试从已有 session 文件中读取 portal
+    if (!modulus && fs.existsSync(options.sessionFile)) {
+      try {
+        const sessionData = JSON.parse(fs.readFileSync(options.sessionFile, "utf-8"));
+        if (sessionData?.portal?.base) {
+          const client = hustnet.auth({
+            username: rawConfig.username || "anonymous",
+            password: rawConfig.password || "anonymous",
+            portal: sessionData.portal.base,
+            queryString: sessionData.portal.queryString || "",
+          });
+          const pageInfo = await client.fetchPageInfo();
+          if (pageInfo.publicKeyModulus) {
+            modulus = pageInfo.publicKeyModulus;
+            if (pageInfo.publicKeyExponent) exponent = pageInfo.publicKeyExponent;
+            source = `${sessionData.portal.base} (会话文件 ${options.sessionFile})`;
+          }
+        }
+      } catch {
+        // 忽略 session 读取失败
+      }
+    }
+
+    if (!modulus) {
+      throw new Error(
+        "未能自动从校园网门户获取 RSA 公钥（当前网络可能未连接校园网、或设备已在线导致未被门户劫持）。\n" +
+          "解决方法：\n" +
+          "  1. 连入未认证的校园网后重试；\n" +
+          "  2. 使用 --portal <url> --query <qs> 指定门户；\n" +
+          "  3. 直接使用 -m, --modulus <hex> [-e <hex>] 离线指定公钥模数生成。"
+      );
+    }
+  }
+
+  const templateContent = fs.readFileSync(templatePath, "utf-8");
+  const now = new Date();
+  const dateStr = now.toISOString().slice(0, 10);
+  const yearStr = String(now.getFullYear());
+  const generatedCode = templateContent
+    .replace(/\{\{HUSTNET_MODULUS\}\}/g, modulus)
+    .replace(/\{\{HUSTNET_EXPONENT\}\}/g, exponent)
+    .replace(/\{\{HUSTNET_GENERATED_DATE\}\}/g, dateStr)
+    .replace(/\{\{HUSTNET_GENERATED_YEAR\}\}/g, yearStr)
+    .replace(/\{\{HUSTNET_GENERATED_AT\}\}/g, now.toISOString());
+
+  if (options.stdout) {
+    process.stdout.write(generatedCode);
+    return;
+  }
+
+  const outPath = path.resolve(options.outputFile || DEFAULT_C_OUTPUT);
+  fs.mkdirSync(path.dirname(outPath), { recursive: true });
+  fs.writeFileSync(outPath, generatedCode, "utf-8");
+
+  console.log("hustnet minimal C 语言 SDK 生成成功！");
+  console.log(`  输出文件：${outPath}`);
+  console.log(`  公钥来源：${source}`);
+  console.log(`  模数长度：${modulus.length * 4}-bit (${modulus.length} 十六进制字符)`);
+  console.log(`  模数前缀：${modulus.slice(0, 32)}…`);
+  console.log(`  公钥指数：0x${exponent}`);
+  console.log("\n嵌入式（ESP32 / STM32 / Pico 等）使用方式：");
+  console.log("  在任意一个 .c / .cpp 文件中编写：");
+  console.log("  -------------------------------------------------------------");
+  console.log("  #define HUSTNET_MINIMAL_C_IMPLEMENTATION");
+  console.log(`  #include "${path.basename(outPath)}"`);
+  console.log("");
+  console.log("  void login_demo() {");
+  console.log("      char enc_pwd[257];");
+  console.log('      hustnet_encrypt_password("your_password", enc_pwd, sizeof(enc_pwd));');
+  console.log("");
+  console.log("      char body[1024];");
+  console.log('      hustnet_build_login_payload("U2025xxxxx", enc_pwd, query_string, NULL, body, sizeof(body));');
+  console.log("      // 使用任意 HTTP 客户端库向 /eportal/InterFace.do?method=login POST body 即可");
+  console.log("  }");
+  console.log("  -------------------------------------------------------------");
+}
+
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   if (options.command === "help") {
@@ -279,7 +429,13 @@ async function main(): Promise<void> {
     return;
   }
 
-  const config = await resolveCredentials(loadConfig(options.configFile), options);
+  const rawConfig = loadConfig(options.configFile);
+  if (options.command === "generate_c") {
+    await handleGenerateC(options, rawConfig);
+    return;
+  }
+
+  const config = await resolveCredentials(rawConfig, options);
   const client = hustnet
     .auth({
       username: config.username!,
