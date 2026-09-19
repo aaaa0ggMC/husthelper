@@ -22,3 +22,7 @@ test-*/
 .~*
 *.tmp
 *.bak
+
+# C 编译产物（如 examples/chustnet.c 的默认输出）
+a.out
+chustnet

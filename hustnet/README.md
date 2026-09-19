@@ -120,6 +120,9 @@ gcc -O2 examples/chustnet.c -o chustnet
 # 示例：./chustnet U202512345 mypassword
 ```
 
+> **真机验证**（2026-09-19）：在真实校园网环境运行通过——自动探测到网关 `172.18.18.61:8080`
+> （queryString 413 字节），RSA 密码加密 → 标准表单装配 → 门户提交全链路成功登录。
+
 ### 一键安装到系统全局 (Linux / Windows)
 
 仓库 `scripts/` 目录下提供跨平台的全局安装与卸载脚本：
