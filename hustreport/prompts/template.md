@@ -19,6 +19,7 @@
   "profiles": { /* 多套模板，可选 */ },
   "feedback": { /* 缺失样式诊断与给用户的指导，关键！ */ },
   "edits":    [ /* 规范化：由 AI 显式指定要从模板底板中清理删除的段落 */ ],
+  "toc":      { /* 目录配置（可选），如 {"enabled": true, "maxLevel": 2} */ },
   "skeleton": "……Markdown 填字稿……"
 }
 ```
@@ -93,6 +94,20 @@
 { "op": "delete", "ref": "hrseg0012", "as": "paragraph" }   // 删整段
 { "op": "delete", "ref": "hrseg0012", "as": "run" }         // 只删内容
 { "op": "set",    "ref": "hrseg0012", "text": "" }          // 清空
+```
+
+## toc：目录配置（可选）
+
+如果文档中包含目录（系统已在上下文中提示检测到目录）：
+```jsonc
+"toc": {
+  "enabled": true,        // 是否启用目录生成与自动更新
+  "maxLevel": 2,          // 目录深度（如 2 代表抓取 1-2 级标题，3 代表抓取 1-3 级）
+  "levels": {
+    "1": { "pStyle": "TOC1" }, // 一级目录项样式
+    "2": { "pStyle": "TOC2" }  // 二级目录项样式
+  }
+}
 ```
 
 ## skeleton：Markdown 填字稿

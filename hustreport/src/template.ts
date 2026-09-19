@@ -131,8 +131,24 @@ export interface TemplateInfo {
   styleSchema?: StyleSchemaEntry[];
   /** AI 或系统对模板的反馈（如缺少的样式指导）。 */
   feedback?: TemplateFeedback;
+  /** 目录（TOC）配置。 */
+  toc?: TemplateTocConfig;
   /** 前向兼容命名空间。 */
   extensions?: Record<string, unknown>;
+}
+
+export interface TemplateTocLevelConfig {
+  pStyle?: string;
+  sampleRef?: string;
+  style?: StyleRef;
+}
+
+export interface TemplateTocConfig {
+  enabled: boolean;
+  type?: "sdt" | "field" | "manual";
+  maxLevel?: number;
+  instr?: string;
+  levels?: Record<string, TemplateTocLevelConfig>;
 }
 
 export interface MissingStyleFeedback {
@@ -205,6 +221,7 @@ export function buildTemplate(doc: VirtualWordDocument, options: BuildTemplateOp
   }
 
   const comments = extractDocumentComments(doc);
+  const toc = detectDocumentToc(doc);
   const styleSchema: StyleSchemaEntry[] = analysis.styles.map((style) => {
     const summary = summarizeStylePair(style.paragraph, style.run);
     const anchor = anchors.find((a) => a.styleId === style.id);
@@ -235,9 +252,118 @@ export function buildTemplate(doc: VirtualWordDocument, options: BuildTemplateOp
     profiles,
     comments: comments.length > 0 ? comments : undefined,
     styleSchema: styleSchema.length > 0 ? styleSchema : undefined,
+    toc,
   };
 
   return { info, anchors };
+}
+
+/** 检测 Word 文档中的目录（TOC）结构与层级样式。 */
+export function detectDocumentToc(doc: VirtualWordDocument): TemplateTocConfig | undefined {
+  const parts = (doc as unknown as { partsData?: Array<{ xmlDocument?: any }> }).partsData;
+  const root = parts?.[0]?.xmlDocument?.documentElement;
+  if (!root) return undefined;
+
+  // 1. 标准 Word 结构化文档标签 SDT 目录
+  const sdts = Array.from(root.getElementsByTagName("w:sdt") ?? []) as any[];
+  for (const sdt of sdts) {
+    const gallery = sdt.getElementsByTagName("w:docPartGallery")?.[0]?.getAttribute("w:val");
+    if (gallery === "Table of Contents") {
+      let maxLevel = 2;
+      let instr = 'TOC \\o "1-2" \\h \\u ';
+      const instrEl = sdt.getElementsByTagName("w:instrText")?.[0];
+      if (instrEl) {
+        const text = instrEl.textContent?.trim() ?? "";
+        if (text) {
+          instr = text;
+          const m = text.match(/\\o\s+"(\d+)-(\d+)"/);
+          if (m) maxLevel = parseInt(m[2], 10);
+        }
+      }
+      const levels: Record<string, TemplateTocLevelConfig> = {};
+      const ps = Array.from(sdt.getElementsByTagName("w:p") ?? []) as any[];
+      for (const p of ps) {
+        const pStyle = p.getElementsByTagName("w:pStyle")?.[0]?.getAttribute("w:val");
+        if (pStyle) {
+          const mLevel = pStyle.match(/TOC\s*(\d+)/i) || pStyle.match(/(\d+)/);
+          const lvl = mLevel ? mLevel[1] : String(Object.keys(levels).length + 1);
+          if (!levels[lvl]) {
+            levels[lvl] = { pStyle };
+          }
+        }
+      }
+      return {
+        enabled: true,
+        type: "sdt",
+        maxLevel,
+        instr,
+        levels: Object.keys(levels).length > 0 ? levels : { "1": { pStyle: "TOC1" }, "2": { pStyle: "TOC2" } },
+      };
+    }
+  }
+
+  // 2. 字段式 TOC（无 SDT 包裹）
+  const instrs = Array.from(root.getElementsByTagName("w:instrText") ?? []) as any[];
+  for (const instrEl of instrs) {
+    const text = instrEl.textContent ?? "";
+    if (/^\s*TOC\b/.test(text)) {
+      let maxLevel = 2;
+      const m = text.match(/\\o\s+"(\d+)-(\d+)"/);
+      if (m) maxLevel = parseInt(m[2], 10);
+      return {
+        enabled: true,
+        type: "field",
+        maxLevel,
+        instr: text.trim(),
+      };
+    }
+  }
+
+  // 3. 手工目录（“目录”标题下带有制表符和页码的连续段落）
+  const ps = Array.from(root.getElementsByTagName("w:p") ?? []) as any[];
+  for (let i = 0; i < ps.length; i++) {
+    const text = ps[i].textContent?.trim() ?? "";
+    if (/^(目\s*录|TABLE\s+OF\s+CONTENTS)$/i.test(text)) {
+      let count = 0;
+      let j = i + 1;
+      const levels: Record<string, TemplateTocLevelConfig> = {};
+      while (j < ps.length && j < i + 35) {
+        const p = ps[j];
+        const pText = p.textContent?.trim() ?? "";
+        if (!pText) {
+          j++;
+          continue;
+        }
+        const hasTab = p.getElementsByTagName("w:tab").length > 0;
+        const endsWithPage = /\d+$/.test(pText) || /[IVXLCDMivxlcdm]+$/.test(pText);
+        if (hasTab && endsWithPage) {
+          count++;
+          const pStyle = p.getElementsByTagName("w:pStyle")?.[0]?.getAttribute("w:val");
+          const m = pText.match(/^(\d+(?:\.\d+)*)/);
+          let lvl = "1";
+          if (m) {
+            lvl = String(m[1].split(".").length);
+          }
+          if (!levels[lvl] && pStyle) {
+            levels[lvl] = { pStyle };
+          }
+          j++;
+        } else {
+          break;
+        }
+      }
+      if (count >= 3) {
+        return {
+          enabled: true,
+          type: "manual",
+          maxLevel: Math.max(...Object.keys(levels).map(Number), 2),
+          levels: Object.keys(levels).length > 0 ? levels : undefined,
+        };
+      }
+    }
+  }
+
+  return undefined;
 }
 
 /** 解析某个 profile（含 `extends` 继承链），返回可直接喂渲染器的合并结果。 */

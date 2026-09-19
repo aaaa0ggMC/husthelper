@@ -11,7 +11,7 @@ import {
   type InlineRun,
 } from "./edits.ts";
 import type { StyleObject } from "./types.ts";
-import { readAnchors, runsBetween, stripAnchors, type BookmarkRange } from "./stamp.ts";
+import { insertBookmarkPair, readAnchors, runsBetween, stripAnchors, type BookmarkRange } from "./stamp.ts";
 import { resolveProfile, type StyleRef, type TemplateInfo, type TemplateProfile, type TemplateRule } from "./template.ts";
 import { highlightCode } from "./highlight.ts";
 import { loadCodeThemeSync, parseFontSizeToHalfPoints, type CodeTokenStyle } from "./code-theme.ts";
@@ -743,6 +743,28 @@ function renderBlocks(
 
   normalizeGluedParagraphAnchors(parsed, info, anchorRanges);
 
+  const renderedHeadings: Array<{ level: number; text: string; bookmarkName: string }> = [];
+  let headingBookmarkCounter = 0;
+
+  const recordHeading = (block: MarkdownBlock, paragraphEl: XmlElement) => {
+    const level = block.level ?? 1;
+    const text = block.text.trim();
+    if (!text) return;
+
+    let bookmarkName = findHeadingBookmarkName(paragraphEl);
+    if (!bookmarkName) {
+      headingBookmarkCounter += 1;
+      bookmarkName = `_Toc_hr_${headingBookmarkCounter}`;
+      const runs = childElementsOf(paragraphEl).filter((el) => el.nodeName === "w:r");
+      const firstRun = runs[0] ?? paragraphEl.firstChild;
+      const lastRun = runs[runs.length - 1] ?? paragraphEl.lastChild;
+      if (firstRun && lastRun) {
+        insertBookmarkPair(paragraphEl, firstRun, lastRun, `toc_bm_${headingBookmarkCounter}`, bookmarkName);
+      }
+    }
+    renderedHeadings.push({ level, text, bookmarkName });
+  };
+
   for (const block of parsed.blocks) {
     if (block.type === "paragraph" && !block.rawRuns && (FILL_ONLY.test(block.text) || HAS_REF_LINK.test(block.text))) continue; // ref 链接按填空处理
 
@@ -784,14 +806,24 @@ function renderBlocks(
     }
     if (!container) continue;
 
-    // 骨架常把已有标题再写一遍（带 {ref}）。若锚点段落文本与标题一致，就不再重复插入，
-    // 只把它当作后续内容的游标。
+    // 骨架把已有标题再写一遍（带 {ref}）。
+    // 1) 若文本一致：不重复插入，作为后续游标；
+    // 2) 若文本被用户修改（如「实验6」改成「实验1」）：直接改写原标题段落的文本，不重复插入新段落。
     if (block.type === "heading" && block.ref) {
       const range = anchorRanges.get(block.ref);
-      const existingText = range ? paragraphText(range.paragraphEl).replace(/\s+/g, "") : "";
-      const wanted = block.text.replace(/\s+/g, "");
-      if (existingText && existingText === wanted) {
-        cursorLast = range!.paragraphEl;
+      if (range) {
+        const existingText = paragraphText(range.paragraphEl).replace(/\s+/g, "");
+        const wanted = block.text.replace(/\s+/g, "");
+        if (existingText !== wanted) {
+          const allRuns = childElementsOf(range.paragraphEl).filter((el) => el.nodeName === "w:r");
+          if (allRuns.length > 0) {
+            writeRunElements(allRuns, block.text, "replace");
+          } else if (range.runEls.length > 0) {
+            writeRunElements(range.runEls, block.text, "replace");
+          }
+        }
+        recordHeading(block, range.paragraphEl);
+        cursorLast = range.paragraphEl;
         cursorFallback = container;
         continue;
       }
@@ -916,6 +948,9 @@ function renderBlocks(
       );
       if (spec.level) applyIndent(paragraphEl, spec.level);
       container.insertBefore(paragraphEl, last ? last.nextSibling : refNode);
+      if (block.type === "heading") {
+        recordHeading(block, paragraphEl);
+      }
       last = paragraphEl;
       count += 1;
     }
@@ -924,6 +959,10 @@ function renderBlocks(
       cursorLast = last;
       if (anchored) cursorFallback = container;
     }
+  }
+
+  if (info.toc?.enabled) {
+    updateTableOfContents(doc, info, renderedHeadings, ownerDoc);
   }
 
   return count;
@@ -1679,6 +1718,9 @@ export async function renderTemplateFile(
   const doc = await openDocx(templatePath);
   const markdownDir = options.markdownDir ?? path.dirname(path.resolve(markdownPath));
   const result = renderTemplate(doc, info, markdown, { ...options, markdownDir });
+  if (info.toc?.enabled) {
+    await enableDocxUpdateFields(doc);
+  }
   await doc.saveAs(outputPath);
   return result;
 }
@@ -2290,3 +2332,201 @@ function childElementsOf(element: XmlElement): XmlElement[] {
 function createWordElement(reference: XmlElement, name: string): XmlElement {
   return reference.ownerDocument.createElementNS(WORD_NS, name);
 }
+
+/* ------------------------------ 目录（TOC）支持 ------------------------------ */
+
+function findHeadingBookmarkName(paragraphEl: XmlElement): string | null {
+  const starts = paragraphEl.getElementsByTagName?.("w:bookmarkStart");
+  if (!starts) return null;
+  for (let i = 0; i < starts.length; i += 1) {
+    const el = starts[i];
+    const name = el.getAttribute("w:name") || el.getAttribute("name");
+    if (name && (name.startsWith("_Toc") || name.startsWith("__RefHeading___Toc"))) {
+      return name;
+    }
+  }
+  return null;
+}
+
+/**
+ * 启用 Word 的 updateFields 设置。
+ * 在 word/settings.xml 中注入 <w:updateFields w:val="true"/>，
+ * 使得用户在 Microsoft Word / WPS / LibreOffice 打开文档时自动刷新目录字段与页码。
+ */
+export async function enableDocxUpdateFields(doc: VirtualWordDocument): Promise<void> {
+  const anyDoc = doc as unknown as {
+    zip?: {
+      file: (name: string, content?: string) => any;
+    };
+  };
+  if (!anyDoc.zip || typeof anyDoc.zip.file !== "function") return;
+
+  const settingsFile = anyDoc.zip.file("word/settings.xml");
+  if (settingsFile && typeof settingsFile.async === "function") {
+    let text: string = await settingsFile.async("text");
+    if (!text.includes("w:updateFields")) {
+      text = text.replace(/<w:settings([^>]*)>/, '<w:settings$1><w:updateFields w:val="true"/>');
+      anyDoc.zip.file("word/settings.xml", text);
+    }
+  }
+}
+
+/**
+ * 根据文档渲染过程中记录的标题列表动态生成/更新目录（TOC）。
+ * 目录采用标准 OOXML:
+ * - 顶层 w:sdtContent
+ * - 首段嵌入 TOC 字段声明 (w:fldChar begin -> w:instrText TOC -> w:fldChar separate)
+ * - 每一级标题项嵌入 w:hyperlink w:anchor="..." -> run(文字) -> run(w:tab) -> w:fldSimple w:instr="PAGEREF ..."
+ * - 末段闭合 TOC 字段 (w:fldChar end)
+ */
+export function updateTableOfContents(
+  doc: VirtualWordDocument,
+  info: TemplateInfo,
+  renderedHeadings: Array<{ level: number; text: string; bookmarkName: string }>,
+  ownerDoc: XmlElement,
+): void {
+  const anyDoc = doc as unknown as { partsData?: Array<{ xmlDocument?: any }> };
+  const root = anyDoc.partsData?.[0]?.xmlDocument?.documentElement ?? ownerDoc.documentElement;
+  if (!root) return;
+
+  const maxLevel = info.toc?.maxLevel ?? 2;
+  const filteredHeadings = renderedHeadings.filter((h) => h.level >= 1 && h.level <= maxLevel);
+  if (filteredHeadings.length === 0) return;
+
+  // 寻找已有的 SDT 目录
+  const sdts = Array.from(root.getElementsByTagName("w:sdt") ?? []) as any[];
+  let tocSdt: XmlElement | null = null;
+  for (const sdt of sdts) {
+    const gallery = sdt.getElementsByTagName("w:docPartGallery")?.[0]?.getAttribute("w:val");
+    if (gallery === "Table of Contents") {
+      tocSdt = sdt;
+      break;
+    }
+  }
+
+  if (!tocSdt) return;
+
+  const sdtContent = tocSdt.getElementsByTagName("w:sdtContent")?.[0];
+  if (!sdtContent) return;
+
+  // 从原有的 sdtContent 中学习 TOC1、TOC2 等样式的 pPr 模板
+  const oldPs = Array.from(sdtContent.getElementsByTagName("w:p") ?? []) as any[];
+  const samplePPrByLevel = new Map<number, XmlElement>();
+
+  for (const p of oldPs) {
+    const pStyle = p.getElementsByTagName("w:pStyle")?.[0]?.getAttribute("w:val");
+    if (pStyle) {
+      const m = pStyle.match(/TOC\s*(\d+)/i) || pStyle.match(/(\d+)/);
+      if (m) {
+        const lvl = parseInt(m[1], 10);
+        const pPr = p.getElementsByTagName("w:pPr")?.[0];
+        if (pPr && !samplePPrByLevel.has(lvl)) {
+          samplePPrByLevel.set(lvl, pPr.cloneNode(true));
+        }
+      }
+    }
+  }
+
+  // 清空原有的所有段落缓存
+  while (sdtContent.firstChild) {
+    sdtContent.removeChild(sdtContent.firstChild);
+  }
+
+  const instr = info.toc?.instr || `TOC \\o "1-${maxLevel}" \\h \\u `;
+
+  // 生成新的目录段落
+  for (let i = 0; i < filteredHeadings.length; i += 1) {
+    const heading = filteredHeadings[i];
+    const isFirst = i === 0;
+    const isLast = i === filteredHeadings.length - 1;
+
+    const p = ownerDoc.createElementNS(WORD_NS, "w:p");
+
+    // 1. 段落属性 pPr
+    const samplePPr = samplePPrByLevel.get(heading.level);
+    if (samplePPr) {
+      p.appendChild(samplePPr.cloneNode(true));
+    } else {
+      const pPr = ownerDoc.createElementNS(WORD_NS, "w:pPr");
+      const pStyle = ownerDoc.createElementNS(WORD_NS, "w:pStyle");
+      const configuredStyle = info.toc?.levels?.[String(heading.level)]?.pStyle ?? `TOC${heading.level}`;
+      pStyle.setAttribute("w:val", configuredStyle);
+      pPr.appendChild(pStyle);
+      p.appendChild(pPr);
+    }
+
+    // 2. 首段插入 TOC 字段开始标记
+    if (isFirst) {
+      const rBegin = ownerDoc.createElementNS(WORD_NS, "w:r");
+      const fldCharBegin = ownerDoc.createElementNS(WORD_NS, "w:fldChar");
+      fldCharBegin.setAttribute("w:fldCharType", "begin");
+      rBegin.appendChild(fldCharBegin);
+      p.appendChild(rBegin);
+
+      const rInstr = ownerDoc.createElementNS(WORD_NS, "w:r");
+      const instrText = ownerDoc.createElementNS(WORD_NS, "w:instrText");
+      instrText.setAttribute("xml:space", "preserve");
+      instrText.textContent = instr;
+      rInstr.appendChild(instrText);
+      p.appendChild(rInstr);
+
+      const rSep = ownerDoc.createElementNS(WORD_NS, "w:r");
+      const fldCharSep = ownerDoc.createElementNS(WORD_NS, "w:fldChar");
+      fldCharSep.setAttribute("w:fldCharType", "separate");
+      rSep.appendChild(fldCharSep);
+      p.appendChild(rSep);
+    }
+
+    // 3. 超链接包裹条目：文字 + 制表符 + PAGEREF 字段
+    const hyperlink = ownerDoc.createElementNS(WORD_NS, "w:hyperlink");
+    hyperlink.setAttribute("w:anchor", heading.bookmarkName);
+    hyperlink.setAttribute("w:history", "1");
+
+    // 标题文字 run
+    const rTitle = ownerDoc.createElementNS(WORD_NS, "w:r");
+    const rTitlePr = ownerDoc.createElementNS(WORD_NS, "w:rPr");
+    const rTitleStyle = ownerDoc.createElementNS(WORD_NS, "w:rStyle");
+    rTitleStyle.setAttribute("w:val", "IndexLink");
+    rTitlePr.appendChild(rTitleStyle);
+    rTitle.appendChild(rTitlePr);
+    const tTitle = ownerDoc.createElementNS(WORD_NS, "w:t");
+    tTitle.textContent = heading.text;
+    rTitle.appendChild(tTitle);
+    hyperlink.appendChild(rTitle);
+
+    // 制表符 run (带前导点)
+    const rTab = ownerDoc.createElementNS(WORD_NS, "w:r");
+    const tabEl = ownerDoc.createElementNS(WORD_NS, "w:tab");
+    rTab.appendChild(tabEl);
+    hyperlink.appendChild(rTab);
+
+    // 页码字段 PAGEREF
+    const fldSimple = ownerDoc.createElementNS(WORD_NS, "w:fldSimple");
+    fldSimple.setAttribute("w:instr", `PAGEREF ${heading.bookmarkName} \\h `);
+    const rPage = ownerDoc.createElementNS(WORD_NS, "w:r");
+    const rPagePr = ownerDoc.createElementNS(WORD_NS, "w:rPr");
+    const rPageStyle = ownerDoc.createElementNS(WORD_NS, "w:rStyle");
+    rPageStyle.setAttribute("w:val", "IndexLink");
+    rPagePr.appendChild(rPageStyle);
+    rPage.appendChild(rPagePr);
+    const tPage = ownerDoc.createElementNS(WORD_NS, "w:t");
+    tPage.textContent = "1"; // 初始占位页码，打开文档时由 Word/WPS 根据 PAGEREF 自动更新
+    rPage.appendChild(tPage);
+    fldSimple.appendChild(rPage);
+    hyperlink.appendChild(fldSimple);
+
+    p.appendChild(hyperlink);
+
+    // 4. 末段闭合 TOC 字段
+    if (isLast) {
+      const rEnd = ownerDoc.createElementNS(WORD_NS, "w:r");
+      const fldCharEnd = ownerDoc.createElementNS(WORD_NS, "w:fldChar");
+      fldCharEnd.setAttribute("w:fldCharType", "end");
+      rEnd.appendChild(fldCharEnd);
+      p.appendChild(rEnd);
+    }
+
+    sdtContent.appendChild(p);
+  }
+}
+

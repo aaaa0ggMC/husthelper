@@ -221,3 +221,102 @@ test("renderTemplate: 同一段落黏连的多个标题能自动切分，避免�
   assert.equal(paragraphs[2].textContent, "正文调试记录分析。");
 });
 
+test("renderTemplate: 动态根据渲染标题生成目录 TOC 与 PAGEREF 书签引用", () => {
+  const docxEditRequire = createRequire(require.resolve("docx-edit"));
+  const { DOMParser } = docxEditRequire("@xmldom/xmldom");
+  const WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+  const xml =
+    `<?xml version="1.0" encoding="UTF-8"?>` +
+    `<w:document xmlns:w="${WORD_NS}">` +
+    `<w:body>` +
+    `<w:sdt>` +
+    `<w:sdtPr><w:docPartObj><w:docPartGallery w:val="Table of Contents"/></w:docPartObj></w:sdtPr>` +
+    `<w:sdtContent>` +
+    `<w:p><w:pPr><w:pStyle w:val="TOC1"/></w:pPr><w:r><w:t>旧目录项1</w:t></w:r></w:p>` +
+    `<w:p><w:pPr><w:pStyle w:val="TOC2"/></w:pPr><w:r><w:t>旧目录项2</w:t></w:r></w:p>` +
+    `</w:sdtContent>` +
+    `</w:sdt>` +
+    `<w:p>` +
+    `<w:bookmarkStart w:id="1" w:name="hrseg0001"/>` +
+    `<w:r><w:t>旧标题</w:t></w:r>` +
+    `<w:bookmarkEnd w:id="1"/>` +
+    `</w:p>` +
+    `</w:body></w:document>`;
+  const doc = new DOMParser().parseFromString(xml, "application/xml");
+  const mockDoc = {
+    partsData: [{ xmlDocument: doc, path: "word/document.xml" }],
+    xmlDoc: doc,
+  };
+
+  const info: any = {
+    version: 2,
+    kind: "hustreport/template",
+    defaultProfile: "default",
+    anchors: {
+      hrseg0001: { kind: "insert", label: "标题", tags: ["heading1"] },
+    },
+    toc: {
+      enabled: true,
+      type: "sdt",
+      maxLevel: 2,
+      levels: {
+        "1": { pStyle: "TOC1" },
+        "2": { pStyle: "TOC2" },
+      },
+    },
+    profiles: {
+      default: {
+        styles: {
+          body: { inline: { paragraph: { styleId: "Normal" } } },
+        },
+        rules: [
+          { match: { type: "heading", level: 1 }, style: { anchor: "hrseg0001" } },
+          { match: { type: "heading", level: 2 }, style: { anchor: "hrseg0001" } },
+          { match: { type: "paragraph" }, style: { anchor: "hrseg0001" } },
+        ],
+      },
+    },
+  };
+
+  const md = [
+    "# 一、实验目的 {ref:hrseg0001}",
+    "",
+    "## 1.1 背景与环境",
+    "",
+    "正文内容...",
+  ].join("\n");
+
+  const result = renderTemplate(mockDoc as any, info, md, { strip: false });
+  assert.equal(result.warnings.length, 0);
+
+  const sdtContent = doc.getElementsByTagName("w:sdtContent")[0];
+  const tocPs = Array.from(sdtContent.getElementsByTagName("w:p")) as any[];
+
+  // 渲染后 TOC 应该有两项：一、实验目的 与 1.1 背景与环境
+  assert.equal(tocPs.length, 2);
+
+  // 首段应包含 TOC 字段声明
+  const instrText = tocPs[0].getElementsByTagName("w:instrText")[0];
+  assert.ok(instrText);
+  assert.match(instrText.textContent, /TOC/);
+
+  // 末段应包含 end 字段
+  const fldChars = Array.from(tocPs[1].getElementsByTagName("w:fldChar")) as any[];
+  assert.ok(fldChars.some((fc) => fc.getAttribute("w:fldCharType") === "end"));
+
+  // 每一项应包含超链接、文字、Tab、PAGEREF
+  const hl1 = tocPs[0].getElementsByTagName("w:hyperlink")[0];
+  assert.ok(hl1);
+  const bookmark1 = hl1.getAttribute("w:anchor");
+  assert.ok(bookmark1);
+  assert.match(hl1.textContent, /一、实验目的/);
+
+  const fldSimple1 = hl1.getElementsByTagName("w:fldSimple")[0];
+  assert.equal(fldSimple1.getAttribute("w:instr"), `PAGEREF ${bookmark1} \\h `);
+
+  // 正文对应的标题段落应该注入了对应的 bookmarkStart
+  const bodyStarts = Array.from(doc.getElementsByTagName("w:bookmarkStart")) as any[];
+  assert.ok(bodyStarts.some((bs) => bs.getAttribute("w:name") === bookmark1));
+});
+
+

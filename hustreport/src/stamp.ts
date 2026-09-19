@@ -154,7 +154,7 @@ export function stripAnchors(doc: VirtualWordDocument, prefix: string = DEFAULT_
 
 /* ------------------------------- 内部实现 ------------------------------- */
 
-function insertBookmarkPair(paragraphEl: XmlElement, firstRun: XmlElement, lastRun: XmlElement, id: string, name: string): void {
+export function insertBookmarkPair(paragraphEl: XmlElement, firstRun: XmlElement, lastRun: XmlElement, id: string, name: string): void {
   const owner = paragraphEl.ownerDocument;
   const start = owner.createElementNS(WORD_NS, "w:bookmarkStart");
   start.setAttribute("w:id", id);

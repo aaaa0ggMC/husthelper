@@ -14,6 +14,7 @@ import {
   type TemplateInfo,
   type TemplateProfile,
   type TemplateRule,
+  type TemplateTocConfig,
 } from "./template.ts";
 import { extractJson, type ChatFn, type ChatMessage } from "./ai.ts";
 import { parseDocument } from "./render.ts";
@@ -52,6 +53,8 @@ export interface TemplateAiResponse {
   skeleton?: string;
   /** 缺失样式诊断或给用户的反馈建议。 */
   feedback?: TemplateFeedback;
+  /** 目录（TOC）配置。 */
+  toc?: Partial<TemplateTocConfig>;
 }
 
 export interface MergeResult {
@@ -277,6 +280,18 @@ export function buildTemplateContext(info: TemplateInfo, options: TemplatePrompt
     commentsSection = `文档批注与排版要求（来自教师/原作者，至关重要）：\n${commentLines.join("\n")}`;
   }
 
+  let tocSection = "";
+  if (info.toc?.enabled) {
+    const levelEntries = Object.entries(info.toc.levels ?? {})
+      .map(([lvl, cfg]) => `  - Level ${lvl} 目录项: 样式 ID=${cfg.pStyle ?? "TOC" + lvl}`)
+      .join("\n");
+    tocSection =
+      `检测到的目录（TOC）信息：\n` +
+      `- 存在形式: ${info.toc.type ?? "sdt"}，默认最大深度: 1-${info.toc.maxLevel ?? 2} 级\n` +
+      (levelEntries ? `${levelEntries}\n` : "") +
+      `可在 JSON 返回中通过 "toc": { "enabled": true, "maxLevel": 2 } 声明或调整目录设置。`;
+  }
+
   let anchors = Object.entries(info.anchors).map(([ref, anchor]) => {
     let label = anchor.label ?? "";
     const pText = anchor.paragraphText;
@@ -334,6 +349,7 @@ export function buildTemplateContext(info: TemplateInfo, options: TemplatePrompt
   return [
     options.task ? `用户说明：${options.task}` : "",
     commentsSection,
+    tocSection,
     `已检测到的文档样式列表（styleId 仅是编号，样式来源必须用锚点引用）：\n${styleTable}`,
     `锚点表（ref / 样式 / 类型 / 示例文本）：\n${anchorTable}`,
     schemaHint,
@@ -445,6 +461,14 @@ export function mergeTemplateAiResponse(text: string, info: TemplateInfo): Merge
       continue;
     }
     validEdits.push(edit);
+  }
+
+  // TOC 目录配置
+  if (parsed?.toc && typeof parsed.toc === "object") {
+    next.toc = {
+      ...(next.toc ?? { enabled: true }),
+      ...parsed.toc,
+    };
   }
 
   return { info: next, skeleton, edits: validEdits, warnings };
