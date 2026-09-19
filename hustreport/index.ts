@@ -174,5 +174,20 @@ export {
   resolveReportConfig,
   resolveReportConfigSync,
 } from "./src/config.ts";
-export type { CodeBlockConfig, ReportConfig } from "./src/config.ts";
+export type {
+  CodeBlockConfig,
+  ImageBlockConfig,
+  ReportConfig,
+  TableBlockConfig,
+} from "./src/config.ts";
+
+export {
+  calculateImageEmuSize,
+  DEFAULT_MAX_IMAGE_WIDTH_EMU,
+  DEFAULT_MAX_IMAGE_WIDTH_PT,
+  EMU_PER_PT,
+  EMU_PER_PX,
+  getImageDimensions,
+} from "./src/image-size.ts";
+export type { ImageDimensions, ImageEmuSize } from "./src/image-size.ts";
 

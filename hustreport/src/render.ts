@@ -1,4 +1,6 @@
 import { readFile } from "node:fs/promises";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import type { VirtualWordDocument } from "docx-edit";
 import { openDocx } from "./docx.ts";
 import {
@@ -13,20 +15,26 @@ import { readAnchors, stripAnchors, type BookmarkRange } from "./stamp.ts";
 import { resolveProfile, type StyleRef, type TemplateInfo, type TemplateProfile, type TemplateRule } from "./template.ts";
 import { highlightCode } from "./highlight.ts";
 import { loadCodeThemeSync, parseFontSizeToHalfPoints, type CodeTokenStyle } from "./code-theme.ts";
-import { resolveReportConfigSync, type CodeBlockConfig, type ReportConfig } from "./config.ts";
+import {
+  resolveReportConfigSync,
+  type CodeBlockConfig,
+  type ImageBlockConfig,
+  type ReportConfig,
+  type TableBlockConfig,
+} from "./config.ts";
+import { calculateImageEmuSize, getImageDimensions } from "./image-size.ts";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type XmlElement = any;
 
 const WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+const WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
+const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
+const PIC_NS = "http://schemas.openxmlformats.org/drawingml/2006/picture";
 
 /**
  * 渲染器。
- *
- * 填空：`[文字](ref:锚点)` 把文字写进对应 hole（保留样式）。
- * 结构化：标题 / 正文 / 代码 / 列表 / 引用块按 `rules` 匹配到已有样式，
- * 克隆该样式的段落+run 元素插入到锚点位置；样式全部复用，不新建。
  */
 
 export interface RenderFill {
@@ -48,7 +56,7 @@ export interface RenderFill {
   align?: "left" | "center" | "right";
 }
 
-export type BlockType = "heading" | "paragraph" | "code" | "list" | "quote" | "table" | "hr";
+export type BlockType = "heading" | "paragraph" | "code" | "list" | "quote" | "table" | "hr" | "image";
 
 export interface ListItem {
   text: string;
@@ -67,12 +75,20 @@ export interface MarkdownBlock {
   ordered?: boolean;
   items?: ListItem[];
   rows?: string[][];
+  alignments?: Array<"left" | "center" | "right">;
   /** 插入锚点。 */
   ref?: string;
   profile?: string;
   position?: "before" | "after";
-  /** 指定代码块高亮主题/模板。 */
+  /** 指定代码块高亮或表格主题。 */
   theme?: string;
+  /** 图片专属：路径。 */
+  src?: string;
+  /** 图片专属：底下显示的文字（图注）。 */
+  caption?: string;
+  /** 块级解析出的属性（如 align, size, width, height, header 等）。 */
+  attrs?: Record<string, string>;
+  extra?: string;
 }
 
 export interface ParsedDocument {
@@ -99,6 +115,12 @@ export interface RenderOptions {
   configFile?: string;
   /** 覆盖配置项（--extra，支持 JSON 或 key=val）。 */
   extra?: string;
+  /** 图片排版配置。 */
+  imageConfig?: ImageBlockConfig;
+  /** 表格排版配置。 */
+  tableConfig?: TableBlockConfig;
+  /** Markdown 文件所在目录（用于相对路径查找图片）。 */
+  markdownDir?: string;
   /** 全局合并后的配置对象。 */
   config?: ReportConfig;
 }
@@ -262,15 +284,55 @@ export function parseDocument(markdown: string, options: RenderOptions = {}): Pa
       continue;
     }
 
-    // 表格（先解析出来，渲染阶段提示暂不支持）
+    // 独立图片：![caption](src){attrs}(extra)
+    const imageMatch = /^\s*!\[([\s\S]*?)\]\((.*?)\)(?:\{([^}]*)\})?(?:\(([^)]*)\))?\s*$/.exec(line);
+    if (imageMatch) {
+      const caption = imageMatch[1].trim();
+      const src = imageMatch[2].trim();
+      const attrStr = [imageMatch[3], imageMatch[4]].filter(Boolean).join(" ");
+      const attrs = parseEnhancedAttrs(attrStr);
+      blocks.push({
+        type: "image",
+        src,
+        caption: caption || undefined,
+        text: caption,
+        attrs,
+        ref: attrs.ref,
+        profile: attrs.profile ?? sectionProfile,
+        position: attrPosition(attrs.pos),
+        theme: attrs.theme,
+      });
+      i += 1;
+      continue;
+    }
+
+    // 表格
     if (line.includes("|") && i + 1 < lines.length && /^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(lines[i + 1])) {
-      const rows: string[][] = [parseTableRow(line)];
+      const headerRow = parseTableRow(line);
+      const sepLine = lines[i + 1];
+      const alignments = parseTableAlignments(sepLine);
+      const rows: string[][] = [headerRow];
       i += 2;
       while (i < lines.length && lines[i].includes("|")) {
         rows.push(parseTableRow(lines[i]));
         i += 1;
       }
-      blocks.push({ type: "table", text: "", rows, profile: sectionProfile });
+      let attrs: Attrs = {};
+      if (i < lines.length && /^\s*\{([^}]*)\}\s*$/.test(lines[i])) {
+        attrs = parseEnhancedAttrs(lines[i].replace(/[{}]/g, ""));
+        i += 1;
+      }
+      blocks.push({
+        type: "table",
+        text: "",
+        rows,
+        alignments,
+        attrs,
+        ref: attrs.ref,
+        profile: attrs.profile ?? sectionProfile,
+        position: attrPosition(attrs.pos),
+        theme: attrs.theme,
+      });
       continue;
     }
 
@@ -280,7 +342,8 @@ export function parseDocument(markdown: string, options: RenderOptions = {}): Pa
     while (
       i < lines.length &&
       lines[i].trim() &&
-      !/^\s*(#{1,6}\s|```|>|<!--|([-*+]|\d+\.)\s)/.test(lines[i])
+      !/^\s*(#{1,6}\s|```|>|<!--|!\[|([-*+]|\d+\.)\s)/.test(lines[i]) &&
+      !(lines[i].includes("|") && i + 1 < lines.length && /^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(lines[i + 1]))
     ) {
       buffer.push(lines[i]);
       i += 1;
@@ -406,10 +469,7 @@ function renderBlocks(
 
   for (const block of parsed.blocks) {
     if (block.type === "paragraph" && (FILL_ONLY.test(block.text) || HAS_REF_LINK.test(block.text))) continue; // ref 链接按填空处理
-    if (block.type === "table") {
-      warnings.push("表格暂未支持，已跳过");
-      continue;
-    }
+
 
     const profileName = block.profile ?? parsed.profile ?? info.defaultProfile;
     let profile = profileCache.get(profileName);
@@ -497,6 +557,55 @@ function renderBlocks(
         count += 1;
         continue;
       }
+    }
+
+    if (block.type === "image") {
+      const { paragraphEl, captionEl } = buildImageElement(
+        ownerDoc,
+        doc,
+        block,
+        rule,
+        profile,
+        anchorRanges,
+        {
+          imageConfig: options.imageConfig ?? options.config?.image,
+          config: options.config,
+          sample,
+          markdownDir: options.markdownDir,
+          docPrId: docPrIdCounter++,
+        },
+      );
+      container.insertBefore(paragraphEl, refNode);
+      let lastEl: XmlElement = paragraphEl;
+      count += 1;
+      if (captionEl) {
+        container.insertBefore(captionEl, lastEl.nextSibling);
+        lastEl = captionEl;
+        count += 1;
+      }
+      cursorLast = lastEl;
+      if (anchored) cursorFallback = container;
+      continue;
+    }
+
+    if (block.type === "table") {
+      const tableEl = buildTableElement(
+        ownerDoc,
+        block,
+        rule,
+        profile,
+        anchorRanges,
+        {
+          tableConfig: options.tableConfig ?? options.config?.table,
+          config: options.config,
+          sample,
+        },
+      );
+      container.insertBefore(tableEl, refNode);
+      cursorLast = tableEl;
+      if (anchored) cursorFallback = container;
+      count += 1;
+      continue;
     }
 
     if (!sample) {
@@ -1242,6 +1351,10 @@ function describeBlock(block: MarkdownBlock): string {
       return "列表";
     case "quote":
       return "引用";
+    case "image":
+      return `图片(${block.src || ""})`;
+    case "table":
+      return `表格(${block.rows?.length ?? 0}行)`;
     default:
       return block.type;
   }
@@ -1259,7 +1372,8 @@ export async function renderTemplateFile(
   const info = JSON.parse(await readFile(infoPath, "utf-8")) as TemplateInfo;
   const markdown = await readFile(markdownPath, "utf-8");
   const doc = await openDocx(templatePath);
-  const result = renderTemplate(doc, info, markdown, options);
+  const markdownDir = options.markdownDir ?? path.dirname(path.resolve(markdownPath));
+  const result = renderTemplate(doc, info, markdown, { ...options, markdownDir });
   await doc.saveAs(outputPath);
   return result;
 }
@@ -1290,6 +1404,503 @@ function attrPosition(value: string | undefined): "before" | "after" | undefined
 
 function parseTableRow(line: string): string[] {
   return line.trim().replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim());
+}
+
+function parseTableAlignments(sepLine: string): Array<"left" | "center" | "right"> {
+  const cols = sepLine.trim().replace(/^\||\|$/g, "").split("|");
+  return cols.map((col) => {
+    const s = col.trim();
+    const left = s.startsWith(":");
+    const right = s.endsWith(":");
+    if (left && right) return "center";
+    if (right) return "right";
+    return "left";
+  });
+}
+
+function parseEnhancedAttrs(attrStr?: string): Attrs {
+  if (!attrStr) return {};
+  const attrs: Attrs = {};
+  const regex = /([#\w-]+)(?:[:=](?:"([^"]*)"|'([^']*)'|([^\s,}]+)))?/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(attrStr)) !== null) {
+    const rawKey = match[1];
+    const val = match[2] ?? match[3] ?? match[4];
+    if (rawKey.startsWith("#")) {
+      attrs.ref = rawKey.slice(1);
+    } else if (val !== undefined) {
+      attrs[rawKey] = val;
+    } else {
+      const lower = rawKey.toLowerCase();
+      if (lower === "center" || lower === "left" || lower === "right") {
+        attrs.align = lower;
+      } else if (lower === "before" || lower === "after") {
+        attrs.pos = lower;
+      } else if (lower === "max" || /^\d+(\.\d+)?(%|px|pt|cm|mm|in)?$/.test(lower)) {
+        attrs.size = lower;
+      } else if (["academic", "grid", "striped", "clean"].includes(lower)) {
+        attrs.theme = lower;
+      } else {
+        attrs[rawKey] = "true";
+      }
+    }
+  }
+  return attrs;
+}
+
+let docPrIdCounter = 1000;
+
+function buildImageElement(
+  ownerDoc: XmlElement,
+  doc: VirtualWordDocument,
+  block: MarkdownBlock,
+  rule: TemplateRule | null | undefined,
+  profile: TemplateProfile,
+  anchorRanges: Map<string, BookmarkRange>,
+  ctx: {
+    imageConfig?: ImageBlockConfig;
+    config?: ReportConfig;
+    sample: XmlElement | null;
+    markdownDir?: string;
+    docPrId: number;
+  },
+): { paragraphEl: XmlElement; captionEl: XmlElement | null } {
+  let imagePath = block.src || "";
+  if (ctx.markdownDir && !path.isAbsolute(imagePath)) {
+    const candidate = path.resolve(ctx.markdownDir, imagePath);
+    if (existsSync(candidate)) {
+      imagePath = candidate;
+    }
+  }
+  if (!existsSync(imagePath)) {
+    throw new Error(`图片文件未找到: ${block.src} (解析路径: ${imagePath})`);
+  }
+
+  const buffer = readFileSync(imagePath);
+  const dims = getImageDimensions(buffer);
+
+  const align =
+    block.attrs?.align ||
+    (rule?.options as any)?.align ||
+    ctx.imageConfig?.align ||
+    "center";
+
+  const size =
+    block.attrs?.size ||
+    (rule?.options as any)?.size ||
+    ctx.imageConfig?.size ||
+    "max";
+
+  const width =
+    block.attrs?.width ||
+    (rule?.options as any)?.width ||
+    ctx.imageConfig?.width;
+
+  const height =
+    block.attrs?.height ||
+    (rule?.options as any)?.height ||
+    ctx.imageConfig?.height;
+
+  const emuSize = calculateImageEmuSize(dims, { size, width, height, maxWidthPt: ctx.imageConfig?.maxWidth });
+
+  const ext = path.extname(imagePath).replace(/^\./, "").toLowerCase() || dims.type;
+  const mimeMap: Record<string, string> = {
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    gif: "image/gif",
+    webp: "image/webp",
+  };
+  const contentType = mimeMap[ext] || `image/${ext}`;
+
+  const imageProps = (doc as any).createOrUpdateImage("word/document.xml", {
+    props: {
+      data: buffer,
+      filename: path.basename(imagePath),
+      contentType,
+    },
+  });
+  const relId = imageProps.relId;
+
+  const paragraphEl = ownerDoc.createElementNS(WORD_NS, "w:p");
+  const pPr = ownerDoc.createElementNS(WORD_NS, "w:pPr");
+  const jc = ownerDoc.createElementNS(WORD_NS, "w:jc");
+  jc.setAttribute("w:val", align);
+  pPr.appendChild(jc);
+  paragraphEl.appendChild(pPr);
+
+  const runEl = ownerDoc.createElementNS(WORD_NS, "w:r");
+  const drawingEl = ownerDoc.createElementNS(WORD_NS, "w:drawing");
+
+  const inlineEl = ownerDoc.createElementNS(WP_NS, "wp:inline");
+  inlineEl.setAttribute("distT", "0");
+  inlineEl.setAttribute("distB", "0");
+  inlineEl.setAttribute("distL", "0");
+  inlineEl.setAttribute("distR", "0");
+
+  const extentEl = ownerDoc.createElementNS(WP_NS, "wp:extent");
+  extentEl.setAttribute("cx", String(emuSize.cx));
+  extentEl.setAttribute("cy", String(emuSize.cy));
+  inlineEl.appendChild(extentEl);
+
+  const effectExtentEl = ownerDoc.createElementNS(WP_NS, "wp:effectExtent");
+  effectExtentEl.setAttribute("l", "0");
+  effectExtentEl.setAttribute("t", "0");
+  effectExtentEl.setAttribute("r", "0");
+  effectExtentEl.setAttribute("b", "0");
+  inlineEl.appendChild(effectExtentEl);
+
+  const docPrEl = ownerDoc.createElementNS(WP_NS, "wp:docPr");
+  docPrEl.setAttribute("id", String(ctx.docPrId));
+  docPrEl.setAttribute("name", `Picture ${ctx.docPrId}`);
+  inlineEl.appendChild(docPrEl);
+
+  const cNvGraphicFramePr = ownerDoc.createElementNS(WP_NS, "wp:cNvGraphicFramePr");
+  const locks = ownerDoc.createElementNS(A_NS, "a:graphicFrameLocks");
+  locks.setAttribute("noChangeAspect", "1");
+  cNvGraphicFramePr.appendChild(locks);
+  inlineEl.appendChild(cNvGraphicFramePr);
+
+  const graphic = ownerDoc.createElementNS(A_NS, "a:graphic");
+  const graphicData = ownerDoc.createElementNS(A_NS, "a:graphicData");
+  graphicData.setAttribute("uri", "http://schemas.openxmlformats.org/drawingml/2006/picture");
+
+  const pic = ownerDoc.createElementNS(PIC_NS, "pic:pic");
+
+  const nvPicPr = ownerDoc.createElementNS(PIC_NS, "pic:nvPicPr");
+  const cNvPr = ownerDoc.createElementNS(PIC_NS, "pic:cNvPr");
+  cNvPr.setAttribute("id", "0");
+  cNvPr.setAttribute("name", path.basename(imagePath));
+  nvPicPr.appendChild(cNvPr);
+  const cNvPicPr = ownerDoc.createElementNS(PIC_NS, "pic:cNvPicPr");
+  nvPicPr.appendChild(cNvPicPr);
+  pic.appendChild(nvPicPr);
+
+  const blipFill = ownerDoc.createElementNS(PIC_NS, "pic:blipFill");
+  const blip = ownerDoc.createElementNS(A_NS, "a:blip");
+  blip.setAttributeNS(R_NS, "r:embed", relId);
+  blipFill.appendChild(blip);
+  const stretch = ownerDoc.createElementNS(A_NS, "a:stretch");
+  stretch.appendChild(ownerDoc.createElementNS(A_NS, "a:fillRect"));
+  blipFill.appendChild(stretch);
+  pic.appendChild(blipFill);
+
+  const spPr = ownerDoc.createElementNS(PIC_NS, "pic:spPr");
+  const xfrm = ownerDoc.createElementNS(A_NS, "a:xfrm");
+  const off = ownerDoc.createElementNS(A_NS, "a:off");
+  off.setAttribute("x", "0");
+  off.setAttribute("y", "0");
+  xfrm.appendChild(off);
+  const extEl = ownerDoc.createElementNS(A_NS, "a:ext");
+  extEl.setAttribute("cx", String(emuSize.cx));
+  extEl.setAttribute("cy", String(emuSize.cy));
+  xfrm.appendChild(extEl);
+  spPr.appendChild(xfrm);
+
+  const prstGeom = ownerDoc.createElementNS(A_NS, "a:prstGeom");
+  prstGeom.setAttribute("prst", "rect");
+  prstGeom.appendChild(ownerDoc.createElementNS(A_NS, "a:avLst"));
+  spPr.appendChild(prstGeom);
+  pic.appendChild(spPr);
+
+  graphicData.appendChild(pic);
+  graphic.appendChild(graphicData);
+  inlineEl.appendChild(graphic);
+
+  drawingEl.appendChild(inlineEl);
+  runEl.appendChild(drawingEl);
+  paragraphEl.appendChild(runEl);
+
+  let captionEl: XmlElement | null = null;
+  if (block.caption && block.caption.trim()) {
+    const aiCaptionRef = (rule?.options as any)?.captionRef;
+    const aiCaptionStyle = (rule?.options as any)?.captionStyle;
+    const profileCaptionRule = matchRule(profile.rules, { type: "caption" } as any);
+    const userCaptionStyle = block.attrs?.captionStyle || block.attrs?.style || ctx.imageConfig?.captionStyle;
+
+    let targetStyleRef: StyleRef | undefined;
+    if (aiCaptionRef) {
+      targetStyleRef = typeof aiCaptionRef === "string" ? { anchor: aiCaptionRef } : aiCaptionRef;
+    } else if (aiCaptionStyle) {
+      targetStyleRef = typeof aiCaptionStyle === "string"
+        ? (profile.styles?.[aiCaptionStyle] ? { recipe: aiCaptionStyle } : { styleName: aiCaptionStyle })
+        : aiCaptionStyle;
+    } else if (profileCaptionRule?.style) {
+      targetStyleRef = profileCaptionRule.style;
+    } else if (userCaptionStyle) {
+      targetStyleRef = anchorRanges.has(userCaptionStyle)
+        ? { anchor: userCaptionStyle }
+        : profile.styles?.[userCaptionStyle]
+        ? { recipe: userCaptionStyle }
+        : { styleName: userCaptionStyle };
+    }
+
+    const captionSample = styleRefToSample(targetStyleRef ?? (rule?.style || profile.defaults?.style), profile, anchorRanges);
+
+    const captionAlign =
+      block.attrs?.captionAlign ||
+      (rule?.options as any)?.captionAlign ||
+      ctx.imageConfig?.captionAlign ||
+      "center";
+
+    if (captionSample && !captionSample.inline && captionSample.paragraphEl) {
+      captionEl = captionSample.paragraphEl.cloneNode(true) as XmlElement;
+      captionEl.removeAttribute("w14:paraId");
+      captionEl.removeAttribute("w14:textId");
+      for (const child of childElementsOf(captionEl)) {
+        if (child.nodeName !== "w:pPr") captionEl.removeChild(child);
+      }
+      let cPPr = childElementsOf(captionEl).find((c) => c.nodeName === "w:pPr");
+      if (!cPPr) {
+        cPPr = ownerDoc.createElementNS(WORD_NS, "w:pPr");
+        captionEl.insertBefore(cPPr, captionEl.firstChild);
+      }
+      let cJc = childElementsOf(cPPr).find((c) => c.nodeName === "w:jc");
+      if (!cJc) {
+        cJc = ownerDoc.createElementNS(WORD_NS, "w:jc");
+        cPPr.appendChild(cJc);
+      }
+      cJc.setAttribute("w:val", captionAlign);
+
+      const cRun = cloneRunWithText(captionSample.runEl as XmlElement, block.caption);
+      captionEl.appendChild(cRun);
+    } else {
+      captionEl = ownerDoc.createElementNS(WORD_NS, "w:p");
+      const cPPr = ownerDoc.createElementNS(WORD_NS, "w:pPr");
+      const cJc = ownerDoc.createElementNS(WORD_NS, "w:jc");
+      cJc.setAttribute("w:val", captionAlign);
+      cPPr.appendChild(cJc);
+      captionEl.appendChild(cPPr);
+
+      const cRun = ownerDoc.createElementNS(WORD_NS, "w:r");
+      const rPr = ownerDoc.createElementNS(WORD_NS, "w:rPr");
+      const sz = ownerDoc.createElementNS(WORD_NS, "w:sz");
+      sz.setAttribute("w:val", "21"); // 10.5pt (五号)
+      rPr.appendChild(sz);
+      cRun.appendChild(rPr);
+
+      const t = ownerDoc.createElementNS(WORD_NS, "w:t");
+      t.textContent = block.caption;
+      cRun.appendChild(t);
+      captionEl.appendChild(cRun);
+    }
+  }
+
+  return { paragraphEl, captionEl };
+}
+
+function buildTableElement(
+  ownerDoc: XmlElement,
+  block: MarkdownBlock,
+  rule: TemplateRule | null | undefined,
+  profile: TemplateProfile,
+  anchorRanges: Map<string, BookmarkRange>,
+  ctx: {
+    tableConfig?: TableBlockConfig;
+    config?: ReportConfig;
+    sample: XmlElement | null;
+  },
+): XmlElement {
+  const rows = block.rows || [];
+  const colCount = Math.max(...rows.map((r) => r.length), 1);
+  const alignments = block.alignments || [];
+
+  const theme =
+    block.attrs?.theme ||
+    (rule?.options as any)?.theme ||
+    ctx.tableConfig?.theme ||
+    "academic";
+
+  const headerOpt =
+    block.attrs?.header !== undefined
+      ? block.attrs.header !== "false"
+      : (rule?.options as any)?.header !== undefined
+      ? (rule?.options as any).header !== false
+      : ctx.tableConfig?.header !== undefined
+      ? ctx.tableConfig.header !== false
+      : true;
+
+  const hasHeader = headerOpt && rows.length > 0;
+
+  const tableAlign =
+    block.attrs?.align ||
+    (rule?.options as any)?.align ||
+    ctx.tableConfig?.align ||
+    "center";
+
+  const tbl = ownerDoc.createElementNS(WORD_NS, "w:tbl");
+
+  // tblPr
+  const tblPr = ownerDoc.createElementNS(WORD_NS, "w:tblPr");
+  const tblW = ownerDoc.createElementNS(WORD_NS, "w:tblW");
+  tblW.setAttribute("w:w", "5000");
+  tblW.setAttribute("w:type", "pct");
+  tblPr.appendChild(tblW);
+
+  const jc = ownerDoc.createElementNS(WORD_NS, "w:jc");
+  jc.setAttribute("w:val", tableAlign);
+  tblPr.appendChild(jc);
+
+  // Table borders according to theme
+  const tblBorders = ownerDoc.createElementNS(WORD_NS, "w:tblBorders");
+  const applyBorder = (side: string, val: string, sz?: string, color?: string) => {
+    const b = ownerDoc.createElementNS(WORD_NS, `w:${side}`);
+    b.setAttribute("w:val", val);
+    if (sz) b.setAttribute("w:sz", sz);
+    if (color) b.setAttribute("w:color", color);
+    b.setAttribute("w:space", "0");
+    tblBorders.appendChild(b);
+  };
+
+  if (theme === "academic") {
+    // 三线表：顶底 1.5pt (sz=12)，无左右边框，无垂直线，无内部横线（栏目线在 header 单元格单独加）
+    applyBorder("top", "single", "12", "000000");
+    applyBorder("bottom", "single", "12", "000000");
+    applyBorder("left", "none");
+    applyBorder("right", "none");
+    applyBorder("insideH", "none");
+    applyBorder("insideV", "none");
+  } else if (theme === "grid") {
+    // 细网格：四周及内部 0.5pt (sz=4)
+    applyBorder("top", "single", "4", "CCCCCC");
+    applyBorder("bottom", "single", "4", "CCCCCC");
+    applyBorder("left", "single", "4", "CCCCCC");
+    applyBorder("right", "single", "4", "CCCCCC");
+    applyBorder("insideH", "single", "4", "E0E0E0");
+    applyBorder("insideV", "single", "4", "E0E0E0");
+  } else if (theme === "striped") {
+    // 斑马纹：顶底 1pt (sz=8)，内部横线 0.5pt (sz=4)，无坚线
+    applyBorder("top", "single", "8", "666666");
+    applyBorder("bottom", "single", "8", "666666");
+    applyBorder("left", "none");
+    applyBorder("right", "none");
+    applyBorder("insideH", "single", "4", "EEEEEE");
+    applyBorder("insideV", "none");
+  } else {
+    // clean / 极简
+    applyBorder("top", "single", "6", "999999");
+    applyBorder("bottom", "single", "6", "999999");
+    applyBorder("left", "none");
+    applyBorder("right", "none");
+    applyBorder("insideH", "single", "4", "F0F0F0");
+    applyBorder("insideV", "none");
+  }
+  tblPr.appendChild(tblBorders);
+
+  // Cell padding
+  const tblCellMar = ownerDoc.createElementNS(WORD_NS, "w:tblCellMar");
+  for (const side of ["top", "bottom"]) {
+    const m = ownerDoc.createElementNS(WORD_NS, `w:${side}`);
+    m.setAttribute("w:w", "120"); // 6pt
+    m.setAttribute("w:type", "dxa");
+    tblCellMar.appendChild(m);
+  }
+  for (const side of ["left", "right"]) {
+    const m = ownerDoc.createElementNS(WORD_NS, `w:${side}`);
+    m.setAttribute("w:w", "160"); // 8pt
+    m.setAttribute("w:type", "dxa");
+    tblCellMar.appendChild(m);
+  }
+  tblPr.appendChild(tblCellMar);
+  tbl.appendChild(tblPr);
+
+  // tblGrid
+  const tblGrid = ownerDoc.createElementNS(WORD_NS, "w:tblGrid");
+  const colWidthPct = Math.floor(5000 / colCount);
+  for (let c = 0; c < colCount; c += 1) {
+    const gridCol = ownerDoc.createElementNS(WORD_NS, "w:gridCol");
+    gridCol.setAttribute("w:w", String(colWidthPct));
+    tblGrid.appendChild(gridCol);
+  }
+  tbl.appendChild(tblGrid);
+
+  // Render rows
+  for (let r = 0; r < rows.length; r += 1) {
+    const row = rows[r];
+    const isHeader = hasHeader && r === 0;
+
+    const tr = ownerDoc.createElementNS(WORD_NS, "w:tr");
+    const trPr = ownerDoc.createElementNS(WORD_NS, "w:trPr");
+    const cantSplit = ownerDoc.createElementNS(WORD_NS, "w:cantSplit");
+    trPr.appendChild(cantSplit);
+    if (isHeader) {
+      trPr.appendChild(ownerDoc.createElementNS(WORD_NS, "w:tblHeader"));
+    }
+    tr.appendChild(trPr);
+
+    for (let c = 0; c < colCount; c += 1) {
+      const cellText = row[c] ?? "";
+      const colAlign = alignments[c] ?? (isHeader ? "center" : "left");
+
+      const tc = ownerDoc.createElementNS(WORD_NS, "w:tc");
+      const tcPr = ownerDoc.createElementNS(WORD_NS, "w:tcPr");
+      const tcW = ownerDoc.createElementNS(WORD_NS, "w:tcW");
+      tcW.setAttribute("w:w", String(colWidthPct));
+      tcW.setAttribute("w:type", "pct");
+      tcPr.appendChild(tcW);
+
+      const vAlign = ownerDoc.createElementNS(WORD_NS, "w:vAlign");
+      vAlign.setAttribute("w:val", "center");
+      tcPr.appendChild(vAlign);
+
+      let bgColor: string | undefined;
+      if (isHeader) {
+        if (theme === "grid") bgColor = "F2F2F2";
+        else if (theme === "striped") bgColor = "EAEAEA";
+      } else if (theme === "striped" && r % 2 === 0) {
+        bgColor = "FAFAFA";
+      }
+      if (bgColor) {
+        const shd = ownerDoc.createElementNS(WORD_NS, "w:shd");
+        shd.setAttribute("w:val", "clear");
+        shd.setAttribute("w:color", "auto");
+        shd.setAttribute("w:fill", bgColor);
+        tcPr.appendChild(shd);
+      }
+
+      if (theme === "academic" && isHeader) {
+        const tcBorders = ownerDoc.createElementNS(WORD_NS, "w:tcBorders");
+        const bBottom = ownerDoc.createElementNS(WORD_NS, "w:bottom");
+        bBottom.setAttribute("w:val", "single");
+        bBottom.setAttribute("w:sz", "6");
+        bBottom.setAttribute("w:space", "0");
+        bBottom.setAttribute("w:color", "000000");
+        tcBorders.appendChild(bBottom);
+        tcPr.appendChild(tcBorders);
+      }
+
+      tc.appendChild(tcPr);
+
+      const p = ownerDoc.createElementNS(WORD_NS, "w:p");
+      const pPr = ownerDoc.createElementNS(WORD_NS, "w:pPr");
+      const jc = ownerDoc.createElementNS(WORD_NS, "w:jc");
+      jc.setAttribute("w:val", colAlign);
+      pPr.appendChild(jc);
+      p.appendChild(pPr);
+
+      const run = ownerDoc.createElementNS(WORD_NS, "w:r");
+      const rPr = ownerDoc.createElementNS(WORD_NS, "w:rPr");
+      const sz = ownerDoc.createElementNS(WORD_NS, "w:sz");
+      sz.setAttribute("w:val", "21"); // 10.5pt (五号)
+      rPr.appendChild(sz);
+      if (isHeader) {
+        rPr.appendChild(ownerDoc.createElementNS(WORD_NS, "w:b"));
+      }
+      run.appendChild(rPr);
+
+      const t = ownerDoc.createElementNS(WORD_NS, "w:t");
+      t.textContent = cellText;
+      run.appendChild(t);
+      p.appendChild(run);
+
+      tc.appendChild(p);
+      tr.appendChild(tc);
+    }
+
+    tbl.appendChild(tr);
+  }
+
+  return tbl;
 }
 
 function splitFrontmatter(markdown: string): { body: string; profile?: string } {

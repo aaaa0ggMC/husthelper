@@ -196,6 +196,18 @@ async function main(): Promise<void> {
     console.log(`模板信息：${result.infoPath}（规则 ${result.info.profiles[result.info.defaultProfile]?.rules.length ?? 0} 条）`);
     console.log(`填字稿：${result.skeletonPath}`);
     for (const warning of result.warnings) console.log(`  警告: ${warning}`);
+    if (result.info.feedback?.missingStyles && result.info.feedback.missingStyles.length > 0) {
+      console.log("\n💡 模板格式反馈与建议：");
+      console.log("原文档要求或常用格式中，缺少以下样式的示例文本：");
+      for (const item of result.info.feedback.missingStyles) {
+        console.log(`  • [${item.name}]${item.requirement ? ` (要求: ${item.requirement})` : ""}`);
+        console.log(`    👉 建议操作: ${item.instruction}`);
+      }
+      if (result.info.feedback.notes) {
+        console.log(`  📝 说明: ${result.info.feedback.notes}`);
+      }
+      console.log("");
+    }
     return;
   }
 

@@ -15,8 +15,38 @@ export interface CodeBlockConfig {
   tabSize?: number;
 }
 
+export interface ImageBlockConfig {
+  /** 默认对齐方式，默认 "center"。 */
+  align?: "left" | "center" | "right";
+  /** 默认尺寸：如 "max" (适合版心的合适最大宽度), "80%", "400px", "300pt"。默认 "max"。 */
+  size?: string | number;
+  /** 显式指定宽度。 */
+  width?: string | number;
+  /** 显式指定高度。 */
+  height?: string | number;
+  /** 最大版心宽度（单位 pt），默认 430。 */
+  maxWidth?: number;
+  /** 图注样式：用户指定的 recipe 名或样式名（若 AI 指定了 refId/样式，AI 优先）。 */
+  captionStyle?: string;
+  /** 图注对齐方式：默认跟随图片对齐或 "center"。 */
+  captionAlign?: "left" | "center" | "right";
+}
+
+export interface TableBlockConfig {
+  /** 表格主题：academic (学术三线表), grid (标准全网格), striped (斑马纹), clean (极简无竖线)。默认 academic。 */
+  theme?: "academic" | "grid" | "striped" | "clean";
+  /** 是否包含表头行。true: 首行为表头；false: 无表头；"auto": 自动根据 markdown 格式判断。默认 "auto"。 */
+  header?: boolean | "auto";
+  /** 表格整体对齐方式，默认 "center"。 */
+  align?: "left" | "center" | "right";
+  /** 单元格内边距 (磅数或半磅)。 */
+  cellPadding?: number;
+}
+
 export interface ReportConfig {
   code?: CodeBlockConfig;
+  image?: ImageBlockConfig;
+  table?: TableBlockConfig;
   profile?: string;
   strip?: boolean;
   decodeEntities?: boolean;

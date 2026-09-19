@@ -3,6 +3,8 @@ import { analyzeDocument } from "./analyze.ts";
 import { openDocx } from "./docx.ts";
 import { stampAnchors, type StampOptions, type StampedAnchor } from "./stamp.ts";
 import type { DocumentAnalysis, Segment, StyleObject } from "./types.ts";
+import { extractDocumentComments, type DocumentComment } from "./comments.ts";
+import { summarizeStylePair } from "./util.ts";
 
 /**
  * 模板 DSL（`hustreport/template`）。
@@ -120,8 +122,32 @@ export interface TemplateInfo {
   profiles: Record<string, TemplateProfile>;
   /** 模板级变量（可在骨架里以 {{var}} 使用，渲染器按需扩展）。 */
   variables?: Record<string, unknown>;
+  /** 原文档中提取的批注列表（来自教师或原作者）。 */
+  comments?: DocumentComment[];
+  /** 文档已检测到的样式 Schema 表。 */
+  styleSchema?: StyleSchemaEntry[];
+  /** AI 或系统对模板的反馈（如缺少的样式指导）。 */
+  feedback?: TemplateFeedback;
   /** 前向兼容命名空间。 */
   extensions?: Record<string, unknown>;
+}
+
+export interface MissingStyleFeedback {
+  name: string;
+  requirement?: string;
+  instruction: string;
+}
+
+export interface TemplateFeedback {
+  missingStyles?: MissingStyleFeedback[];
+  notes?: string;
+}
+
+export interface StyleSchemaEntry {
+  styleId: number;
+  summary: string;
+  anchorRef?: string;
+  examples: string[];
 }
 
 /** `inferTemplate` 需要的锚点信息子集（从 TemplateInfo.anchors 就能重建）。 */
@@ -169,6 +195,18 @@ export function buildTemplate(doc: VirtualWordDocument, options: BuildTemplateOp
     profiles[name] = normalizeProfile(partial);
   }
 
+  const comments = extractDocumentComments(doc);
+  const styleSchema: StyleSchemaEntry[] = analysis.styles.map((style) => {
+    const summary = summarizeStylePair(style.paragraph, style.run);
+    const anchor = anchors.find((a) => a.styleId === style.id);
+    return {
+      styleId: style.id,
+      summary,
+      anchorRef: anchor?.ref,
+      examples: style.examples.slice(0, 2),
+    };
+  });
+
   const info: TemplateInfo = {
     version: TEMPLATE_VERSION,
     kind: TEMPLATE_KIND,
@@ -182,6 +220,8 @@ export function buildTemplate(doc: VirtualWordDocument, options: BuildTemplateOp
     anchors: inferred.anchors,
     defaultProfile: defaultName,
     profiles,
+    comments: comments.length > 0 ? comments : undefined,
+    styleSchema: styleSchema.length > 0 ? styleSchema : undefined,
   };
 
   return { info, anchors };

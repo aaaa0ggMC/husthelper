@@ -17,6 +17,7 @@
   "styles":   { /* 命名配方 */ },
   "anchors":  { /* 锚点元信息补充 */ },
   "profiles": { /* 多套模板，可选 */ },
+  "feedback": { /* 缺失样式诊断与给用户的指导，关键！ */ },
   "edits":    [ /* 可选：对模板文档的修改建议 */ ],
   "skeleton": "……Markdown 填字稿……"
 }
@@ -30,7 +31,7 @@
 { "match": { "type": "heading", "level": 1 }, "style": { "anchor": "hrseg0007" }, "use": "both" }
 ```
 
-- `match.type`：`heading` | `paragraph` | `code` | `inlineCode` | `list` | `quote` | `table` | `*`
+- `match.type`：`heading` | `paragraph` | `code` | `inlineCode` | `list` | `quote` | `table` | `image` | `caption` | `*`
 - `match.level`：heading 级别；`match.lang`：代码块语言；`match.ref`：限定某个锚点
 - `style`（StyleRef，五选一）：
   - `{ "anchor": "hrseg0007" }` —— **首选**，复用某锚点内容的样式，模板自包含
@@ -40,6 +41,30 @@
 - `use`：`paragraph` | `run` | `both`（默认 both）
 - `theme`：可选代码块高亮主题名称（`"default"` | `"classic"` | `"eclipse"` | `"dark"`）。若不确定或希望由用户通过命令行/config.json 统一指定，请填 `""`。
 - `lint`：布尔值。对于代码块（`type: "code"`），如果文档中明确了代码样式（如存在代码段落/XML Style ID），请直接输出 `style`（绑定该锚点或 XML Style ID）并附带 `"lint": true`（保留原文档的段落/字体排版，同时用标准语法色做 Token 着色）或 `"lint": false`（不着色）。此时不需要额外的 CSS 背景/边框配置。若原文档无专用代码样式，则可输出 `"theme"` 或 `""` 使用代码卡片表格。
+- **图片规则（type: "image"）**：
+  可配置 `options.captionRef`（指定图注/图标题样式绑定的锚点）或 `options.captionStyle`，以及 `options.align: "center"`，`options.size: "max"`。也可单独增加 `{"match": {"type": "caption"}, "style": {"anchor": "..."}}` 规则。
+- **表格规则（type: "table"）**：
+  可配置 `options.theme: "academic"`（学术三线表，默认）| `"grid"`（细网格）| `"striped"`（斑马纹）| `"clean"`（极简），以及 `options.header: true`（首行表头）或 `false`（无表头）。
+
+## feedback：缺失样式诊断与用户指导（极其重要！）
+
+**核心原则：文档中还没有的样式，AI 一律不准凭空捏造生成！**
+如果原文档批注（Comment）或常用报告规范中明确要求了某种样式（例如：章标题、节标题、正文、代码块、图标题等），但系统给出的**已检测样式列表**中并未检测到对应格式的样本文本：
+1. **绝不能凭空制造未知的 anchor 或不存在的样式**！
+2. **必须在 `feedback.missingStyles` 中如实向用户反馈**，告诉用户缺少什么样式，并指导用户在 Word 模板中补写一行示例，保存后再次运行：
+
+```jsonc
+"feedback": {
+  "missingStyles": [
+    {
+      "name": "代码块",
+      "requirement": "等宽代码字体（如 Consolas / Courier New 10.5pt）",
+      "instruction": "原文档中未找到代码块样式。请在 Word 模板文档末尾另起一行，写入一段代码示例（如 `int main() { return 0; }`），将其字体设置为 Consolas 或仿宋，保存后重新执行 hustreport ai-template。"
+    }
+  ],
+  "notes": "..."
+}
+```
 
 ## styles：命名配方
 

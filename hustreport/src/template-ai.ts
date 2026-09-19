@@ -10,6 +10,7 @@ import {
   remapDanglingAnchors,
   type StyleRef,
   type StampedAnchorLike,
+  type TemplateFeedback,
   type TemplateInfo,
   type TemplateProfile,
   type TemplateRule,
@@ -49,6 +50,8 @@ export interface TemplateAiResponse {
   profiles?: Record<string, Partial<TemplateProfile>>;
   /** JSON 字段或直接把 markdown 放这里。 */
   skeleton?: string;
+  /** 缺失样式诊断或给用户的反馈建议。 */
+  feedback?: TemplateFeedback;
 }
 
 export interface MergeResult {
@@ -244,13 +247,35 @@ export type TemplateSystemPreset = keyof typeof TEMPLATE_SYSTEM_PRESETS;
 /** 默认沿用实验报告策略（本仓库主要场景）。 */
 export const DEFAULT_TEMPLATE_SYSTEM_PROMPT = LAB_REPORT_TEMPLATE_SYSTEM_PROMPT;
 
-/** 构造用户消息主体（样式表 + 锚点表 + 示例）。 */
+/** 构造用户消息主体（样式表 + 锚点表 + 批注 + 示例）。 */
 export function buildTemplateContext(info: TemplateInfo, options: TemplatePromptOptions = {}): string {
-  const styleLines = Object.entries(info.anchors)
-    .map(([, anchor]) => anchor.styleId)
-    .filter((styleId): styleId is number => styleId !== undefined);
-  const styleIds = [...new Set(styleLines)].sort((a, b) => a - b);
-  const styleTable = styleIds.map((id) => `styleId=${id}`).join("\n");
+  let styleTable = "";
+  if (info.styleSchema && info.styleSchema.length > 0) {
+    styleTable = info.styleSchema
+      .map((s) => {
+        const ex = s.examples.length > 0 ? ` 样例=${JSON.stringify(s.examples.join("; "))}` : "";
+        const refStr = s.anchorRef ? ` (样本锚点: ${s.anchorRef})` : "";
+        return `- [styleId=${s.styleId}]${refStr}: ${s.summary}${ex}`;
+      })
+      .join("\n");
+  } else {
+    const styleLines = Object.entries(info.anchors)
+      .map(([, anchor]) => anchor.styleId)
+      .filter((styleId): styleId is number => styleId !== undefined);
+    const styleIds = [...new Set(styleLines)].sort((a, b) => a - b);
+    styleTable = styleIds.map((id) => `styleId=${id}`).join("\n");
+  }
+
+  let commentsSection = "";
+  if (info.comments && info.comments.length > 0) {
+    const commentLines = info.comments.map((c) => {
+      const authorStr = c.author ? ` (${c.author})` : "";
+      const refStr = c.paragraphRef ? ` -> 关联锚点: ${c.paragraphRef}` : "";
+      const targetStr = c.paragraphText ? ` [段落: "${c.paragraphText}"]` : "";
+      return `- 批注${c.id}${authorStr}: "${c.text}"${refStr}${targetStr}`;
+    });
+    commentsSection = `文档批注与排版要求（来自教师/原作者，至关重要）：\n${commentLines.join("\n")}`;
+  }
 
   let anchors = Object.entries(info.anchors).map(([ref, anchor]) => ({
     ref,
@@ -263,17 +288,31 @@ export function buildTemplateContext(info: TemplateInfo, options: TemplatePrompt
     .map((anchor) => `${anchor.ref}\tstyle=${anchor.styleId}\t${anchor.kind}\t${JSON.stringify(anchor.label)}`)
     .join("\n");
 
-  const schemaHint = `示例（注意 skeleton 很精简：只列要填的封面字段和要补写的章节，固定的任务正文不出现；封面一列字段统一加 padding=cover 保证等宽对齐）：
+  const schemaHint = `示例（注意：
+1. skeleton 很精简：只列要填的封面字段和要补写的章节，固定的任务正文不出现；封面一列字段统一加 padding=cover 保证等宽对齐；
+2. 严禁凭空发明样式！如果批注/规范中需要某种格式（如代码块、三级标题等），但在已检测样式列表中找不到样本锚点，必须在 feedback.missingStyles 中指出；
+3. 支持图片与表格规则配置）：
 {
   "rules": [
     {"match":{"type":"heading","level":1},"style":{"anchor":"hrseg0007"}},
     {"match":{"type":"paragraph"},"style":{"recipe":"body"}},
-    {"match":{"type":"code"},"style":{"anchor":"hrseg0042"},"lint":true}
+    {"match":{"type":"code"},"style":{"anchor":"hrseg0042"},"lint":true},
+    {"match":{"type":"image"},"options":{"captionRef":"hrseg0094","align":"center","size":"max"}},
+    {"match":{"type":"table"},"options":{"theme":"academic","header":true}}
   ],
   "styles": {"body": {"anchor": "hrseg0012"}},
   "anchors": {
     "hrseg0003": {"kind":"slot","label":"学号"},
     "hrseg0091": {"kind":"insert","label":"实验记录"}
+  },
+  "feedback": {
+    "missingStyles": [
+      {
+        "name": "代码块",
+        "requirement": "等宽代码字体",
+        "instruction": "原文档中未发现代码块排版样式。请在 Word 模板文档末尾另起一行写入 'int main() { return 0; }' 并设为 Consolas 等宽字体，保存后重新生成模板。"
+      }
+    ]
   },
   "edits": [ {"op":"delete","ref":"hrseg0033","as":"paragraph"} ],
   "skeleton": "---\\nprofile: default\\n---\\n\\n[计算机科学与技术学院](ref:hrseg0017 | padding=cover)\\n[网络空间安全2401班](ref:hrseg0019 | padding=cover)\\n[U202412345](ref:hrseg0021 | padding=cover)\\n[张三](ref:hrseg0023 | padding=cover)\\n[李老师](ref:hrseg0025 | padding=cover)\\n\\n# 三、实验记录及问题回答 {ref:hrseg0091}\\n\\n(在此记录实验过程与结果)\\n\\n# 四、体会 {ref:hrseg0094}\\n\\n(在此填写心得体会)\\n"
@@ -281,7 +320,8 @@ export function buildTemplateContext(info: TemplateInfo, options: TemplatePrompt
 
   return [
     options.task ? `用户说明：${options.task}` : "",
-    `可用样式（styleId 仅是编号，样式来源必须用锚点引用）：\n${styleTable}`,
+    commentsSection,
+    `已检测到的文档样式列表（styleId 仅是编号，样式来源必须用锚点引用）：\n${styleTable}`,
     `锚点表（ref / 样式 / 类型 / 示例文本）：\n${anchorTable}`,
     schemaHint,
     options.extraInstructions ?? "",
@@ -316,6 +356,10 @@ export function mergeTemplateAiResponse(text: string, info: TemplateInfo): Merge
     anchors: { ...info.anchors },
     profiles: { ...info.profiles },
   };
+
+  if (parsed?.feedback) {
+    next.feedback = parsed.feedback;
+  }
 
   let skeleton = info.profiles[info.defaultProfile]?.extensions?.skeleton as string | undefined;
   if (typeof parsed?.skeleton === "string") skeleton = parsed.skeleton;
