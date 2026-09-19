@@ -35,6 +35,8 @@ export {
   qrScanUrl,
   qrCheckUrl,
   qrLogin,
+  parseMfaChallenge,
+  MfaRequiredError,
 } from "./src/cas.ts";
 export type {
   CasService,
@@ -51,6 +53,8 @@ export type {
   RawOcr,
   QrLoginOptions,
   QrLoginResult,
+  MfaChallenge,
+  MfaCodeProvider,
 } from "./src/cas.ts";
 
 /* ----------------------------- CAS 应用声明 ------------------------------ */

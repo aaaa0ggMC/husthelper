@@ -21,6 +21,15 @@
 - [x] `ensureService` / `exchangeTicket` 改用应用入口 URL 做路径匹配。
 - [x] 效果：petyxy 的 `/pft`、`/ggtypt` 与 pecg 的 `/cggl` 会话可共存，交替访问**不再重复续期**。
 
+### 企业微信动态验证码（MFA）
+
+- [x] `client.withMfaCode(provider)`：密码登录命中 CAS 风控挑战页（要求 `phoneCode`）时，
+  自动识别挑战页、回调 provider 获取动态验证码并二次提交，拿到 ticket。
+- [x] 未配置 / 用户放弃时抛 `MfaRequiredError`，可继续按登录方式序列降级到扫码。
+- [x] `parseMfaChallenge(html)` 识别挑战页；`LoginOptions.onMfaCode` / `AcquireOptions.onMfaCode` 透传。
+- [x] `examples/login_mfa.ts`（readline 交互输入动态验证码）。
+- [ ] 真机验证：MFA 二次提交是否需要 `ua` / `visitorId` 指纹字段（当前按浏览器行为省略空值）。
+
 ### 企业微信扫码登录
 
 - [x] `client.withQrCode(handler)`：走 CAS `qyQrLogin` + `checkQRCodeScan` 轮询，扫码授权后本会话直接拿到 `CASTGC`

@@ -54,8 +54,44 @@ export interface OcrStrategy {
   stdChar?: StdCharOptions;
 }
 
+/* --------------------------- 企业微信 MFA 二次验证 --------------------------- */
+
+/**
+ * 企业微信动态验证码（MFA）挑战信息。
+ *
+ * CAS 在风控判定「终端疑似发生变化」时不会直接签发 ticket，而是返回一个要求
+ * `phoneCode` 的挑战页，并把动态验证码发送到用户的企业微信。
+ */
+export interface MfaChallenge {
+  /** 服务端提示文案（已去除 HTML 标签），如「验证码已发送到您的企业微信」 */
+  message?: string;
+  /** 验证码接收渠道提示，如「企业微信」 */
+  channel?: string;
+  /** 原始挑战页 HTML，便于调用方自行解析 */
+  html: string;
+}
+
+/** 处理 MFA 挑战：返回用户从企业微信收到的动态验证码（空字符串视为放弃） */
+export type MfaCodeProvider = (challenge: MfaChallenge) => string | Promise<string>;
+
+/** 密码登录被企业微信 MFA 拦截、且未配置 `onMfaCode` 时抛出，调用方可据此降级到扫码登录 */
+export class MfaRequiredError extends Error {
+  readonly challenge: MfaChallenge;
+
+  constructor(challenge: MfaChallenge) {
+    super(challenge.message ?? "登录需要企业微信动态验证码（MFA）");
+    this.name = "MfaRequiredError";
+    this.challenge = challenge;
+  }
+}
+
 export interface LoginOptions {
   logger?: Logger;
+  /**
+   * 企业微信动态验证码（MFA）提供者。密码登录命中 MFA 挑战时会被调用以获取 `phoneCode`；
+   * 未配置则抛出 {@link MfaRequiredError}（便于登录方式序列降级到扫码等）。
+   */
+  onMfaCode?: MfaCodeProvider;
 }
 
 export interface LoginContext {
@@ -144,6 +180,129 @@ function hiddenValue(html: string, name: string): string {
   const match = html.match(new RegExp(`name="${name}"[^>]*value="([^"]*)"`, "i"));
   if (!match) throw new Error(`登录页缺少表单字段: ${name}`);
   return match[1];
+}
+
+function stripTags(html: string): string {
+  return html
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** 解析登录页里的隐藏表单字段（`name -> value`；同名取非空值，`type` 缺省按 hidden 处理） */
+function parseHiddenFields(html: string): Record<string, string> {
+  const fields: Record<string, string> = {};
+  for (const match of html.matchAll(/<input\b[^>]*>/gi)) {
+    const tag = match[0];
+    const type = /\btype\s*=\s*["']?([^"'\s>]+)/i.exec(tag)?.[1]?.toLowerCase();
+    if (type && type !== "hidden") continue;
+    const name = /\bname\s*=\s*["']([^"']*)["']/i.exec(tag)?.[1];
+    if (!name) continue;
+    const value = /\bvalue\s*=\s*["']([^"']*)["']/i.exec(tag)?.[1] ?? "";
+    if (!(name in fields) || value) fields[name] = value;
+  }
+  return fields;
+}
+
+/** 去除 `<script>` / `<style>` 后提取可见文本（避免把内联模板/JS 文案当成页面内容） */
+function visibleText(html: string): string {
+  return stripTags(
+    html
+      .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style\b[\s\S]*?<\/style>/gi, " "),
+  );
+}
+
+/** 提取登录页 `errormsghide` 中的服务端提示文案 */
+function extractErrorMessage(html: string): string | undefined {
+  const raw = /id\s*=\s*["']errormsghide["'][^>]*>([\s\S]*?)<\//i.exec(html)?.[1];
+  if (!raw) return undefined;
+  return stripTags(raw) || undefined;
+}
+
+/** `errormsghide` 中指向 MFA 的文案关键词 */
+const MFA_MESSAGE_RE = /动态验证码|二次验证|双因子|双因素|验证码已发送|手机验证码|企业微信|MFA/i;
+/** 页面正文里的双因子认证标识（部分部署的挑战页无 `errormsghide` 文案） */
+const TWO_FACTOR_RE = /双因子|双因素/i;
+
+/**
+ * 从登录响应 HTML 中识别企业微信 MFA / 双因子挑战。
+ *
+ * 判定条件：存在 `phoneCode`（或 `phoneCode2`）字段，且满足其一：
+ * - `errormsghide` 文案指向动态验证码 / 企业微信；
+ * - 页面正文出现「双因子认证 / 双因素认证」。
+ *
+ * 这样既能覆盖「终端疑似发生变化 → 动态验证码」的提示页，也能覆盖直接展示
+ * 「双因子认证 / 验证码」面板的页面，同时避免把普通「验证码错误」误判为 MFA。
+ */
+export function parseMfaChallenge(html: string): MfaChallenge | null {
+  const hasPhoneCode =
+    /name\s*=\s*["']phoneCode["']/i.test(html) || /id\s*=\s*["']phoneCode2?["']/i.test(html);
+  if (!hasPhoneCode) return null;
+
+  const message = extractErrorMessage(html);
+  const pageText = visibleText(html);
+  const twoFactor = TWO_FACTOR_RE.test(pageText);
+  const messageIsMfa = Boolean(message && MFA_MESSAGE_RE.test(message));
+
+  if (!messageIsMfa && !twoFactor) return null;
+
+  const channelSource = message && /企业微信/.test(message) ? message : pageText;
+  return {
+    message: message ?? (twoFactor ? "双因子认证：请输入验证码" : undefined),
+    channel: /企业微信/.test(channelSource) ? "企业微信" : undefined,
+    html,
+  };
+}
+
+/**
+ * 完成 MFA 挑战：把动态验证码填入 `phoneCode` 再次提交登录表单。
+ * 表单字段以挑战页隐藏字段为准（`lt` / `execution` 等会被服务端轮换），
+ * 其中 `ul` / `pl`（RSA 加密后的账号密码）在挑战页中为空，回退复用首次提交的密文。
+ */
+async function submitMfaChallenge(
+  session: Session,
+  service: string,
+  challenge: MfaChallenge,
+  fallback: { ul: string; pl: string },
+  provider: MfaCodeProvider | undefined,
+  logger: Logger,
+): Promise<string> {
+  if (!provider) throw new MfaRequiredError(challenge);
+
+  logger.info("登录命中企业微信动态验证码（MFA），等待验证码输入...");
+  const code = String(await provider(challenge)).trim();
+  if (!code) throw new Error("未提供企业微信动态验证码");
+
+  const fields = parseHiddenFields(challenge.html);
+  if (!fields.ul) fields.ul = fallback.ul;
+  if (!fields.pl) fields.pl = fallback.pl;
+  fields.phoneCode = code;
+  if (!fields._eventId) fields._eventId = "submit";
+
+  const form = new URLSearchParams();
+  for (const [name, value] of Object.entries(fields)) {
+    // 浏览器未填写的空指纹字段（ua / visitorId 等）直接省略
+    if (value === "") continue;
+    form.set(name, value);
+  }
+
+  const response = await session.post<string>(casLoginUrl(service), form.toString(), {
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    responseType: "text",
+  });
+
+  const location = response.headers["location"] as string | undefined;
+  if (location) {
+    logger.info("动态验证码校验通过，拿到通行凭证");
+    return location;
+  }
+
+  const html = typeof response.data === "string" ? response.data : "";
+  if (parseMfaChallenge(html)) throw new Error("动态验证码校验失败，请重试");
+  throw new Error(extractErrorMessage(html) ?? "MFA 提交后仍未拿到通行凭证");
 }
 
 async function resolveCode(
@@ -280,7 +439,25 @@ export async function performCasLogin(
     responseType: "text",
   });
 
-  const location = login.headers["location"] as string | undefined;
+  let location = login.headers["location"] as string | undefined;
+  if (!location) {
+    const html = typeof login.data === "string" ? login.data : "";
+    const challenge = parseMfaChallenge(html);
+    if (challenge) {
+      location = await submitMfaChallenge(
+        session,
+        service,
+        challenge,
+        { ul, pl },
+        options.onMfaCode,
+        logger,
+      );
+    } else {
+      const message = extractErrorMessage(html);
+      if (message) throw new Error(`登录失败：${message}`);
+    }
+  }
+
   if (!location) throw new Error("登录失败，响应中没有 Location 字段，未拿到通行凭证");
   logger.info(`登录成功，拿到通行凭证: ${location}`);
   return location;
@@ -302,12 +479,17 @@ export async function fullLogin(
     await session.get(service.bootstrapUrl);
   }
 
-  const location = await performCasLogin(session, service.service, credentials, ocr, { logger });
+  const location = await performCasLogin(session, service.service, credentials, ocr, {
+    logger,
+    onMfaCode: options.onMfaCode,
+  });
   return exchangeTicket(session, location, service, logger);
 }
 
 export interface AcquireOptions {
   logger?: Logger;
+  /** 企业微信动态验证码（MFA）提供者，透传给 {@link fullLogin} */
+  onMfaCode?: MfaCodeProvider;
 }
 
 /**
@@ -328,7 +510,10 @@ export async function acquireServiceSession(
 
   logger.warn(`${service.name}: CASTGC 缺失或失效，回退完整登录`);
   const context = login();
-  return fullLogin(session, service, context.credentials, context.ocr, { logger });
+  return fullLogin(session, service, context.credentials, context.ocr, {
+    logger,
+    onMfaCode: options.onMfaCode,
+  });
 }
 
 /* ------------------------------ 企业微信扫码登录 ------------------------------ */

@@ -10,7 +10,8 @@ ecard（一卡通）/ mhub（成绩）/ hkwxy（在线设备）/ wechat（微校
 2. `POST /cas/rsa` 取 RSA 公钥，加密 `un` / `pwd`
 3. 拉取并识别验证码
 4. `POST` 登录表单，拿到带 ticket 的 `Location`
-5. `GET` ticket 兑换目标应用的会话 cookie（如 ecard 的 `JSESSIONID`）
+5. 若第 4 步返回的是 MFA 挑战页（要求 `phoneCode`），用 `withMfaCode(provider)` 提供的动态验证码二次提交
+6. `GET` ticket 兑换目标应用的会话 cookie（如 ecard 的 `JSESSIONID`）
 
 后续获取其他应用会话无需重新输入密码：带 `CASTGC` `GET /cas/login?service=...` 免密拿到
 新 ticket，再兑换对应应用的 cookie。所有应用共用同一个 cookie jar 与 `CASTGC`。
@@ -173,6 +174,7 @@ client.persistent(".hust-session.json", { maxAgeMs: 2 * 60 * 60 * 1000 });
 始终最优先复用**（先用 `CASTGC` 免密换票），只有持久化会话失效时才执行登录方式序列。
 
 - `auth({ user_name, password })`：密码 + 验证码登录（需配合 `withXxxOcr()`）
+- `withMfaCode(provider)`：密码登录命中企业微信 MFA 时，用 `provider` 提供的动态验证码自动完成二次验证
 - `withQrCode(handler)`：企业微信扫码登录（无需密码 / 验证码 / OCR）
 
 顺序即调用顺序：
@@ -190,19 +192,20 @@ hust.withQrCode(showQr).auth({ user_name, password }).persistent(".hust-session.
 
 > **推荐组合：密码优先 + 扫码兜底**
 >
-> 扫码登录必须由人操作，无法在后台静默完成，因此不适合频繁续期；而密码登录遇到 MFA 又会被拦截。
+> 扫码登录必须由人操作，无法在后台静默完成，因此不适合频繁续期；而密码登录遇到 MFA 又需要人工输入。
 > 两者组合正好互补：
 >
 > ```ts
 > hust
 >   .auth({ user_name, password })
->   .withStdChar()        // 密码登录用离线验证码识别
->   .withQrCode(showQr)   // 密码被 MFA 拦截时，自动降级到扫码
+>   .withStdChar()          // 密码登录用离线验证码识别
+>   .withMfaCode(askCode)   // 命中 MFA 时索取企业微信动态验证码
+>   .withQrCode(showQr)     // 无法完成二次验证时，自动降级到扫码
 >   .persistent(".hust-session.json");
 > ```
 >
-> `CASTGC` 失效时先用密码**静默续期**；一旦被强制 MFA 拦截，自动降级为扫码一次。
-> 扫码完成后设备/会话被风控信任，后续密码登录通常不再触发 MFA，从而恢复全自动续期。
+> `CASTGC` 失效时先用密码**静默续期**；一旦被风控拦截，`withMfaCode` 会介入完成二次验证
+> （若未配置或用户放弃，则继续降级为扫码一次）。
 
 ## 企业微信扫码登录
 
@@ -238,7 +241,45 @@ const client = hust
 
 完整示例见 [`examples/login_qrcode.ts`](../examples/login_qrcode.ts)（终端支持图片协议时内联显示二维码，否则写入 PNG 文件；`--file` / `--image` / `--refresh` 可指定）。
 
-## 已知限制：强制 MFA 下的密码登录
+## 企业微信动态验证码（MFA）
 
-若账号开启了强制企业微信 MFA，走密码 / 验证码的完整登录仍会被阻断，请改用企业微信扫码登录
-（`hust.withQrCode(handler)` 或 `client.loginByQrCode()`）。
+CAS 风控在判定「终端疑似发生变化」时不会直接签发 ticket，而是返回要求动态验证码的
+**双因子认证**页（`双因子认证 / 验证码 / 登录`），并把验证码发送到用户的企业微信。
+配置 `withMfaCode(provider)` 后，SDK 会自动识别该挑战页、回调 `provider` 获取验证码并完成二次提交，
+密码登录因此也能在 MFA 场景下走通。
+
+```ts
+import readline from "node:readline/promises";
+import hust from "husthelper";
+
+const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+
+const client = hust
+  .auth({ user_name, password })
+  .withStdChar()
+  .withMfaCode(async (challenge) => {
+    // challenge.message 为服务端提示，challenge.channel 为接收渠道（如「企业微信」）
+    console.log(challenge.message ?? "请输入企业微信动态验证码");
+    return await rl.question("验证码: "); // 返回 Promise 可阻塞等待用户输入
+  })
+  .persistent(".hust-session.json");
+```
+
+- `provider` 收到 `MfaChallenge`（含 `message` / `channel` / 原始 `html`），返回验证码字符串即可；
+  异步回调会被 `await`，可在其中接入任意 UI 或消息通道。
+- 返回空字符串或抛错，则该次密码登录失败，按登录方式序列继续降级（例如 `withQrCode`）。
+- 未配置 `withMfaCode` 时命中 MFA 会抛出 `MfaRequiredError`（`error.challenge` 为挑战详情），
+  调用方也可据此自行处理。
+- 底层：`parseMfaChallenge(html)` 负责识别挑战页；`performCasLogin` / `fullLogin` 通过
+  `LoginOptions.onMfaCode` 接收提供者。
+
+完整示例见 [`examples/login_mfa.ts`](../examples/login_mfa.ts)。
+
+## 关于强制 MFA
+
+若账号开启了强制企业微信 MFA，有两种走法：
+
+- 配置 `withMfaCode(provider)`：密码登录照常自动完成，只是在 MFA 步骤需要提供（或自动获取）动态验证码。
+- 改用企业微信扫码登录（`hust.withQrCode(handler)` 或 `client.loginByQrCode()`），无需密码与验证码。
+
+两者也可组合：密码 + MFA 优先，失败自动降级到扫码。

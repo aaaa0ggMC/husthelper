@@ -156,13 +156,26 @@ client.withRawOcr(async (rawGif: Buffer) => {
 - [校园网自助服务 (docs/selfservice.md)](../docs/life/selfservice.md)
 - [统一数据聚合器 (docs/aggregate.md)](../docs/aggregate.md)
 
-## 已知限制：企业微信 MFA 二次验证
+## 企业微信动态验证码（MFA）
 
 > [!NOTE]
-> 密码 / 验证码的自动化登录**无法处理企业微信 MFA**。若账号开启了强制 MFA，请改用**企业微信扫码登录**：
-> `await client.loginByQrCode()`——无需密码、验证码与 OCR，扫码授权后即可获得 `CASTGC`（详见 [docs/auth.md](../docs/auth/auth.md) 与 [`examples/login_qrcode.ts`](../examples/login_qrcode.ts)）。
+> 密码 / 验证码登录可能被 CAS 风控要求企业微信**动态验证码二次验证**。配置 `withMfaCode(provider)`
+> 后，SDK 会自动识别挑战页并回调 `provider` 索取验证码完成登录：
 >
-> 若坚持使用密码登录，可先在同一网络环境下使用**常规浏览器**完整登录一次，完成 MFA 以令学校风控系统信任当前 IP/设备，随后短时间内通常不会再次触发。
+> ```ts
+> hust
+>   .auth({ user_name, password })
+>   .withStdChar()
+>   .withMfaCode(async (challenge) => {
+>     // challenge.message 为服务端提示，challenge.channel 为接收渠道
+>     return await askUserForCode(challenge);
+>   })
+>   .persistent(".hust-session.json");
+> ```
+>
+> 未配置或用户放弃时，会抛 `MfaRequiredError` 并按登录方式序列降级（可链式 `.withQrCode()`）。
+> 也可直接用**企业微信扫码登录**（`await client.loginByQrCode()`）绕过密码与验证码，
+> 详见 [docs/auth.md](../docs/auth/auth.md) 与 [`examples/login_mfa.ts`](../examples/login_mfa.ts)。
 
 ## 开源协议
 

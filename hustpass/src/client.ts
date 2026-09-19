@@ -16,6 +16,7 @@ import {
   type CasService,
   type Credentials,
   type LoginContext,
+  type MfaCodeProvider,
   type OcrStrategy,
   type ParsedOcr,
   type RawOcr,
@@ -128,6 +129,8 @@ export class HustClient {
   private un?: string;
   private pwd?: string;
   private ocr?: OcrStrategy;
+  /** 企业微信 MFA 动态验证码提供者 */
+  private mfaProvider?: MfaCodeProvider;
   /** 登录方式，按配置顺序依次尝试 */
   private methods: LoginMethod[] = [];
   private session?: Session;
@@ -215,6 +218,18 @@ export class HustClient {
 
   withStdChar(options: StdCharOptions = {}): this {
     this.ocr = { kind: "stdchar", stdChar: options };
+    return this;
+  }
+
+  /**
+   * 配置企业微信动态验证码（MFA）提供者。当密码 / 验证码登录被风控要求二次验证时，
+   * SDK 会调用该回调获取 `phoneCode` 并自动完成挑战，因此密码登录也能在 MFA 场景下走通。
+   *
+   * 回调可为异步（如弹出 UI 等待用户从企业微信读取验证码后 resolve）；
+   * 抛错或返回空字符串则该次密码登录失败，按登录方式序列降级（例如扫码）。
+   */
+  withMfaCode(provider: MfaCodeProvider): this {
+    this.mfaProvider = provider;
     return this;
   }
 
@@ -413,7 +428,7 @@ export class HustClient {
             service.service,
             this.requireCredentials(),
             this.requireOcr(),
-            { logger: this.logger },
+            { logger: this.logger, onMfaCode: this.mfaProvider },
           );
         }
 
