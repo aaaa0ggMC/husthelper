@@ -806,6 +806,11 @@ function renderBlocks(
     }
     if (!container) continue;
 
+    const sample =
+      styleRefToSample(rule?.style ?? profile.defaults?.style, profile, anchorRanges) ??
+      styleRefToSample(profile.styles?.body, profile, anchorRanges) ??
+      { inline: { paragraph: { styleId: "Normal" } } };
+
     // 骨架把已有标题再写一遍（带 {ref}）。
     // 1) 若文本一致：不重复插入，作为后续游标；
     // 2) 若文本被用户修改（如「实验6」改成「实验1」）：直接改写原标题段落的文本，不重复插入新段落。
@@ -822,17 +827,32 @@ function renderBlocks(
             writeRunElements(range.runEls, block.text, "replace");
           }
         }
+        // 校准标题样式：如果规则指定了该 level 对应的样式（例如 Heading1），但原段落被误设为了其他样式（如 Heading2），
+        // 自动将原段落的 w:pStyle 校准为规范样式，以确保在 Word/WPS 中点击「更新目录」时层级一致正确。
+        const targetStyleId =
+          sample?.inline?.paragraph?.styleId ??
+          sample?.paragraphEl?.getElementsByTagName("w:pStyle")?.[0]?.getAttribute("w:val");
+        if (targetStyleId) {
+          let pPr = range.paragraphEl.getElementsByTagName("w:pPr")?.[0];
+          if (!pPr) {
+            pPr = ownerDoc.createElementNS(WORD_NS, "w:pPr");
+            range.paragraphEl.insertBefore(pPr, range.paragraphEl.firstChild);
+          }
+          let pStyle = pPr.getElementsByTagName("w:pStyle")?.[0];
+          if (pStyle) {
+            pStyle.setAttribute("w:val", targetStyleId);
+          } else {
+            pStyle = ownerDoc.createElementNS(WORD_NS, "w:pStyle");
+            pStyle.setAttribute("w:val", targetStyleId);
+            pPr.insertBefore(pStyle, pPr.firstChild);
+          }
+        }
         recordHeading(block, range.paragraphEl);
         cursorLast = range.paragraphEl;
         cursorFallback = container;
         continue;
       }
     }
-
-    const sample =
-      styleRefToSample(rule?.style ?? profile.defaults?.style, profile, anchorRanges) ??
-      styleRefToSample(profile.styles?.body, profile, anchorRanges) ??
-      { inline: { paragraph: { styleId: "Normal" } } };
 
     if (block.type === "code") {
       const hasExplicitTheme = Boolean(
@@ -2369,6 +2389,70 @@ export async function enableDocxUpdateFields(doc: VirtualWordDocument): Promise<
       anyDoc.zip.file("word/settings.xml", text);
     }
   }
+
+  // 同步为 word/styles.xml 注入/补充标准 TOC1 与 TOC2 样式的点导线制表位与字号字体，
+  // 确保用户点击 WPS/Word 的“更新目录”全选重算后，目录样式依然保留，不会变回空白普通文本
+  await ensureDocxTocStyles(doc);
+}
+
+async function ensureDocxTocStyles(doc: VirtualWordDocument): Promise<void> {
+  const anyDoc = doc as unknown as {
+    zip?: {
+      file: (name: string, content?: string) => any;
+    };
+  };
+  if (!anyDoc.zip || typeof anyDoc.zip.file !== "function") return;
+
+  const stylesFile = anyDoc.zip.file("word/styles.xml");
+  if (!stylesFile || typeof stylesFile.async !== "function") return;
+
+  let text: string = await stylesFile.async("text");
+
+  const toc1Xml =
+    `<w:style w:type="paragraph" w:styleId="TOC1">` +
+    `<w:name w:val="toc 1"/>` +
+    `<w:basedOn w:val="Normal"/>` +
+    `<w:next w:val="Normal"/>` +
+    `<w:pPr>` +
+    `<w:tabs><w:tab w:val="clear" w:pos="420"/><w:tab w:val="right" w:pos="8306" w:leader="dot"/></w:tabs>` +
+    `<w:spacing w:lineRule="auto" w:line="360"/>` +
+    `</w:pPr>` +
+    `<w:rPr>` +
+    `<w:rFonts w:ascii="SimSun" w:hAnsi="SimSun" w:eastAsia="SimSun" w:cs="SimSun"/>` +
+    `<w:b/><w:bCs/><w:sz w:val="24"/><w:szCs w:val="24"/>` +
+    `</w:rPr>` +
+    `</w:style>`;
+
+  const toc2Xml =
+    `<w:style w:type="paragraph" w:styleId="TOC2">` +
+    `<w:name w:val="toc 2"/>` +
+    `<w:basedOn w:val="Normal"/>` +
+    `<w:next w:val="Normal"/>` +
+    `<w:pPr>` +
+    `<w:tabs><w:tab w:val="clear" w:pos="420"/><w:tab w:val="right" w:pos="8306" w:leader="dot"/></w:tabs>` +
+    `<w:spacing w:lineRule="auto" w:line="360"/>` +
+    `<w:ind w:hanging="0" w:start="420" w:end="0"/>` +
+    `</w:pPr>` +
+    `<w:rPr>` +
+    `<w:rFonts w:ascii="黑体;微软雅黑" w:eastAsia="黑体;微软雅黑" w:hAnsi="黑体;微软雅黑" w:cs="黑体;微软雅黑"/>` +
+    `<w:bCs/><w:sz w:val="24"/><w:szCs w:val="24"/>` +
+    `</w:rPr>` +
+    `</w:style>`;
+
+  if (/<w:style[^>]*w:styleId="TOC1"[^>]*>[\s\S]*?<\/w:style>/.test(text)) {
+    text = text.replace(/<w:style[^>]*w:styleId="TOC1"[^>]*>[\s\S]*?<\/w:style>/, toc1Xml);
+  } else {
+    text = text.replace("</w:styles>", `${toc1Xml}</w:styles>`);
+  }
+
+  if (/<w:style[^>]*w:styleId="TOC2"[^>]*>[\s\S]*?<\/w:style>/.test(text)) {
+    text = text.replace(/<w:style[^>]*w:styleId="TOC2"[^>]*>[\s\S]*?<\/w:style>/, toc2Xml);
+  } else {
+    text = text.replace("</w:styles>", `${toc2Xml}</w:styles>`);
+  }
+
+  anyDoc.zip.file("word/styles.xml", text);
+  anyDoc.stylesData = null;
 }
 
 /**
@@ -2409,9 +2493,11 @@ export function updateTableOfContents(
   const sdtContent = tocSdt.getElementsByTagName("w:sdtContent")?.[0];
   if (!sdtContent) return;
 
-  // 从原有的 sdtContent 中学习 TOC1、TOC2 等样式的 pPr 模板
+  // 从原有的 sdtContent 中学习 TOC1、TOC2 等样式的 pPr 模板与 rPr 模板
   const oldPs = Array.from(sdtContent.getElementsByTagName("w:p") ?? []) as any[];
   const samplePPrByLevel = new Map<number, XmlElement>();
+  const sampleRPrByLevel = new Map<number, XmlElement>();
+  const sampleTabRPrByLevel = new Map<number, XmlElement>();
 
   for (const p of oldPs) {
     const pStyle = p.getElementsByTagName("w:pStyle")?.[0]?.getAttribute("w:val");
@@ -2422,6 +2508,22 @@ export function updateTableOfContents(
         const pPr = p.getElementsByTagName("w:pPr")?.[0];
         if (pPr && !samplePPrByLevel.has(lvl)) {
           samplePPrByLevel.set(lvl, pPr.cloneNode(true));
+        }
+        const runs = Array.from(p.getElementsByTagName("w:r") ?? []) as any[];
+        // 取包含文字内容的 run 作为正文文字 rPr
+        const textRun = runs.find((r) => {
+          const t = r.getElementsByTagName("w:t")?.[0]?.textContent?.trim();
+          return t && !r.getElementsByTagName("w:tab")?.[0] && !r.getElementsByTagName("w:fldChar")?.[0];
+        });
+        const rPr = textRun?.getElementsByTagName("w:rPr")?.[0];
+        if (rPr && !sampleRPrByLevel.has(lvl)) {
+          sampleRPrByLevel.set(lvl, rPr.cloneNode(true));
+        }
+        // 取包含制表符的 run 作为页码制表符 rPr
+        const tabRun = runs.find((r) => r.getElementsByTagName("w:tab")?.[0]);
+        const tabRPr = tabRun?.getElementsByTagName("w:rPr")?.[0];
+        if (tabRPr && !sampleTabRPrByLevel.has(lvl)) {
+          sampleTabRPrByLevel.set(lvl, tabRPr.cloneNode(true));
         }
       }
     }
@@ -2464,6 +2566,8 @@ export function updateTableOfContents(
       p.appendChild(rBegin);
 
       const rInstr = ownerDoc.createElementNS(WORD_NS, "w:r");
+      const sampleRPr = sampleRPrByLevel.get(1);
+      if (sampleRPr) rInstr.appendChild(sampleRPr.cloneNode(true));
       const instrText = ownerDoc.createElementNS(WORD_NS, "w:instrText");
       instrText.setAttribute("xml:space", "preserve");
       instrText.textContent = instr;
@@ -2471,49 +2575,53 @@ export function updateTableOfContents(
       p.appendChild(rInstr);
 
       const rSep = ownerDoc.createElementNS(WORD_NS, "w:r");
+      if (sampleRPr) rSep.appendChild(sampleRPr.cloneNode(true));
       const fldCharSep = ownerDoc.createElementNS(WORD_NS, "w:fldChar");
       fldCharSep.setAttribute("w:fldCharType", "separate");
       rSep.appendChild(fldCharSep);
       p.appendChild(rSep);
     }
 
-    // 3. 超链接包裹条目：文字 + 制表符 + PAGEREF 字段
+    // 3. 超链接包裹条目：文字 + 制表符 + 页码 (紧凑标准 OOXML 结构，完全兼容 WPS/Word)
     const hyperlink = ownerDoc.createElementNS(WORD_NS, "w:hyperlink");
     hyperlink.setAttribute("w:anchor", heading.bookmarkName);
     hyperlink.setAttribute("w:history", "1");
 
     // 标题文字 run
     const rTitle = ownerDoc.createElementNS(WORD_NS, "w:r");
-    const rTitlePr = ownerDoc.createElementNS(WORD_NS, "w:rPr");
-    const rTitleStyle = ownerDoc.createElementNS(WORD_NS, "w:rStyle");
-    rTitleStyle.setAttribute("w:val", "IndexLink");
-    rTitlePr.appendChild(rTitleStyle);
-    rTitle.appendChild(rTitlePr);
+    const learnedRPr = sampleRPrByLevel.get(heading.level);
+    if (learnedRPr) {
+      rTitle.appendChild(learnedRPr.cloneNode(true));
+    } else {
+      const rTitlePr = ownerDoc.createElementNS(WORD_NS, "w:rPr");
+      const rTitleStyle = ownerDoc.createElementNS(WORD_NS, "w:rStyle");
+      rTitleStyle.setAttribute("w:val", "IndexLink");
+      rTitlePr.appendChild(rTitleStyle);
+      rTitle.appendChild(rTitlePr);
+    }
     const tTitle = ownerDoc.createElementNS(WORD_NS, "w:t");
     tTitle.textContent = heading.text;
     rTitle.appendChild(tTitle);
     hyperlink.appendChild(rTitle);
 
-    // 制表符 run (带前导点)
-    const rTab = ownerDoc.createElementNS(WORD_NS, "w:r");
-    const tabEl = ownerDoc.createElementNS(WORD_NS, "w:tab");
-    rTab.appendChild(tabEl);
-    hyperlink.appendChild(rTab);
-
-    // 页码字段 PAGEREF
-    const fldSimple = ownerDoc.createElementNS(WORD_NS, "w:fldSimple");
-    fldSimple.setAttribute("w:instr", `PAGEREF ${heading.bookmarkName} \\h `);
+    // 制表符与初始页码 run（带点导线与页码，合在同一个 run 中以兼容 WPS 渲染）
     const rPage = ownerDoc.createElementNS(WORD_NS, "w:r");
-    const rPagePr = ownerDoc.createElementNS(WORD_NS, "w:rPr");
-    const rPageStyle = ownerDoc.createElementNS(WORD_NS, "w:rStyle");
-    rPageStyle.setAttribute("w:val", "IndexLink");
-    rPagePr.appendChild(rPageStyle);
-    rPage.appendChild(rPagePr);
+    const learnedTabRPr = sampleTabRPrByLevel.get(heading.level) ?? learnedRPr;
+    if (learnedTabRPr) {
+      rPage.appendChild(learnedTabRPr.cloneNode(true));
+    } else {
+      const rPagePr = ownerDoc.createElementNS(WORD_NS, "w:rPr");
+      const rPageStyle = ownerDoc.createElementNS(WORD_NS, "w:rStyle");
+      rPageStyle.setAttribute("w:val", "IndexLink");
+      rPagePr.appendChild(rPageStyle);
+      rPage.appendChild(rPagePr);
+    }
+    const tabEl = ownerDoc.createElementNS(WORD_NS, "w:tab");
+    rPage.appendChild(tabEl);
     const tPage = ownerDoc.createElementNS(WORD_NS, "w:t");
-    tPage.textContent = "1"; // 初始占位页码，打开文档时由 Word/WPS 根据 PAGEREF 自动更新
+    tPage.textContent = "1"; // 初始占位页码
     rPage.appendChild(tPage);
-    fldSimple.appendChild(rPage);
-    hyperlink.appendChild(fldSimple);
+    hyperlink.appendChild(rPage);
 
     p.appendChild(hyperlink);
 

@@ -42,6 +42,11 @@
 - `use`：`paragraph` | `run` | `both`（默认 both）
 - `theme`：可选代码块高亮主题名称（`"default"` | `"classic"` | `"eclipse"` | `"dark"`）。若不确定或希望由用户通过命令行/config.json 统一指定，请填 `""`。
 - `lint`：布尔值。对于代码块（`type: "code"`），如果文档中明确了代码样式（如存在代码段落/XML Style ID），请直接输出 `style`（绑定该锚点或 XML Style ID）并附带 `"lint": true`（保留原文档的段落/字体排版，同时用标准语法色做 Token 着色）或 `"lint": false`（不着色）。此时不需要额外的 CSS 背景/边框配置。若原文档无专用代码样式，则可输出 `"theme"` 或 `""` 使用代码卡片表格。
+- **标题级别与样式校准（至关重要）**：
+  原文档中个别标题样式可能存在作者的手工标注瑕疵（例如作者将章标题误选成了 `Heading2` 并手工居中）。你必须仔细检查样式表中的 `ooxmlStyleId`：
+  - `heading level: 1`（一级章标题）**必须优先选择 `ooxmlStyleId` 为 `Heading1`（或标题1）的锚点**（如「实验7 结构与联合」或「参考文献」），切勿绑定带有 `Heading2` 样式的段落！
+  - `heading level: 2`（二级节标题）必须选择 `ooxmlStyleId` 为 `Heading2`（或标题2）且非居中的锚点。
+  否则，当用户在 Word / WPS 中点击“更新目录”或追加新标题时，Word/WPS 的目录域会按样式大纲级别（`Heading1`/`Heading2`）重新扫描，如果一级标题绑定了 `Heading2` 样式，会导致其缩进错乱变成二级目录项！
 - **图片规则（type: "image"）**：
   可配置 `options.captionRef`（指定图注/图标题样式绑定的锚点）或 `options.captionStyle`，以及 `options.align: "center"`，`options.size: "max"`。也可单独增加 `{"match": {"type": "caption"}, "style": {"anchor": "..."}}` 规则。
 - **表格规则（type: "table"）**：

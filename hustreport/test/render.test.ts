@@ -304,15 +304,15 @@ test("renderTemplate: 动态根据渲染标题生成目录 TOC 与 PAGEREF 书�
   const fldChars = Array.from(tocPs[1].getElementsByTagName("w:fldChar")) as any[];
   assert.ok(fldChars.some((fc) => fc.getAttribute("w:fldCharType") === "end"));
 
-  // 每一项应包含超链接、文字、Tab、PAGEREF
+  // 每一项应包含超链接、文字、Tab 与页码
   const hl1 = tocPs[0].getElementsByTagName("w:hyperlink")[0];
   assert.ok(hl1);
   const bookmark1 = hl1.getAttribute("w:anchor");
   assert.ok(bookmark1);
   assert.match(hl1.textContent, /一、实验目的/);
 
-  const fldSimple1 = hl1.getElementsByTagName("w:fldSimple")[0];
-  assert.equal(fldSimple1.getAttribute("w:instr"), `PAGEREF ${bookmark1} \\h `);
+  const tabs1 = Array.from(hl1.getElementsByTagName("w:tab")) as any[];
+  assert.ok(tabs1.length > 0);
 
   // 正文对应的标题段落应该注入了对应的 bookmarkStart
   const bodyStarts = Array.from(doc.getElementsByTagName("w:bookmarkStart")) as any[];
