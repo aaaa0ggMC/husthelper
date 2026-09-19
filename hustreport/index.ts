@@ -13,13 +13,18 @@ export type { AnalyzedDocx, VirtualWordDocument } from "./src/docx.ts";
 export {
   formatSegmentsCsv,
   formatMediaCsv,
+  formatStylesCsv,
   parseSegmentsCsv,
+  parseStylesCsv,
 } from "./src/csv.ts";
 export type {
   SegmentCsvColumn,
   SegmentCsvOptions,
+  StyleCsvColumn,
+  StyleCsvOptions,
   ParseCsvOptions,
   ParsedCsvRow,
+  ParsedStyleCsvRow,
 } from "./src/csv.ts";
 
 export { applyEdits, applyTextEdits, editDocx, selectSegments } from "./src/edits.ts";

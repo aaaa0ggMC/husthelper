@@ -1,5 +1,3 @@
-import type { MediaEntry, Segment } from "./types.ts";
-
 /**
  * 自定义 CSV 方言（与需求样例一致）：
  *
@@ -12,6 +10,9 @@ import type { MediaEntry, Segment } from "./types.ts";
  * - 文本字段始终用双引号包裹；
  * - 转义：`\\` → `\\\\`、`"` → `\"`、换行 → `\n`、CR → `\r`、Tab → `\t`。
  */
+
+import type { MediaEntry, Segment, StyleEntry } from "./types.ts";
+import { describeFontSize } from "./util.ts";
 
 export type SegmentCsvColumn = "index" | "text" | "styleId" | "ref";
 
@@ -102,6 +103,242 @@ export function formatMediaCsv(media: readonly MediaEntry[], options: SegmentCsv
     );
   }
   return lines.join(eol) + eol;
+}
+
+export type StyleCsvColumn =
+  | "styleId"
+  | "pStyle"
+  | "fontCn"
+  | "fontAscii"
+  | "fontSize"
+  | "bold"
+  | "color"
+  | "alignment"
+  | "lineSpacing"
+  | "indent"
+  | "summary"
+  | "examples";
+
+export interface StyleCsvOptions {
+  columns?: StyleCsvColumn[];
+  delimiter?: string;
+  paddedDelimiter?: boolean;
+  header?: boolean;
+  eol?: string;
+}
+
+export interface ParsedStyleCsvRow {
+  styleId?: number;
+  pStyle?: string;
+  fontCn?: string;
+  fontAscii?: string;
+  fontSize?: string;
+  bold?: boolean;
+  color?: string;
+  alignment?: string;
+  lineSpacing?: string;
+  indent?: string;
+  summary?: string;
+  examples?: string;
+}
+
+const STYLE_HEADERS: Record<StyleCsvColumn, string> = {
+  styleId: "XML Style ID",
+  pStyle: "pStyle",
+  fontCn: "Font (CN)",
+  fontAscii: "Font (ASCII)",
+  fontSize: "Font Size",
+  bold: "Bold",
+  color: "Color",
+  alignment: "Alignment",
+  lineSpacing: "Line Spacing",
+  indent: "Indent",
+  summary: "Summary",
+  examples: "Examples",
+};
+
+const DEFAULT_STYLE_COLUMNS: StyleCsvColumn[] = [
+  "styleId",
+  "pStyle",
+  "fontCn",
+  "fontAscii",
+  "fontSize",
+  "bold",
+  "color",
+  "alignment",
+  "lineSpacing",
+  "indent",
+  "summary",
+  "examples",
+];
+
+function formatLineSpacing(spacing: unknown): string {
+  if (!spacing || typeof spacing !== "object") return "";
+  const sp = spacing as Record<string, unknown>;
+  const bits: string[] = [];
+  if (sp.line) {
+    const num = Number(sp.line);
+    if (Number.isFinite(num)) {
+      if (Math.abs(num - 240) < 1) bits.push("240 (1.0x)");
+      else if (Math.abs(num - 360) < 1) bits.push("360 (1.5x)");
+      else if (Math.abs(num - 480) < 1) bits.push("480 (2.0x)");
+      else bits.push(`line:${sp.line}`);
+    } else {
+      bits.push(`line:${sp.line}`);
+    }
+  }
+  if (sp.before) bits.push(`before:${sp.before}`);
+  if (sp.after) bits.push(`after:${sp.after}`);
+  return bits.join(" ");
+}
+
+function formatIndent(indent: unknown): string {
+  if (!indent || typeof indent !== "object") return "";
+  const ind = indent as Record<string, unknown>;
+  const bits: string[] = [];
+  if (ind.firstLine) bits.push(`firstLine:${ind.firstLine}`);
+  if (ind.firstLineChars) bits.push(`firstLineChars:${ind.firstLineChars}`);
+  if (ind.left) bits.push(`left:${ind.left}`);
+  if (ind.right) bits.push(`right:${ind.right}`);
+  return bits.join(" ");
+}
+
+/** 生成 styles CSV 文本，明确每个 XML Style ID 对应的各项格式属性与样例文本。 */
+export function formatStylesCsv(styles: readonly StyleEntry[], options: StyleCsvOptions = {}): string {
+  const columns = options.columns ?? DEFAULT_STYLE_COLUMNS;
+  const delimiter = options.delimiter ?? ",";
+  const pad = options.paddedDelimiter ?? true;
+  const eol = options.eol ?? "\n";
+  const sep = pad ? ` ${delimiter} ` : delimiter;
+
+  const lines: string[] = [];
+  if (options.header ?? true) {
+    lines.push(columns.map((column) => STYLE_HEADERS[column]).join(sep));
+  }
+
+  for (const style of styles) {
+    const pStyle =
+      style.paragraph.ooxmlStyleId ??
+      (typeof style.paragraph.effective?.styleId === "string" ? style.paragraph.effective.styleId : "");
+    const runFontFamily = style.run.effective.fontFamily as Record<string, string> | undefined;
+    const fontCn = runFontFamily?.eastAsia ?? runFontFamily?.eastAsiaTheme ?? "";
+    const fontAscii =
+      runFontFamily?.ascii ??
+      runFontFamily?.asciiTheme ??
+      runFontFamily?.hAnsi ??
+      runFontFamily?.hAnsiTheme ??
+      "";
+    const fontSize = describeFontSize(style.run.effective.fontSize) ?? "";
+    const bold = style.run.effective.bold ? "true" : "false";
+    const color = style.run.effective.color ? `#${style.run.effective.color}` : "";
+    const alignment = (style.paragraph.effective.alignment as string) ?? "";
+    const lineSpacing = formatLineSpacing(style.paragraph.effective.spacing);
+    const indent = formatIndent(style.paragraph.effective.indent);
+    const summary = style.summary;
+    const examples = (style.examples ?? []).slice(0, 3).join(" ; ");
+
+    lines.push(
+      columns
+        .map((column) => {
+          switch (column) {
+            case "styleId":
+              return formatField(String(style.id));
+            case "pStyle":
+              return formatField(pStyle);
+            case "fontCn":
+              return formatField(fontCn);
+            case "fontAscii":
+              return formatField(fontAscii);
+            case "fontSize":
+              return formatField(fontSize);
+            case "bold":
+              return formatField(bold);
+            case "color":
+              return formatField(color);
+            case "alignment":
+              return formatField(alignment);
+            case "lineSpacing":
+              return formatField(lineSpacing);
+            case "indent":
+              return formatField(indent);
+            case "summary":
+              return formatField(summary, { alwaysQuote: true });
+            case "examples":
+              return formatField(examples, { alwaysQuote: true });
+          }
+        })
+        .join(sep),
+    );
+  }
+
+  return lines.join(eol) + (lines.length > 0 ? eol : "");
+}
+
+/** 解析由 `formatStylesCsv()` 产出的 CSV。 */
+export function parseStylesCsv(csv: string, options: ParseCsvOptions = {}): ParsedStyleCsvRow[] {
+  const delimiter = options.delimiter ?? ",";
+  const rows = parseRows(csv, delimiter);
+  if (rows.length === 0) return [];
+
+  const hasHeader = options.header ?? rows[0].some((cell) => cell.trim() === "XML Style ID" || cell.trim() === "pStyle");
+  const dataRows = hasHeader ? rows.slice(1) : rows;
+
+  let columns: StyleCsvColumn[] = DEFAULT_STYLE_COLUMNS;
+  if (hasHeader) {
+    columns = rows[0].map((cell) => {
+      const normalized = cell.trim();
+      const found = (Object.keys(STYLE_HEADERS) as StyleCsvColumn[]).find((key) => STYLE_HEADERS[key] === normalized);
+      return found ?? (normalized.toLowerCase() as StyleCsvColumn);
+    });
+  }
+
+  return dataRows
+    .filter((row) => row.some((cell) => cell.length > 0))
+    .map((row) => {
+      const record: ParsedStyleCsvRow = {};
+      columns.forEach((column, position) => {
+        const raw = (row[position] ?? "").trim();
+        switch (column) {
+          case "styleId":
+            if (raw !== "") record.styleId = Number(raw);
+            break;
+          case "pStyle":
+            if (raw !== "") record.pStyle = raw;
+            break;
+          case "fontCn":
+            if (raw !== "") record.fontCn = raw;
+            break;
+          case "fontAscii":
+            if (raw !== "") record.fontAscii = raw;
+            break;
+          case "fontSize":
+            if (raw !== "") record.fontSize = raw;
+            break;
+          case "bold":
+            if (raw !== "") record.bold = raw.toLowerCase() === "true";
+            break;
+          case "color":
+            if (raw !== "") record.color = raw;
+            break;
+          case "alignment":
+            if (raw !== "") record.alignment = raw;
+            break;
+          case "lineSpacing":
+            if (raw !== "") record.lineSpacing = raw;
+            break;
+          case "indent":
+            if (raw !== "") record.indent = raw;
+            break;
+          case "summary":
+            record.summary = row[position] ?? "";
+            break;
+          case "examples":
+            record.examples = row[position] ?? "";
+            break;
+        }
+      });
+      return record;
+    });
 }
 
 export interface ParseCsvOptions {

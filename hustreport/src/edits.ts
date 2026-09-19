@@ -471,6 +471,22 @@ export function replaceRunStyle(targetRunEl: XmlElement, sampleRunEl: XmlElement
   return true;
 }
 
+/** 用内联样式对象从零构造单一 run（没有可克隆的样板 runEl 时用）。 */
+export function createRunFromStyles(
+  ownerDoc: XmlElement,
+  runStyle: StyleObject,
+  text: string,
+  mods: Omit<InlineRun, "text"> = {},
+): XmlElement {
+  const runEl = ownerDoc.createElementNS(WORD_NS, "w:r");
+  const rPr = buildRPr(ownerDoc, { ...runStyle, ...mods });
+  if (rPr) runEl.appendChild(rPr);
+  const textEl = ownerDoc.createElementNS(WORD_NS, "w:t");
+  setElementText(textEl, text);
+  runEl.appendChild(textEl);
+  return runEl;
+}
+
 /** 用内联样式对象从零构造段落（没有可克隆的锚点元素时用）。 */
 export function createParagraphFromStyles(
   ownerDoc: XmlElement,

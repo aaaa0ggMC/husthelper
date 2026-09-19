@@ -9,6 +9,7 @@ import {
   createTemplate,
   formatMediaCsv,
   formatSegmentsCsv,
+  formatStylesCsv,
   openDocx,
   renderTemplateFile,
   type ChatConfig,
@@ -121,7 +122,7 @@ function usage(): void {
       # 确定性渲染：按 template.json 规则渲染 Markdown，支持 TOC 目录同步生成更新、代码块语法高亮、图片排版与学术三线表
 
 说明：
-  analyze      解析 docx，输出 segments.csv / media.csv / styles.json / analysis.json
+  analyze      解析 docx，输出 segments.csv / styles.csv / media.csv / styles.json / analysis.json
   ai-template  结合 AI 生成高保真模板，自动识别目录结构与样式规范，输出缺失样式诊断反馈
   render       将 Markdown 填入模板，支持 --keep-comments 保留原底板批注，默认自动清理批注标记
 `);
@@ -255,6 +256,7 @@ async function main(): Promise<void> {
     const outDir = options.outDir ?? path.join(process.cwd(), "report-out");
     await mkdir(outDir, { recursive: true });
     await writeFile(path.join(outDir, "segments.csv"), formatSegmentsCsv(analysis.segments), "utf-8");
+    await writeFile(path.join(outDir, "styles.csv"), formatStylesCsv(analysis.styles), "utf-8");
     await writeFile(path.join(outDir, "media.csv"), formatMediaCsv(analysis.media), "utf-8");
     await writeFile(path.join(outDir, "styles.json"), JSON.stringify(analysis.styles, null, 2), "utf-8");
     await writeFile(path.join(outDir, "analysis.json"), JSON.stringify(analysis, null, 2), "utf-8");

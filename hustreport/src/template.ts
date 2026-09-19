@@ -4,7 +4,7 @@ import { openDocx } from "./docx.ts";
 import { stampAnchors, type StampOptions, type StampedAnchor } from "./stamp.ts";
 import type { DocumentAnalysis, Segment, StyleObject } from "./types.ts";
 import { extractDocumentComments, stripDocumentComments, type DocumentComment } from "./comments.ts";
-import { summarizeStylePair } from "./util.ts";
+import { describeFontSize, summarizeStylePair } from "./util.ts";
 
 /**
  * 模板 DSL（`hustreport/template`）。
@@ -172,6 +172,14 @@ export interface StyleSchemaEntry {
   paragraphDirect?: StyleObject;
   runDirect?: StyleObject;
   ooxmlStyleId?: string;
+  fontCn?: string;
+  fontAscii?: string;
+  fontSize?: string;
+  bold?: boolean;
+  color?: string;
+  alignment?: string;
+  lineSpacing?: string;
+  indent?: string;
 }
 
 /** `inferTemplate` 需要的锚点信息子集（从 TemplateInfo.anchors 就能重建）。 */
@@ -230,6 +238,22 @@ export function buildTemplate(doc: VirtualWordDocument, options: BuildTemplateOp
     const summary = summarizeStylePair(style.paragraph, style.run);
     const anchor = anchors.find((a) => a.styleId === style.id);
     const ooxml = style.paragraph.ooxmlStyleId ?? style.run.ooxmlStyleId ?? undefined;
+    const runFontFamily = style.run.effective.fontFamily as Record<string, string> | undefined;
+    const fontCn = runFontFamily?.eastAsia ?? runFontFamily?.eastAsiaTheme ?? undefined;
+    const fontAscii =
+      runFontFamily?.ascii ??
+      runFontFamily?.asciiTheme ??
+      runFontFamily?.hAnsi ??
+      runFontFamily?.hAnsiTheme ??
+      undefined;
+    const fontSize = describeFontSize(style.run.effective.fontSize) ?? undefined;
+    const bold = Boolean(style.run.effective.bold);
+    const color = style.run.effective.color ? `#${style.run.effective.color}` : undefined;
+    const alignment = (style.paragraph.effective.alignment as string) ?? undefined;
+    const spacing = style.paragraph.effective.spacing as Record<string, unknown> | undefined;
+    const lineSpacing = spacing?.line ? String(spacing.line) : undefined;
+    const indent = style.paragraph.effective.indent ? JSON.stringify(style.paragraph.effective.indent) : undefined;
+
     return {
       styleId: style.id,
       summary,
@@ -238,6 +262,14 @@ export function buildTemplate(doc: VirtualWordDocument, options: BuildTemplateOp
       paragraphDirect: style.paragraph.direct,
       runDirect: style.run.direct,
       ooxmlStyleId: ooxml,
+      fontCn,
+      fontAscii,
+      fontSize,
+      bold,
+      color,
+      alignment,
+      lineSpacing,
+      indent,
     };
   });
 
@@ -413,19 +445,25 @@ export function remapDanglingAnchors(info: TemplateInfo, styleIdOf: ReadonlyMap<
     }
     if (styleId !== undefined && info.styleSchema) {
       const entry = info.styleSchema.find((s) => s.styleId === styleId);
+      const hasDirectFormatting =
+        entry?.paragraphDirect &&
+        (entry.paragraphDirect.spacing !== undefined ||
+          entry.paragraphDirect.indent !== undefined ||
+          entry.paragraphDirect.alignment !== undefined);
+      if (hasDirectFormatting || entry?.runDirect) {
+        warnings.push(`样式锚点 ${ref.anchor} 已删除且无替代锚点，保留其直接格式降级为行内格式配置`);
+        return { inline: { paragraph: entry.paragraphDirect, run: entry.runDirect } };
+      }
       if (entry?.ooxmlStyleId) {
         warnings.push(`样式锚点 ${ref.anchor} 已删除且无替代锚点，降级为样式 ID: ${entry.ooxmlStyleId}`);
         return { ooxmlStyleId: entry.ooxmlStyleId };
-      }
-      if (entry?.paragraphDirect || entry?.runDirect) {
-        warnings.push(`样式锚点 ${ref.anchor} 已删除且无替代锚点，降级为行内格式配置`);
-        return { inline: { paragraph: entry.paragraphDirect, run: entry.runDirect } };
       }
     }
     return ref;
   };
 
   for (const profile of Object.values(info.profiles)) {
+    if (profile.defaults?.style) profile.defaults.style = fix(profile.defaults.style);
     for (const [key, ref] of Object.entries(profile.styles ?? {})) profile.styles[key] = fix(ref);
     for (const rule of profile.rules ?? []) {
       if (rule.style) rule.style = fix(rule.style);

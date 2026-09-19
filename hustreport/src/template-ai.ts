@@ -284,9 +284,19 @@ export function buildTemplateContext(info: TemplateInfo, options: TemplatePrompt
   if (info.styleSchema && info.styleSchema.length > 0) {
     styleTable = info.styleSchema
       .map((s) => {
+        const details: string[] = [];
+        if (s.ooxmlStyleId) details.push(`pStyle=${s.ooxmlStyleId}`);
+        if (s.fontCn || s.fontAscii) details.push(`字体=${[s.fontCn && `中:${s.fontCn}`, s.fontAscii && `西:${s.fontAscii}`].filter(Boolean).join("/")}`);
+        if (s.fontSize) details.push(`字号=${s.fontSize}`);
+        if (s.bold) details.push("加粗");
+        if (s.color) details.push(`颜色=${s.color}`);
+        if (s.alignment) details.push(`对齐=${s.alignment}`);
+        if (s.lineSpacing) details.push(`行距=${s.lineSpacing}`);
+        if (s.indent) details.push(`缩进=${s.indent}`);
+        const detailStr = details.length > 0 ? ` [${details.join(", ")}]` : "";
         const ex = s.examples.length > 0 ? ` 样例=${JSON.stringify(s.examples.join("; "))}` : "";
         const refStr = s.anchorRef ? ` (样本锚点: ${s.anchorRef})` : "";
-        return `- [styleId=${s.styleId}]${refStr}: ${s.summary}${ex}`;
+        return `- [styleId=${s.styleId}]${refStr}${detailStr}: ${s.summary}${ex}`;
       })
       .join("\n");
   } else {
@@ -342,9 +352,10 @@ export function buildTemplateContext(info: TemplateInfo, options: TemplatePrompt
 1. 核心是理解学生要在文档内填写什么：
    - 封面：原地填空 slot（统一加 padding=cover 保证等宽对齐）；
    - 正文各章节：insert 插入点（如 ## 1.1 程序改错与跟踪调试 {ref:hrseg0070}），学生在章节标题下方撰写正文、插入代码块与图表；
-2. 彻底清理引导内容：面向写作者的作答指引、解题要求、说明提示、示范占位符（××××、......）必须在 edits 中以 op: "delete", as: "paragraph" 彻底删除，绝不留在 template.docx 中或当成 slot；
-3. 严禁凭空发明样式！如果批注/规范中需要某种格式（如代码块、图标题等），但在已检测样式列表中找不到样本锚点，必须在 feedback.missingStyles 中指出；
-4. 支持图片与表格规则配置）：
+2. 彻底清理引导内容与批注：面向写作者的作答指引、解题要求、说明提示（如『正文：宋体小4号，1.5倍行距』）、示范占位符（××××、......）必须在 edits 中以 op: "delete", as: "paragraph" 彻底删除，绝不留在 template.docx 中或当成 slot；
+3. 区分批注/指导文字与正文样式：原文档中红色文字（如 #FF0000）或文字本身是排版说明的，属于提示文字而非正文样式，绝不能把红色的提示段落作为正文 body 样式！正文必须是黑色、小四号、1.5倍行距、首行缩进；
+4. 样式组装与反馈：若文档缺少规范样式，可以输出 inline: { paragraph: {...}, run: {...} } 自行组装，或者在 feedback.missingStyles 中指导用户；
+5. 支持图片与表格规则配置）：
 {
   "rules": [
     {"match":{"type":"heading","level":1},"style":{"anchor":"hrseg0007"}},
@@ -374,12 +385,19 @@ export function buildTemplateContext(info: TemplateInfo, options: TemplatePrompt
   "skeleton": "---\\nprofile: default\\n---\\n\\n[计算机科学与技术学院](ref:hrseg0017 | padding=cover)\\n[网络空间安全2401班](ref:hrseg0019 | padding=cover)\\n[U202412345](ref:hrseg0021 | padding=cover)\\n[张三](ref:hrseg0023 | padding=cover)\\n[李老师](ref:hrseg0025 | padding=cover)\\n\\n## 1.1 程序改错与跟踪调试 {ref:hrseg0070}\\n\\n(在此记录改错与调试过程与结果)\\n\\n## 1.4 小结 {ref:hrseg0099}\\n\\n(在此填写心得体会)\\n"
 }`;
 
+  const standardSchemaSection = `标准 Word 排版 Schema 速查（缺样式或原样式错乱时，用 inline 精准拼装）：
+- 字号对应 fontSize (半磅): 小初=72(36pt), 二号=44(22pt), 小二=36(18pt,章标题), 四号=28(14pt,节标题), 小四=24(12pt,标准正文), 五号=21(10.5pt,图表/代码)
+- 行距对应 spacing: 1.5倍行距={line: 360, lineRule: "auto"}, 单倍行距={line: 240, lineRule: "auto"}, 标题0.5行间距={before: 156, after: 156, line: 360, lineRule: "auto"}
+- 缩进对应 indent: 小四首行缩进2字符={firstLine: 480}, 五号首行缩进2字符={firstLine: 420}, 无缩进={firstLine: 0}
+- 字体 fontFamily: 正文={eastAsia: "宋体", ascii: "Times New Roman"}, 标题={eastAsia: "黑体", ascii: "Times New Roman"}, 代码={ascii: "Consolas", eastAsia: "仿宋"}`;
+
   return [
     options.task ? `用户说明：${options.task}` : "",
     commentsSection,
     tocSection,
     `已检测到的文档样式列表（styleId 仅是编号，样式来源必须用锚点引用）：\n${styleTable}`,
     `锚点表（ref / 样式 / 类型 / 示例文本）：\n${anchorTable}`,
+    standardSchemaSection,
     schemaHint,
     options.extraInstructions ?? "",
   ]

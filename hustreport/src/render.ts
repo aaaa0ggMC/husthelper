@@ -6,6 +6,7 @@ import { openDocx } from "./docx.ts";
 import {
   cloneRunWithText,
   createParagraphFromStyles,
+  createRunFromStyles,
   replaceRunStyle,
   writeRunElements,
   type InlineRun,
@@ -1071,6 +1072,13 @@ function buildHorizontalRule(sample: StyleSample, ownerDoc: XmlElement): XmlElem
 }
 
 function extractSampleFont(sample: StyleSample | null): { family?: string; size?: number } {
+  if (sample?.inline?.run) {
+    const run = sample.inline.run;
+    const fontFamily = run.fontFamily as Record<string, unknown> | undefined;
+    const family = (fontFamily?.ascii ?? fontFamily?.eastAsia ?? run.font) as string | undefined;
+    const size = run.fontSize ? parseInt(String(run.fontSize), 10) : undefined;
+    return { family, size };
+  }
   if (!sample?.runEl) return {};
   const rPr = childElementsOf(sample.runEl).find((c) => c.nodeName === "w:rPr");
   if (!rPr) return {};
@@ -1126,7 +1134,9 @@ function renderStyledCodeParagraphs(
     }
 
     if (line.runs.length === 0) {
-      const emptyRun = cloneRunWithText(sample.runEl as XmlElement, "");
+      const emptyRun = sample.inline
+        ? createRunFromStyles(ownerDoc, sample.inline.run ?? {}, "")
+        : cloneRunWithText(sample.runEl as XmlElement, "");
       paragraphEl.appendChild(emptyRun);
     } else {
       for (const run of line.runs) {
@@ -1139,7 +1149,9 @@ function renderStyledCodeParagraphs(
             }
           }
         }
-        const runEl = cloneRunWithText(sample.runEl as XmlElement, run.text, styleMods);
+        const runEl = sample.inline
+          ? createRunFromStyles(ownerDoc, sample.inline.run ?? {}, run.text, styleMods)
+          : cloneRunWithText(sample.runEl as XmlElement, run.text, styleMods);
         paragraphEl.appendChild(runEl);
       }
     }
