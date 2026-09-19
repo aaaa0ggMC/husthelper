@@ -1275,6 +1275,8 @@ function styleRefToSample(
   }
   if ("recipe" in ref) return styleRefToSample(profile.styles[ref.recipe], profile, anchorRanges);
   if ("inline" in ref) return { inline: ref.inline };
+  if ("ooxmlStyleId" in ref) return { inline: { paragraph: { styleId: ref.ooxmlStyleId } } };
+  if ("styleName" in ref) return { inline: { paragraph: { styleId: ref.styleName } } };
   return null;
 }
 

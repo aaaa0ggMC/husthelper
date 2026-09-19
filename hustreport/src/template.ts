@@ -43,6 +43,9 @@ export interface AnchorInfo {
   /** 生成时该 segment 的 XML Style ID（仅供人/AI 参考，非身份）。 */
   styleId?: number;
   tags?: string[];
+  paragraphText?: string;
+  part?: string;
+  paragraph?: number;
   /** 前向兼容：未知能力放这里，渲染器忽略但保留。 */
   extensions?: Record<string, unknown>;
 }
@@ -148,6 +151,9 @@ export interface StyleSchemaEntry {
   summary: string;
   anchorRef?: string;
   examples: string[];
+  paragraphDirect?: StyleObject;
+  runDirect?: StyleObject;
+  ooxmlStyleId?: string;
 }
 
 /** `inferTemplate` 需要的锚点信息子集（从 TemplateInfo.anchors 就能重建）。 */
@@ -156,6 +162,9 @@ export interface StampedAnchorLike {
   kind: AnchorKind;
   label: string;
   styleId: number;
+  paragraphText?: string;
+  part?: string;
+  paragraph?: number;
 }
 
 export interface BuildTemplateOptions extends StampOptions {
@@ -199,11 +208,15 @@ export function buildTemplate(doc: VirtualWordDocument, options: BuildTemplateOp
   const styleSchema: StyleSchemaEntry[] = analysis.styles.map((style) => {
     const summary = summarizeStylePair(style.paragraph, style.run);
     const anchor = anchors.find((a) => a.styleId === style.id);
+    const ooxml = style.paragraph.ooxmlStyleId ?? style.run.ooxmlStyleId ?? undefined;
     return {
       styleId: style.id,
       summary,
       anchorRef: anchor?.ref,
       examples: style.examples.slice(0, 2),
+      paragraphDirect: style.paragraph.direct,
+      runDirect: style.run.direct,
+      ooxmlStyleId: ooxml,
     };
   });
 
@@ -267,6 +280,17 @@ export function remapDanglingAnchors(info: TemplateInfo, styleIdOf: ReadonlyMap<
     if (alternative) {
       warnings.push(`样式锚点 ${ref.anchor} 已删除，改用同样式锚点 ${alternative}`);
       return { anchor: alternative };
+    }
+    if (styleId !== undefined && info.styleSchema) {
+      const entry = info.styleSchema.find((s) => s.styleId === styleId);
+      if (entry?.ooxmlStyleId) {
+        warnings.push(`样式锚点 ${ref.anchor} 已删除且无替代锚点，降级为样式 ID: ${entry.ooxmlStyleId}`);
+        return { ooxmlStyleId: entry.ooxmlStyleId };
+      }
+      if (entry?.paragraphDirect || entry?.runDirect) {
+        warnings.push(`样式锚点 ${ref.anchor} 已删除且无替代锚点，降级为行内格式配置`);
+        return { inline: { paragraph: entry.paragraphDirect, run: entry.runDirect } };
+      }
     }
     return ref;
   };
@@ -415,6 +439,9 @@ export function inferTemplate(
       example: anchor.kind === "slot" ? anchor.label : undefined,
       styleId: anchor.styleId,
       style: { anchor: anchor.ref },
+      paragraphText: anchor.paragraphText,
+      part: anchor.part,
+      paragraph: anchor.paragraph,
     };
   }
 

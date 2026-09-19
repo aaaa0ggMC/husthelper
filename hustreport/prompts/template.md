@@ -115,12 +115,11 @@
 ```md
 [计算机科学与技术](ref:hrseg0018 | padding=cover)
 [U202612345](ref:hrseg0022 | padding=cover align=center)
-[正文内容](ref:hrseg0092 | use:body)
+[李老师](ref:hrseg0026 | padding=cover)
 [某字段](ref:hrseg0030 | profile:hust-official)
 ```
 
-- `use:<recipe 或锚点>`：指定填充后的样式，覆盖锚点原有格式。
-  用在「锚点原本是引导行/说明文字、格式与正文不一致」的槽上。
+- `use:<recipe 或锚点>`：指定填充后的样式，覆盖锚点原有格式（当特定槽位有独立样式需求时使用）。
 - `padding:<组名>`：**分组，不是长度**。同组所有填字会补齐到组内最宽文本的显示宽度，用于让一列字段对齐（如封面的院系/专业班级/学号/姓名/指导教师都写 `padding=cover`）。注意：即使某些字段已有预填文字（如院系已写「计算机科学与技术」），也必须写入 skeleton 参与同一 padding 分组，否则会导致该列各行下划线无法对齐！
 - `align:left|center|right`：组内对齐，默认 left。
 - `profile:<名>`：该填字使用哪套 profile。

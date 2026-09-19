@@ -21,6 +21,7 @@ export interface StampedAnchor {
   styleId: number;
   part: string;
   paragraph: number;
+  paragraphText?: string;
 }
 
 export interface StampOptions {
@@ -68,6 +69,7 @@ export function stampAnchors(doc: VirtualWordDocument, options: StampOptions = {
     const id = allocateId(usedIds);
     insertBookmarkPair(paragraphEl, firstRun, lastRun, id, name);
 
+    const fullParagraphText = paragraph.runs.map((r) => r.text).join("");
     stamped.push({
       ref: name,
       kind: isPlaceholder(segment.text) ? "slot" : "insert",
@@ -75,6 +77,7 @@ export function stampAnchors(doc: VirtualWordDocument, options: StampOptions = {
       styleId: segment.styleId,
       part: segment.ref.part,
       paragraph: segment.ref.paragraph,
+      paragraphText: fullParagraphText,
     });
   }
 

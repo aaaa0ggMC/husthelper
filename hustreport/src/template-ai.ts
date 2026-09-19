@@ -225,9 +225,9 @@ function loadPrompt(relative: string, fallback: string): string {
 const FALLBACK_GENERIC = `你是 Word 模板助手。阅读样式表与锚点表，输出 JSON（rules/styles/anchors/edits/skeleton）。
 只能用给定的 ref，禁止新建样式；skeleton 只写需要填写或新增的内容，其余从模板原样保留。只输出 JSON。`;
 
-const FALLBACK_LAB_REPORT = `这是实验/课程报告类文档：逐段判断删除还是保留。
-删：面向写报告者的指令、格式要求、填写提示、纯占位符。
-留：章节标题、实验目的与要求及其条目、实验内容与任务描述、封面字段。拿不准就保留。`;
+const FALLBACK_LAB_REPORT = `这是实验/课程报告类文档：根据学生填写职责理解语义，清理模板。
+删：所有面向写作者的指引、解题要求、说明、示范心得、占位符（×××、......）。必须在 edits 中以 op: "delete", as: "paragraph" 彻底删除，严禁留在模板中或当成 slot。
+留：章节标题（作为 insert 插入点）、封面字段（作为 slot）、固定客观实验任务条目。`;
 
 /** 文档无关的通用提示词（来自 `prompts/template.md`）。 */
 export const GENERIC_TEMPLATE_SYSTEM_PROMPT = loadPrompt("template.md", FALLBACK_GENERIC);
@@ -277,21 +277,31 @@ export function buildTemplateContext(info: TemplateInfo, options: TemplatePrompt
     commentsSection = `文档批注与排版要求（来自教师/原作者，至关重要）：\n${commentLines.join("\n")}`;
   }
 
-  let anchors = Object.entries(info.anchors).map(([ref, anchor]) => ({
-    ref,
-    kind: anchor.kind,
-    styleId: anchor.styleId,
-    label: (anchor.label ?? "").slice(0, 30),
-  }));
+  let anchors = Object.entries(info.anchors).map(([ref, anchor]) => {
+    let label = anchor.label ?? "";
+    const pText = anchor.paragraphText;
+    if (pText && pText.trim() !== label.trim()) {
+      label = `${label} (段落全文: ${JSON.stringify(pText.trim().slice(0, 70))})`;
+    }
+    return {
+      ref,
+      kind: anchor.kind,
+      styleId: anchor.styleId,
+      label,
+    };
+  });
   if (options.maxAnchors && anchors.length > options.maxAnchors) anchors = anchors.slice(0, options.maxAnchors);
   const anchorTable = anchors
     .map((anchor) => `${anchor.ref}\tstyle=${anchor.styleId}\t${anchor.kind}\t${JSON.stringify(anchor.label)}`)
     .join("\n");
 
   const schemaHint = `示例（注意：
-1. skeleton 很精简：只列要填的封面字段和要补写的章节，固定的任务正文不出现；封面一列字段统一加 padding=cover 保证等宽对齐；
-2. 严禁凭空发明样式！如果批注/规范中需要某种格式（如代码块、三级标题等），但在已检测样式列表中找不到样本锚点，必须在 feedback.missingStyles 中指出；
-3. 支持图片与表格规则配置）：
+1. 核心是理解学生要在文档内填写什么：
+   - 封面：原地填空 slot（统一加 padding=cover 保证等宽对齐）；
+   - 正文各章节：insert 插入点（如 ## 1.1 程序改错与跟踪调试 {ref:hrseg0070}），学生在章节标题下方撰写正文、插入代码块与图表；
+2. 彻底清理引导内容：面向写作者的作答指引、解题要求、说明提示、示范占位符（××××、......）必须在 edits 中以 op: "delete", as: "paragraph" 彻底删除，绝不留在 template.docx 中或当成 slot；
+3. 严禁凭空发明样式！如果批注/规范中需要某种格式（如代码块、图标题等），但在已检测样式列表中找不到样本锚点，必须在 feedback.missingStyles 中指出；
+4. 支持图片与表格规则配置）：
 {
   "rules": [
     {"match":{"type":"heading","level":1},"style":{"anchor":"hrseg0007"}},
@@ -303,7 +313,7 @@ export function buildTemplateContext(info: TemplateInfo, options: TemplatePrompt
   "styles": {"body": {"anchor": "hrseg0012"}},
   "anchors": {
     "hrseg0003": {"kind":"slot","label":"学号"},
-    "hrseg0091": {"kind":"insert","label":"实验记录"}
+    "hrseg0070": {"kind":"insert","label":"1.1 程序改错与跟踪调试"}
   },
   "feedback": {
     "missingStyles": [
@@ -314,8 +324,11 @@ export function buildTemplateContext(info: TemplateInfo, options: TemplatePrompt
       }
     ]
   },
-  "edits": [ {"op":"delete","ref":"hrseg0033","as":"paragraph"} ],
-  "skeleton": "---\\nprofile: default\\n---\\n\\n[计算机科学与技术学院](ref:hrseg0017 | padding=cover)\\n[网络空间安全2401班](ref:hrseg0019 | padding=cover)\\n[U202412345](ref:hrseg0021 | padding=cover)\\n[张三](ref:hrseg0023 | padding=cover)\\n[李老师](ref:hrseg0025 | padding=cover)\\n\\n# 三、实验记录及问题回答 {ref:hrseg0091}\\n\\n(在此记录实验过程与结果)\\n\\n# 四、体会 {ref:hrseg0094}\\n\\n(在此填写心得体会)\\n"
+  "edits": [
+    {"op":"delete","ref":"hrseg0046","as":"paragraph"},
+    {"op":"delete","ref":"hrseg0048","as":"paragraph"}
+  ],
+  "skeleton": "---\\nprofile: default\\n---\\n\\n[计算机科学与技术学院](ref:hrseg0017 | padding=cover)\\n[网络空间安全2401班](ref:hrseg0019 | padding=cover)\\n[U202412345](ref:hrseg0021 | padding=cover)\\n[张三](ref:hrseg0023 | padding=cover)\\n[李老师](ref:hrseg0025 | padding=cover)\\n\\n## 1.1 程序改错与跟踪调试 {ref:hrseg0070}\\n\\n(在此记录改错与调试过程与结果)\\n\\n## 1.4 小结 {ref:hrseg0099}\\n\\n(在此填写心得体会)\\n"
 }`;
 
   return [
@@ -434,5 +447,70 @@ export function mergeTemplateAiResponse(text: string, info: TemplateInfo): Merge
     validEdits.push(edit);
   }
 
+  // 兜底安全性保障：通过纯文本语义分析，清理遗漏的面向写作者的引导语/说明/占位符
+  const deletedRefs = new Set(validEdits.filter((e) => e.op === "delete").map((e) => e.ref));
+  for (const [ref, anchor] of Object.entries(next.anchors)) {
+    if (deletedRefs.has(ref)) continue;
+    // 保护：封面字段、目录等结构绝不误删
+    if (anchor.tags?.includes("cover") || isCoverLabel(anchor.label ?? "")) continue;
+    const textToCheck = anchor.paragraphText ?? anchor.label ?? "";
+    if (isInstructionalText(textToCheck)) {
+      validEdits.push({ op: "delete", ref, as: "paragraph" });
+      deletedRefs.add(ref);
+      warnings.push(`自动清理未在 edits 中声明删除的引导/占位段落: ${ref} ("${textToCheck.slice(0, 30)}")`);
+    }
+  }
+
   return { info: next, skeleton, edits: validEdits, warnings };
+}
+
+/** 判断是否属于封面字段 */
+export function isCoverLabel(text: string): boolean {
+  return /(专业班级|学号|姓名|指导教师|报告日期|课程名称|院系|学院|班级|学生姓名|教师|专业|学年|学期)/.test(text);
+}
+
+/**
+ * 基于纯文本语义判断段落是否属于面向写作者的引导语、排版提示、解题指引或示范占位符。
+ * 核心是理解语义与受众：此类内容是给写作者看的指导，不应属于最终报告正文，更不应残留在空白模板中。
+ */
+export function isInstructionalText(raw: string): boolean {
+  const text = raw.trim();
+  if (!text) return false;
+
+  // 1. 纯占位符 / 示例省略号（如 ××××、......、[2]...... 等）
+  if (/^[×xX*._—\-]{3,}$/.test(text)) return true;
+  if (/^[×\s,，.。(（)）同\d]{4,}$/.test(text)) return true;
+  if (/^\[\d+\]\s*(\.{3,}|…{2,}|等|同上)/.test(text)) return true;
+  if (/^(\.{4,}|…{2,}|……)/.test(text)) return true;
+  if (/^[A-Za-z0-9\s]*[×]{3,}[A-Za-z0-9\s×,，.。(（)）同\d]*$/.test(text)) return true;
+
+  // 2. 指令性标头与面向写作者的提示说明
+  if (/^(注意|要求|提示|排版要求|排版规范|说明|注|温馨提示|填报说明|撰写说明|注意事项|示例|例如|样例|参考样例|模版说明)[：:\s]/.test(text)) {
+    return true;
+  }
+
+  // 3. 针对写作者的写作/填报/清理动词短语
+  if (/(请将所有.*删除|否则扣分|此处删除|请删除|提交时删除|打印时删除)/.test(text)) return true;
+  if (/(仅为排版.*模板|仅供参考|本文仅为排版|文字请替换为实际内容|替换为实际内容)/.test(text)) return true;
+  if (/请(在此|按|将|根据|参考|务必|在下|在后|自行).*(填写|写入|记录|删除|替换|撰写|补充|粘贴|输入|修改)/.test(text)) return true;
+
+  // 4. 实验报告中面向学生的具体作答与解题指引
+  if (/^对于(程序改错|程序完善|程序设计|修改替换|跟踪调试|实验任务|设计题|本实验|本题|每道题)/.test(text)) return true;
+  if (/(指出有错的代码行|分析错误原因|给出改正方案|截图给出题目要求|各观察点的有关变量的值|代码补充完整|设计替换方案)/.test(text)) return true;
+  if (/(分析解题思路|给出算法步骤|给出程序源代码|注意编码的规范性|关键位置注释|主要变量和函数的命名|全文要求至少.*个流程图|给出运行截图说明答案的正确性)/.test(text)) return true;
+
+  // 5. 心得、小结、总结指导建议
+  if (/(可以写通过本次实验|学到了什么知识|有哪些提高|又有哪些不足|调试程序过程中遇到|有什么体会|写出.*体会|总结.*收获|谈谈.*收获|从以下几个方面进行总结)/.test(text)) return true;
+
+  // 6. 括号内的排版/作答提示
+  if (/^[（(].*(省略号代表|每道题都要写|重在设计思路|先分析表达式|图号按章编|同\s*[\d.]+|仅为排版|格式同文献|字数不少于|单倍行距|5号宋体).*[）)]$/.test(text)) return true;
+  if (/(省略号代表后续题目|每道题都要写|重在设计思路、解题方法的文字描述)/.test(text)) return true;
+
+  // 7. 编号条目式的排版要求说明
+  if (/^\d+、(按照|请将|节后面|本文仅|报告要求|严禁|不得)/.test(text)) return true;
+
+  // 8. 示例配图与说明
+  if (/(示例流程图|参考流程图|程序设计题\d*的流程图)/.test(text)) return true;
+
+  return false;
 }
