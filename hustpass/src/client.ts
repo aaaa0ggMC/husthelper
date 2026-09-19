@@ -9,6 +9,7 @@ import {
   CASTGC_COOKIE,
   exchangeTicket,
   isCasLoginResponse,
+  isSessionExpiredResponse,
   performCasLogin,
   qrLogin,
   requestCasTicket,
@@ -507,7 +508,7 @@ export class HustClient {
         ? session.post<T>(url, data, { responseType: "text", ...rest })
         : session.get<T>(url, { responseType: "text", ...rest });
 
-    const isRedirect = service.isLoginRedirect ?? isCasLoginResponse;
+    const isRedirect = service.isLoginRedirect ?? isSessionExpiredResponse;
     let response = await send();
 
     if (isRedirect(response)) {

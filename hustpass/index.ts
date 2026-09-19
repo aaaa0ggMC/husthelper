@@ -28,6 +28,7 @@ export {
   casLoginUrl,
   serviceUrl,
   isCasLoginResponse,
+  isSessionExpiredResponse,
   requestCasTicket,
   exchangeTicket,
   fullLogin,

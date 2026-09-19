@@ -579,6 +579,22 @@ export class OnePortal {
   }
 }
 
+/** 标记「token 被服务端拒绝」的错误，兼容 axios 直接抛错与自行构造两种情况 */
+function tokenRejected(status: number, response: AxiosResponse<unknown>): Error {
+  const error = new Error(`one.hust: 请求被拒绝（HTTP ${status}）`);
+  error.name = "OneTokenRejected";
+  return Object.assign(error, { status, response });
+}
+
+/** 取被拒绝请求的状态码：既认 axios 的 `error.response.status`，也认上面自建的 `error.status` */
+function rejectedStatus(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const direct = (error as { status?: unknown }).status;
+  if (typeof direct === "number") return direct;
+  const response = (error as { response?: { status?: unknown } }).response;
+  return typeof response?.status === "number" ? response.status : undefined;
+}
+
 /** one.hust API：`client.one` */
 export class OneHustApi {
   private readonly runtime: ClientRuntime;
@@ -622,7 +638,12 @@ export class OneHustApi {
     this.runtime.save();
   }
 
-  /** 带 `Authorization: Bearer <token>` 请求 one.hust；401 时自动重换 token 重试一次 */
+  /**
+   * 带 `Authorization: Bearer <token>` 请求 one.hust。
+   *
+   * 401（token 无效 / 过期）时重换一次再重试。注意不能把 403 也算进来：网关对没有权限的卡片
+   * 接口（通知 / 公文 / 余额等）同样回 403，但那是权限问题，重换 token 只会白白重跑一遍 SSO。
+   */
   async request<T = string>(
     path: string,
     config: RequestOptions = {},
@@ -641,13 +662,23 @@ export class OneHustApi {
         : session.get<T>(url, { responseType: "text", ...rest, headers: merged });
     };
 
-    let response = await send();
-    if (response.status === 401) {
-      this.runtime.logger.warn("one.hust: token 被拒绝，重新换取后重试");
+    const attempt = async (): Promise<AxiosResponse<T>> => {
+      const response = await send();
+      if (response.status === 401) {
+        throw tokenRejected(response.status, response as AxiosResponse<unknown>);
+      }
+      return response;
+    };
+
+    try {
+      return await attempt();
+    } catch (error) {
+      const status = rejectedStatus(error);
+      if (status !== 401) throw error;
+      this.runtime.logger.warn("one.hust: token 被拒绝（401），重新换取后重试");
       this.invalidate();
-      response = await send();
+      return await attempt();
     }
-    return response;
   }
 
   /* ------------------------- 门户接口（schema 驱动） ------------------------- */

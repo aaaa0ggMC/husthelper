@@ -165,6 +165,28 @@ export function isCasLoginResponse(response: CasResponse): boolean {
   );
 }
 
+/**
+ * 判断响应是否表示「当前应用会话已失效、需要重新走一次 CAS」。
+ *
+ * 除了 {@link isCasLoginResponse} 覆盖的「被重定向回 CAS 登录页」，有些应用（如 smartcourse）
+ * 会话过期时不会回到 CAS，而是把请求 302 到自己的登录 / 注销页，body 只是一页 HTML；
+ * 调用方按 JSON 解析就会炸出 `Unexpected token '<'`。这里一并识别。
+ */
+export function isSessionExpiredResponse(response: CasResponse): boolean {
+  if (isCasLoginResponse(response)) return true;
+
+  const location = response.headers["location"];
+  if (
+    response.status >= 300 &&
+    response.status < 400 &&
+    typeof location === "string"
+  ) {
+    const target = location.toLowerCase();
+    return target.includes("/logout") || target.includes("/login");
+  }
+  return false;
+}
+
 /* -------------------------------- 内部工具 -------------------------------- */
 
 function encryptField(publicKey: string, text: string): string {
