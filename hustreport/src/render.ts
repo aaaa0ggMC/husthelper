@@ -521,7 +521,10 @@ function renderBlocks(
       }
     }
 
-    const sample = styleRefToSample(rule?.style ?? profile.defaults?.style, profile, anchorRanges);
+    const sample =
+      styleRefToSample(rule?.style ?? profile.defaults?.style, profile, anchorRanges) ??
+      styleRefToSample(profile.styles?.body, profile, anchorRanges) ??
+      { inline: { paragraph: { styleId: "Normal" } } };
 
     if (block.type === "code") {
       const hasExplicitTheme = Boolean(
@@ -1331,7 +1334,30 @@ function resolveUseStyle(use: string, profile: TemplateProfile, anchorRanges: Ma
 }
 
 function matchRule(rules: readonly TemplateRule[], target: MatchTarget): TemplateRule | undefined {
-  return rules.find((rule) => matchesRule(rule, target));
+  const exact = rules.find((rule) => matchesRule(rule, target));
+  if (exact) return exact;
+
+  // 降级策略：
+  // 1. 高阶标题向下退避：h3 -> h2 -> h1
+  if (target.type === "heading" && target.level && target.level > 1) {
+    for (let lvl = target.level - 1; lvl >= 1; lvl--) {
+      const fallback = rules.find((rule) => matchesRule(rule, { ...target, level: lvl }));
+      if (fallback) return fallback;
+    }
+  }
+
+  // 2. 列表、引用、分割线回退到正文段落
+  if (target.type === "list" || target.type === "quote" || target.type === "hr") {
+    const fallback = rules.find((rule) => matchesRule(rule, { ...target, type: "paragraph" }));
+    if (fallback) return fallback;
+  }
+
+  // 3. 只有文本类块（paragraph, caption）才回退到默认段落或通配规则
+  if (target.type === "paragraph" || target.type === "caption") {
+    return rules.find((rule) => rule.match.type === "paragraph" || rule.match.type === "*");
+  }
+
+  return undefined;
 }
 
 function matchesRule(rule: TemplateRule, target: MatchTarget): boolean {
