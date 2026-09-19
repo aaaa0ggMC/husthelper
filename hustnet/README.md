@@ -107,6 +107,19 @@ void login_example() {
 > 2. **零内存逆序取字**：从原始密码通过索引公式小端序提取大数字节，省去 256 字节临时逆序缓冲；
 > 3. **就地十六进制输出**：`_bn_to_hex` 直接写入输出缓冲区，消除 520 字节内部缓冲与 `snprintf` 库开销。
 
+#### 最小 Linux 原生 C 客户端例程 (`examples/chustnet.c`)
+
+纯 C99 + POSIX socket 实现的零依赖最小命令行工具：
+
+```bash
+# 编译（零依赖，无需 libcurl 或 openssl）
+gcc -O2 examples/chustnet.c -o chustnet
+
+# 运行登录
+./chustnet <学号> <密码>
+# 示例：./chustnet U202512345 mypassword
+```
+
 ### 一键安装到系统全局 (Linux / Windows)
 
 仓库 `scripts/` 目录下提供跨平台的全局安装与卸载脚本：
