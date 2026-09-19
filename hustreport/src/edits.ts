@@ -5,6 +5,7 @@ import { analyzeDocument } from "./analyze.ts";
 import { canonicalize } from "./util.ts";
 import type { AnchorRegistry } from "./anchors.ts";
 import type { DocumentAnalysis, Segment, StyleObject } from "./types.ts";
+import { childElementsOf, createWordElement, elementList, W14_NS, WORD_NS } from "./ooxml.ts";
 
 /** 公共定位：任选一个即可；`styleId` 会命中多条时用 `match` 过滤。 */
 export interface SegmentSelector {
@@ -100,8 +101,6 @@ export interface EditResult {
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type XmlElement = any;
-
-const WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
 /**
  * 统一编辑入口：改写 / 插入 / 删除。
@@ -616,22 +615,8 @@ function deleteParagraphElement(el: XmlElement): boolean {
 
 /* ------------------------------ OOXML 小工具 ------------------------------ */
 
-function childElementsOf(element: XmlElement): XmlElement[] {
-  const out: XmlElement[] = [];
-  const nodes = element?.childNodes;
-  if (!nodes) return out;
-  for (let i = 0; i < nodes.length; i += 1) {
-    if (nodes[i]?.nodeType === 1) out.push(nodes[i]);
-  }
-  return out;
-}
-
 function directChildrenNamed(element: XmlElement, name: string): XmlElement[] {
   return childElementsOf(element).filter((child) => child.nodeName === name);
-}
-
-function createWordElement(reference: XmlElement, name: string): XmlElement {
-  return reference.ownerDocument.createElementNS(WORD_NS, name);
 }
 
 function readElementText(element: XmlElement): string {
@@ -644,8 +629,6 @@ function setElementText(element: XmlElement, text: string): void {
   if (/^\s|\s$/.test(text)) element.setAttribute("xml:space", "preserve");
   else element.removeAttribute("xml:space");
 }
-
-const W14_NS = "http://schemas.microsoft.com/office/word/2010/wordml";
 
 /** 给缺少 `w14:paraId` 的段落补上稳定 ID（Word 2010+ 兼容，不可见）。 */
 function assignMissingParaIds(doc: VirtualWordDocument): void {
@@ -685,10 +668,4 @@ function assignMissingParaIds(doc: VirtualWordDocument): void {
   }
 }
 
-/** 把 xmldom 的 LiveNodeList 转成普通数组（它不实现 Symbol.iterator）。 */
-function elementList(list: { length: number; [index: number]: any } | undefined | null): XmlElement[] {
-  const out: XmlElement[] = [];
-  if (!list) return out;
-  for (let i = 0; i < list.length; i += 1) out.push(list[i]);
-  return out;
-}
+

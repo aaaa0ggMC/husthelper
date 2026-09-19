@@ -25,15 +25,17 @@ import {
 } from "./config.ts";
 import { calculateImageEmuSize, getImageDimensions } from "./image-size.ts";
 import { stripCommentElements, stripDocumentComments } from "./comments.ts";
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
-type XmlElement = any;
-
-const WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
-const R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
-const WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
-const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
-const PIC_NS = "http://schemas.openxmlformats.org/drawingml/2006/picture";
+import {
+  A_NS,
+  childElementsOf,
+  createWordElement,
+  PIC_NS,
+  R_NS,
+  WORD_NS,
+  WP_NS,
+  type XmlElement,
+} from "./ooxml.ts";
+import { enableDocxUpdateFields, findHeadingBookmarkName, updateTableOfContents } from "./toc.ts";
 
 /**
  * 渲染器。
@@ -138,6 +140,8 @@ export interface RenderResult {
   warnings: string[];
   fills: RenderFill[];
   blocks: MarkdownBlock[];
+  /** 模板是否包含目录（TOC）——成稿后需用户在 Word/WPS 中「更新目录/更新域」。 */
+  hasToc: boolean;
 }
 
 const REF_PATTERN = /\[([^\]]*)\]\(\s*ref\s*:\s*([^)\s|]+)([^)]*)\)/g;
@@ -586,6 +590,7 @@ export function renderTemplate(
     warnings,
     fills: parsed.fills,
     blocks: parsed.blocks,
+    hasToc: Boolean(info.toc?.enabled),
   };
 }
 
@@ -858,6 +863,7 @@ function renderBlocks(
             pPr.insertBefore(pStyle, pPr.firstChild);
           }
         }
+        ensureOutlineLevel(range.paragraphEl, block.level ?? 1);
         recordHeading(block, range.paragraphEl);
         cursorLast = range.paragraphEl;
         cursorFallback = container;
@@ -980,6 +986,7 @@ function renderBlocks(
       if (spec.level) applyIndent(paragraphEl, spec.level);
       container.insertBefore(paragraphEl, last ? last.nextSibling : refNode);
       if (block.type === "heading") {
+        ensureOutlineLevel(paragraphEl, block.level ?? 1);
         recordHeading(block, paragraphEl);
       }
       last = paragraphEl;
@@ -993,7 +1000,14 @@ function renderBlocks(
   }
 
   if (info.toc?.enabled) {
-    updateTableOfContents(doc, info, renderedHeadings, ownerDoc);
+    const fullHeadings = collectDocumentHeadings(
+      doc,
+      info,
+      resolveProfile(info, parsed.profile ?? info.defaultProfile),
+      anchorRanges,
+      renderedHeadings,
+    );
+    updateTableOfContents(doc, info, fullHeadings, ownerDoc);
   }
 
   return count;
@@ -1493,6 +1507,63 @@ function paragraphText(paragraphEl: XmlElement): string {
   return out;
 }
 
+function parseHeadingStyleLevel(pStyle: string): number | undefined {
+  const match = /(?:heading|标题)\s*(\d+)/i.exec(pStyle);
+  return match ? parseInt(match[1], 10) : undefined;
+}
+
+/**
+ * 收集文档中所有带 Word 目录书签（`_Toc*` / `__RefHeading___Toc*`）的标题，包含
+ * **骨架未提及、原样保留**的章节标题，按文档顺序返回，保证目录完整无遗漏。
+ *
+ * 等级判定优先级：规则映射出的 pStyle > 渲染时记录的等级 > pStyle 命名解析。
+ */
+function collectDocumentHeadings(
+  doc: VirtualWordDocument,
+  info: TemplateInfo,
+  profile: TemplateProfile,
+  anchorRanges: Map<string, BookmarkRange>,
+  renderedHeadings: ReadonlyArray<{ level: number; text: string; bookmarkName: string }>,
+): Array<{ level: number; text: string; bookmarkName: string }> {
+  const maxLevel = info.toc?.maxLevel ?? 2;
+  const styleToLevel = new Map<string, number>();
+  for (const rule of profile.rules) {
+    if (rule.match.type !== "heading" || !rule.match.level) continue;
+    const sample = styleRefToSample(rule.style, profile, anchorRanges);
+    const pStyle =
+      sample?.inline?.paragraph?.styleId ??
+      sample?.paragraphEl?.getElementsByTagName?.("w:pStyle")?.[0]?.getAttribute?.("w:val");
+    if (pStyle && !styleToLevel.has(pStyle)) styleToLevel.set(pStyle, rule.match.level);
+  }
+
+  const levelByBookmark = new Map(renderedHeadings.map((heading) => [heading.bookmarkName, heading.level] as const));
+
+  const anyDoc = doc as unknown as { partsData?: Array<{ path?: string; xmlDocument?: any }> };
+  const root =
+    anyDoc.partsData?.find((part) => part.path === "word/document.xml")?.xmlDocument?.documentElement ??
+    anyDoc.partsData?.[0]?.xmlDocument?.documentElement;
+  if (!root) return renderedHeadings.slice();
+
+  const result: Array<{ level: number; text: string; bookmarkName: string }> = [];
+  const seen = new Set<string>();
+  const paragraphs = Array.from(root.getElementsByTagName("w:p") ?? []) as XmlElement[];
+  for (const paragraph of paragraphs) {
+    const bookmarkName = findHeadingBookmarkName(paragraph);
+    if (!bookmarkName || seen.has(bookmarkName)) continue;
+    const pStyle = paragraph.getElementsByTagName("w:pStyle")?.[0]?.getAttribute?.("w:val") as string | undefined;
+    const level =
+      (pStyle ? styleToLevel.get(pStyle) : undefined) ??
+      levelByBookmark.get(bookmarkName) ??
+      (pStyle ? parseHeadingStyleLevel(pStyle) : undefined);
+    if (!level || level < 1 || level > maxLevel) continue;
+    const text = paragraphText(paragraph).trim();
+    if (!text) continue;
+    seen.add(bookmarkName);
+    result.push({ level, text, bookmarkName });
+  }
+  return result.length > 0 ? result : renderedHeadings.slice();
+}
+
 function findDefaultContainer(anchorRanges: Map<string, BookmarkRange>): XmlElement | null {
   let fallback: XmlElement | null = null;
   for (const range of anchorRanges.values()) {
@@ -1537,6 +1608,23 @@ function blockParagraphSpecs(block: MarkdownBlock): ParagraphSpec[] {
     });
   }
   return [{ runs: parseInline(block.text) }];
+}
+
+/** 确保标题段落带 `w:outlineLvl`，使 Word/WPS 的 TOC 域（`\u` 开关）能收录该标题。 */
+function ensureOutlineLevel(paragraphEl: XmlElement, level: number): void {
+  let pPr = paragraphEl.getElementsByTagName?.("w:pPr")?.[0];
+  if (!pPr) {
+    pPr = createWordElement(paragraphEl, "w:pPr");
+    paragraphEl.insertBefore(pPr, paragraphEl.firstChild);
+  }
+  let outline = pPr.getElementsByTagName("w:outlineLvl")?.[0];
+  if (!outline) {
+    outline = createWordElement(pPr, "w:outlineLvl");
+    const markRPr = childElementsOf(pPr).find((child) => child.nodeName === "w:rPr");
+    if (markRPr) pPr.insertBefore(outline, markRPr);
+    else pPr.appendChild(outline);
+  }
+  outline.setAttribute("w:val", String(Math.max(0, Math.min(8, level - 1))));
 }
 
 /** 按层级给列表段落加缩进（在样板已有缩进基础上叠加）。 */
@@ -2082,6 +2170,138 @@ function buildImageElement(
   return { paragraphEl, captionEl };
 }
 
+/** 找到锚点所在的表格元素（用于复用其样式）。 */
+function resolveSampleTable(ref: string, anchorRanges: Map<string, BookmarkRange>): XmlElement | null {
+  const range = anchorRanges.get(ref);
+  if (!range) return null;
+  let node: XmlElement = range.paragraphEl?.parentNode ?? null;
+  while (node) {
+    if (node.nodeName === "w:tbl") return node;
+    if (node.nodeName === "w:body" || node.nodeName === "#document") return null;
+    node = node.parentNode;
+  }
+  return null;
+}
+
+/** 克隆样本表的表属性/列宽/边框与单元格格式，生成内容为 rows 的新表。 */
+function buildTableFromSample(
+  ownerDoc: XmlElement,
+  sampleTable: XmlElement,
+  rows: string[][],
+  colCount: number,
+  alignments: Array<"left" | "center" | "right">,
+  hasHeader: boolean,
+  tableAlign: string,
+): XmlElement {
+  const tbl = ownerDoc.createElementNS(WORD_NS, "w:tbl");
+
+  const srcTblPr = childElementsOf(sampleTable).find((c) => c.nodeName === "w:tblPr");
+  if (srcTblPr) {
+    const tblPr = srcTblPr.cloneNode(true) as XmlElement;
+    if (tableAlign) {
+      let jc = childElementsOf(tblPr).find((c) => c.nodeName === "w:jc");
+      if (!jc) {
+        jc = createWordElement(tblPr, "w:jc");
+        tblPr.appendChild(jc);
+      }
+      jc.setAttribute("w:val", tableAlign);
+    }
+    tbl.appendChild(tblPr);
+  }
+
+  const srcGrid = childElementsOf(sampleTable).find((c) => c.nodeName === "w:tblGrid");
+  const srcCols = srcGrid ? childElementsOf(srcGrid).filter((c) => c.nodeName === "w:gridCol") : [];
+  const tblGrid = ownerDoc.createElementNS(WORD_NS, "w:tblGrid");
+  if (srcCols.length === colCount) {
+    for (const col of srcCols) tblGrid.appendChild(col.cloneNode(true));
+  } else {
+    const total = srcCols.reduce((sum, c) => sum + (Number(c.getAttribute("w:w")) || 0), 0) || colCount * 1440;
+    const each = Math.max(1, Math.floor(total / colCount));
+    for (let c = 0; c < colCount; c += 1) {
+      const gridCol = createWordElement(tblGrid, "w:gridCol");
+      gridCol.setAttribute("w:w", String(each));
+      tblGrid.appendChild(gridCol);
+    }
+  }
+  tbl.appendChild(tblGrid);
+
+  const srcRows = childElementsOf(sampleTable).filter((c) => c.nodeName === "w:tr");
+  const firstCell = srcRows[0] ? childElementsOf(srcRows[0]).find((c) => c.nodeName === "w:tc") : undefined;
+  const lastCell = srcRows.length
+    ? childElementsOf(srcRows[srcRows.length - 1]).find((c) => c.nodeName === "w:tc")
+    : undefined;
+  const headerTcPr = firstCell ? childElementsOf(firstCell).find((c) => c.nodeName === "w:tcPr") : undefined;
+  const lastTcPr = lastCell ? childElementsOf(lastCell).find((c) => c.nodeName === "w:tcPr") : undefined;
+  const firstParagraph = firstCell ? childElementsOf(firstCell).find((c) => c.nodeName === "w:p") : undefined;
+  const samplePPr = firstParagraph ? childElementsOf(firstParagraph).find((c) => c.nodeName === "w:pPr") : undefined;
+  const sampleRun = firstParagraph ? childElementsOf(firstParagraph).find((c) => c.nodeName === "w:r") : undefined;
+  const sampleRPr = sampleRun ? childElementsOf(sampleRun).find((c) => c.nodeName === "w:rPr") : undefined;
+  const trPr0 = srcRows[0] ? childElementsOf(srcRows[0]).find((c) => c.nodeName === "w:trPr") : undefined;
+  const headerRepeat = Boolean(trPr0 && childElementsOf(trPr0).some((c) => c.nodeName === "w:tblHeader"));
+
+  const applyCellStyle = (srcTcPr: XmlElement | undefined, tcPr: XmlElement, allowShading: boolean): void => {
+    if (!srcTcPr) return;
+    const borders = childElementsOf(srcTcPr).find((c) => c.nodeName === "w:tcBorders");
+    if (borders) tcPr.appendChild(borders.cloneNode(true));
+    if (allowShading) {
+      const shd = childElementsOf(srcTcPr).find((c) => c.nodeName === "w:shd");
+      if (shd) tcPr.appendChild(shd.cloneNode(true));
+    }
+    const vAlign = childElementsOf(srcTcPr).find((c) => c.nodeName === "w:vAlign");
+    if (vAlign) tcPr.appendChild(vAlign.cloneNode(true));
+  };
+
+  for (let r = 0; r < rows.length; r += 1) {
+    const isHeader = hasHeader && r === 0;
+    const isLast = r === rows.length - 1;
+    const tr = ownerDoc.createElementNS(WORD_NS, "w:tr");
+    const trPr = ownerDoc.createElementNS(WORD_NS, "w:trPr");
+    trPr.appendChild(ownerDoc.createElementNS(WORD_NS, "w:cantSplit"));
+    if (isHeader && headerRepeat) trPr.appendChild(ownerDoc.createElementNS(WORD_NS, "w:tblHeader"));
+    tr.appendChild(trPr);
+
+    for (let c = 0; c < colCount; c += 1) {
+      const cellText = rows[r]?.[c] ?? "";
+      const colAlign = alignments[c] ?? (isHeader ? "center" : "left");
+
+      const tc = ownerDoc.createElementNS(WORD_NS, "w:tc");
+      const tcPr = ownerDoc.createElementNS(WORD_NS, "w:tcPr");
+      applyCellStyle(isHeader ? headerTcPr : isLast ? lastTcPr : undefined, tcPr, isHeader);
+      tc.appendChild(tcPr);
+
+      const p = ownerDoc.createElementNS(WORD_NS, "w:p");
+      if (samplePPr) {
+        const pPr = samplePPr.cloneNode(true) as XmlElement;
+        let jc = childElementsOf(pPr).find((x) => x.nodeName === "w:jc");
+        if (!jc) {
+          jc = createWordElement(pPr, "w:jc");
+          pPr.appendChild(jc);
+        }
+        jc.setAttribute("w:val", colAlign);
+        p.appendChild(pPr);
+      } else {
+        const pPr = ownerDoc.createElementNS(WORD_NS, "w:pPr");
+        const jc = ownerDoc.createElementNS(WORD_NS, "w:jc");
+        jc.setAttribute("w:val", colAlign);
+        pPr.appendChild(jc);
+        p.appendChild(pPr);
+      }
+
+      const run = ownerDoc.createElementNS(WORD_NS, "w:r");
+      if (sampleRPr) run.appendChild(sampleRPr.cloneNode(true));
+      const t = createWordElement(run, "w:t");
+      t.textContent = cellText;
+      run.appendChild(t);
+      p.appendChild(run);
+      tc.appendChild(p);
+      tr.appendChild(tc);
+    }
+    tbl.appendChild(tr);
+  }
+
+  return tbl;
+}
+
 function buildTableElement(
   ownerDoc: XmlElement,
   block: MarkdownBlock,
@@ -2120,6 +2340,16 @@ function buildTableElement(
     (rule?.options as any)?.align ||
     ctx.tableConfig?.align ||
     "center";
+
+  // 复用文档中已有表格的样式：规则里给 options.styleAnchor（表内任一锚点）时，
+  // 克隆该表的表属性/列宽/边框与单元格格式。
+  const styleAnchor = (rule?.options as any)?.styleAnchor as string | undefined;
+  if (styleAnchor) {
+    const sampleTable = resolveSampleTable(styleAnchor, anchorRanges);
+    if (sampleTable) {
+      return buildTableFromSample(ownerDoc, sampleTable, rows, colCount, alignments, hasHeader, tableAlign);
+    }
+  }
 
   const tbl = ownerDoc.createElementNS(WORD_NS, "w:tbl");
 
@@ -2364,304 +2594,3 @@ function ensureHyperlinkRel(doc: VirtualWordDocument, ownerDoc: XmlElement, url:
   });
   return id;
 }
-
-function childElementsOf(element: XmlElement): XmlElement[] {
-  const out: XmlElement[] = [];
-  const nodes = element?.childNodes;
-  if (!nodes) return out;
-  for (let i = 0; i < nodes.length; i += 1) {
-    if (nodes[i]?.nodeType === 1) out.push(nodes[i]);
-  }
-  return out;
-}
-
-function createWordElement(reference: XmlElement, name: string): XmlElement {
-  return reference.ownerDocument.createElementNS(WORD_NS, name);
-}
-
-/* ------------------------------ 目录（TOC）支持 ------------------------------ */
-
-function findHeadingBookmarkName(paragraphEl: XmlElement): string | null {
-  const starts = paragraphEl.getElementsByTagName?.("w:bookmarkStart");
-  if (!starts) return null;
-  for (let i = 0; i < starts.length; i += 1) {
-    const el = starts[i];
-    const name = el.getAttribute("w:name") || el.getAttribute("name");
-    if (name && (name.startsWith("_Toc") || name.startsWith("__RefHeading___Toc"))) {
-      return name;
-    }
-  }
-  return null;
-}
-
-/**
- * 启用 Word 的 updateFields 设置。
- * 在 word/settings.xml 中注入 <w:updateFields w:val="true"/>，
- * 使得用户在 Microsoft Word / WPS / LibreOffice 打开文档时自动刷新目录字段与页码。
- */
-export async function enableDocxUpdateFields(doc: VirtualWordDocument): Promise<void> {
-  const anyDoc = doc as unknown as {
-    zip?: {
-      file: (name: string, content?: string) => any;
-    };
-  };
-  if (!anyDoc.zip || typeof anyDoc.zip.file !== "function") return;
-
-  const settingsFile = anyDoc.zip.file("word/settings.xml");
-  if (settingsFile && typeof settingsFile.async === "function") {
-    let text: string = await settingsFile.async("text");
-    if (!text.includes("w:updateFields")) {
-      text = text.replace(/<w:settings([^>]*)>/, '<w:settings$1><w:updateFields w:val="true"/>');
-      anyDoc.zip.file("word/settings.xml", text);
-    }
-  }
-
-  // 同步为 word/styles.xml 注入/补充标准 TOC1 与 TOC2 样式的点导线制表位与字号字体，
-  // 确保用户点击 WPS/Word 的“更新目录”全选重算后，目录样式依然保留，不会变回空白普通文本
-  await ensureDocxTocStyles(doc);
-}
-
-async function ensureDocxTocStyles(doc: VirtualWordDocument): Promise<void> {
-  const anyDoc = doc as unknown as {
-    zip?: {
-      file: (name: string, content?: string) => any;
-    };
-    stylesData?: any;
-  };
-  if (!anyDoc.zip || typeof anyDoc.zip.file !== "function") return;
-
-  const stylesFile = anyDoc.zip.file("word/styles.xml");
-  if (!stylesFile || typeof stylesFile.async !== "function") return;
-
-  let text: string = await stylesFile.async("text");
-
-  const toc1Xml =
-    `<w:style w:type="paragraph" w:styleId="TOC1">` +
-    `<w:name w:val="toc 1"/>` +
-    `<w:basedOn w:val="Normal"/>` +
-    `<w:next w:val="Normal"/>` +
-    `<w:pPr>` +
-    `<w:tabs><w:tab w:val="clear" w:pos="420"/><w:tab w:val="right" w:pos="8306" w:leader="dot"/></w:tabs>` +
-    `<w:spacing w:lineRule="auto" w:line="360"/>` +
-    `</w:pPr>` +
-    `<w:rPr>` +
-    `<w:rFonts w:ascii="SimSun" w:hAnsi="SimSun" w:eastAsia="SimSun" w:cs="SimSun"/>` +
-    `<w:b/><w:bCs/><w:sz w:val="24"/><w:szCs w:val="24"/>` +
-    `</w:rPr>` +
-    `</w:style>`;
-
-  const toc2Xml =
-    `<w:style w:type="paragraph" w:styleId="TOC2">` +
-    `<w:name w:val="toc 2"/>` +
-    `<w:basedOn w:val="Normal"/>` +
-    `<w:next w:val="Normal"/>` +
-    `<w:pPr>` +
-    `<w:tabs><w:tab w:val="clear" w:pos="420"/><w:tab w:val="right" w:pos="8306" w:leader="dot"/></w:tabs>` +
-    `<w:spacing w:lineRule="auto" w:line="360"/>` +
-    `<w:ind w:hanging="0" w:start="420" w:end="0"/>` +
-    `</w:pPr>` +
-    `<w:rPr>` +
-    `<w:rFonts w:ascii="黑体;微软雅黑" w:eastAsia="黑体;微软雅黑" w:hAnsi="黑体;微软雅黑" w:cs="黑体;微软雅黑"/>` +
-    `<w:bCs/><w:sz w:val="24"/><w:szCs w:val="24"/>` +
-    `</w:rPr>` +
-    `</w:style>`;
-
-  if (/<w:style[^>]*w:styleId="TOC1"[^>]*>[\s\S]*?<\/w:style>/.test(text)) {
-    text = text.replace(/<w:style[^>]*w:styleId="TOC1"[^>]*>[\s\S]*?<\/w:style>/, toc1Xml);
-  } else {
-    text = text.replace("</w:styles>", `${toc1Xml}</w:styles>`);
-  }
-
-  if (/<w:style[^>]*w:styleId="TOC2"[^>]*>[\s\S]*?<\/w:style>/.test(text)) {
-    text = text.replace(/<w:style[^>]*w:styleId="TOC2"[^>]*>[\s\S]*?<\/w:style>/, toc2Xml);
-  } else {
-    text = text.replace("</w:styles>", `${toc2Xml}</w:styles>`);
-  }
-
-  anyDoc.zip.file("word/styles.xml", text);
-  anyDoc.stylesData = null;
-}
-
-/**
- * 根据文档渲染过程中记录的标题列表动态生成/更新目录（TOC）。
- * 目录采用标准 OOXML:
- * - 顶层 w:sdtContent
- * - 首段嵌入 TOC 字段声明 (w:fldChar begin -> w:instrText TOC -> w:fldChar separate)
- * - 每一级标题项嵌入 w:hyperlink w:anchor="..." -> run(文字) -> run(w:tab) -> w:fldSimple w:instr="PAGEREF ..."
- * - 末段闭合 TOC 字段 (w:fldChar end)
- */
-export function updateTableOfContents(
-  doc: VirtualWordDocument,
-  info: TemplateInfo,
-  renderedHeadings: Array<{ level: number; text: string; bookmarkName: string }>,
-  ownerDoc: XmlElement,
-): void {
-  const anyDoc = doc as unknown as { partsData?: Array<{ xmlDocument?: any }> };
-  const root = anyDoc.partsData?.[0]?.xmlDocument?.documentElement ?? ownerDoc.documentElement;
-  if (!root) return;
-
-  const maxLevel = info.toc?.maxLevel ?? 2;
-  const filteredHeadings = renderedHeadings.filter((h) => h.level >= 1 && h.level <= maxLevel);
-  if (filteredHeadings.length === 0) return;
-
-  // 寻找已有的 SDT 目录
-  const sdts = Array.from(root.getElementsByTagName("w:sdt") ?? []) as any[];
-  let tocSdt: XmlElement | null = null;
-  for (const sdt of sdts) {
-    const gallery = sdt.getElementsByTagName("w:docPartGallery")?.[0]?.getAttribute("w:val");
-    if (gallery === "Table of Contents") {
-      tocSdt = sdt;
-      break;
-    }
-  }
-
-  if (!tocSdt) return;
-
-  const sdtContent = tocSdt.getElementsByTagName("w:sdtContent")?.[0];
-  if (!sdtContent) return;
-
-  // 从原有的 sdtContent 中学习 TOC1、TOC2 等样式的 pPr 模板与 rPr 模板
-  const oldPs = Array.from(sdtContent.getElementsByTagName("w:p") ?? []) as any[];
-  const samplePPrByLevel = new Map<number, XmlElement>();
-  const sampleRPrByLevel = new Map<number, XmlElement>();
-  const sampleTabRPrByLevel = new Map<number, XmlElement>();
-
-  for (const p of oldPs) {
-    const pStyle = p.getElementsByTagName("w:pStyle")?.[0]?.getAttribute("w:val");
-    if (pStyle) {
-      const m = pStyle.match(/TOC\s*(\d+)/i) || pStyle.match(/(\d+)/);
-      if (m) {
-        const lvl = parseInt(m[1], 10);
-        const pPr = p.getElementsByTagName("w:pPr")?.[0];
-        if (pPr && !samplePPrByLevel.has(lvl)) {
-          samplePPrByLevel.set(lvl, pPr.cloneNode(true));
-        }
-        const runs = Array.from(p.getElementsByTagName("w:r") ?? []) as any[];
-        // 取包含文字内容的 run 作为正文文字 rPr
-        const textRun = runs.find((r) => {
-          const t = r.getElementsByTagName("w:t")?.[0]?.textContent?.trim();
-          return t && !r.getElementsByTagName("w:tab")?.[0] && !r.getElementsByTagName("w:fldChar")?.[0];
-        });
-        const rPr = textRun?.getElementsByTagName("w:rPr")?.[0];
-        if (rPr && !sampleRPrByLevel.has(lvl)) {
-          sampleRPrByLevel.set(lvl, rPr.cloneNode(true));
-        }
-        // 取包含制表符的 run 作为页码制表符 rPr
-        const tabRun = runs.find((r) => r.getElementsByTagName("w:tab")?.[0]);
-        const tabRPr = tabRun?.getElementsByTagName("w:rPr")?.[0];
-        if (tabRPr && !sampleTabRPrByLevel.has(lvl)) {
-          sampleTabRPrByLevel.set(lvl, tabRPr.cloneNode(true));
-        }
-      }
-    }
-  }
-
-  // 清空原有的所有段落缓存
-  while (sdtContent.firstChild) {
-    sdtContent.removeChild(sdtContent.firstChild);
-  }
-
-  const instr = info.toc?.instr || `TOC \\o "1-${maxLevel}" \\h \\u `;
-
-  // 生成新的目录段落
-  for (let i = 0; i < filteredHeadings.length; i += 1) {
-    const heading = filteredHeadings[i];
-    const isFirst = i === 0;
-    const isLast = i === filteredHeadings.length - 1;
-
-    const p = ownerDoc.createElementNS(WORD_NS, "w:p");
-
-    // 1. 段落属性 pPr
-    const samplePPr = samplePPrByLevel.get(heading.level);
-    if (samplePPr) {
-      p.appendChild(samplePPr.cloneNode(true));
-    } else {
-      const pPr = ownerDoc.createElementNS(WORD_NS, "w:pPr");
-      const pStyle = ownerDoc.createElementNS(WORD_NS, "w:pStyle");
-      const configuredStyle = info.toc?.levels?.[String(heading.level)]?.pStyle ?? `TOC${heading.level}`;
-      pStyle.setAttribute("w:val", configuredStyle);
-      pPr.appendChild(pStyle);
-      p.appendChild(pPr);
-    }
-
-    // 2. 首段插入 TOC 字段开始标记
-    if (isFirst) {
-      const rBegin = ownerDoc.createElementNS(WORD_NS, "w:r");
-      const fldCharBegin = ownerDoc.createElementNS(WORD_NS, "w:fldChar");
-      fldCharBegin.setAttribute("w:fldCharType", "begin");
-      rBegin.appendChild(fldCharBegin);
-      p.appendChild(rBegin);
-
-      const rInstr = ownerDoc.createElementNS(WORD_NS, "w:r");
-      const sampleRPr = sampleRPrByLevel.get(1);
-      if (sampleRPr) rInstr.appendChild(sampleRPr.cloneNode(true));
-      const instrText = ownerDoc.createElementNS(WORD_NS, "w:instrText");
-      instrText.setAttribute("xml:space", "preserve");
-      instrText.textContent = instr;
-      rInstr.appendChild(instrText);
-      p.appendChild(rInstr);
-
-      const rSep = ownerDoc.createElementNS(WORD_NS, "w:r");
-      if (sampleRPr) rSep.appendChild(sampleRPr.cloneNode(true));
-      const fldCharSep = ownerDoc.createElementNS(WORD_NS, "w:fldChar");
-      fldCharSep.setAttribute("w:fldCharType", "separate");
-      rSep.appendChild(fldCharSep);
-      p.appendChild(rSep);
-    }
-
-    // 3. 超链接包裹条目：文字 + 制表符 + 页码 (紧凑标准 OOXML 结构，完全兼容 WPS/Word)
-    const hyperlink = ownerDoc.createElementNS(WORD_NS, "w:hyperlink");
-    hyperlink.setAttribute("w:anchor", heading.bookmarkName);
-    hyperlink.setAttribute("w:history", "1");
-
-    // 标题文字 run
-    const rTitle = ownerDoc.createElementNS(WORD_NS, "w:r");
-    const learnedRPr = sampleRPrByLevel.get(heading.level);
-    if (learnedRPr) {
-      rTitle.appendChild(learnedRPr.cloneNode(true));
-    } else {
-      const rTitlePr = ownerDoc.createElementNS(WORD_NS, "w:rPr");
-      const rTitleStyle = ownerDoc.createElementNS(WORD_NS, "w:rStyle");
-      rTitleStyle.setAttribute("w:val", "IndexLink");
-      rTitlePr.appendChild(rTitleStyle);
-      rTitle.appendChild(rTitlePr);
-    }
-    const tTitle = ownerDoc.createElementNS(WORD_NS, "w:t");
-    tTitle.textContent = heading.text;
-    rTitle.appendChild(tTitle);
-    hyperlink.appendChild(rTitle);
-
-    // 制表符与初始页码 run（带点导线与页码，合在同一个 run 中以兼容 WPS 渲染）
-    const rPage = ownerDoc.createElementNS(WORD_NS, "w:r");
-    const learnedTabRPr = sampleTabRPrByLevel.get(heading.level) ?? learnedRPr;
-    if (learnedTabRPr) {
-      rPage.appendChild(learnedTabRPr.cloneNode(true));
-    } else {
-      const rPagePr = ownerDoc.createElementNS(WORD_NS, "w:rPr");
-      const rPageStyle = ownerDoc.createElementNS(WORD_NS, "w:rStyle");
-      rPageStyle.setAttribute("w:val", "IndexLink");
-      rPagePr.appendChild(rPageStyle);
-      rPage.appendChild(rPagePr);
-    }
-    const tabEl = ownerDoc.createElementNS(WORD_NS, "w:tab");
-    rPage.appendChild(tabEl);
-    const tPage = ownerDoc.createElementNS(WORD_NS, "w:t");
-    tPage.textContent = "1"; // 初始占位页码
-    rPage.appendChild(tPage);
-    hyperlink.appendChild(rPage);
-
-    p.appendChild(hyperlink);
-
-    // 4. 末段闭合 TOC 字段
-    if (isLast) {
-      const rEnd = ownerDoc.createElementNS(WORD_NS, "w:r");
-      const fldCharEnd = ownerDoc.createElementNS(WORD_NS, "w:fldChar");
-      fldCharEnd.setAttribute("w:fldCharType", "end");
-      rEnd.appendChild(fldCharEnd);
-      p.appendChild(rEnd);
-    }
-
-    sdtContent.appendChild(p);
-  }
-}
-

@@ -7,7 +7,7 @@
 
 export { analyzeDocument } from "./src/analyze.ts";
 export type { AnalyzeOptions, AnalyzableDocument } from "./src/analyze.ts";
-export { analyzeDocx, openDocx } from "./src/docx.ts";
+export { analyzeDocx, openDocx, isDocFormat, DOC_FORMAT_HINT } from "./src/docx.ts";
 export type { AnalyzedDocx, VirtualWordDocument } from "./src/docx.ts";
 
 export {
@@ -63,6 +63,7 @@ export {
   inferTemplate,
   isTemplateInfo,
   listProfiles,
+  looksLikeCaption,
   pruneTemplateRefs,
   remapDanglingAnchors,
   resolveProfile,
@@ -75,6 +76,7 @@ export type {
   BuildTemplateOptions,
   MarkdownNodeType,
   StyleRef,
+  StyleRole,
   TemplateBundle,
   TemplateDefaults,
   TemplateInfo,
@@ -87,7 +89,10 @@ export {
   buildTemplateAiMessages,
   buildTemplateContext,
   buildTemplateWithAi,
+  collectSkeletonRefs,
+  ensureJsonResponse,
   mergeTemplateAiResponse,
+  validateSkeletonRefs,
   DEFAULT_TEMPLATE_SYSTEM_PROMPT,
   GENERIC_TEMPLATE_SYSTEM_PROMPT,
   LAB_REPORT_TEMPLATE_SYSTEM_PROMPT,
@@ -124,7 +129,7 @@ export type {
 export { EDITOR_API_DOC, runEditSandbox } from "./src/sandbox.ts";
 export type { SandboxRunOptions, SandboxRunResult } from "./src/sandbox.ts";
 
-export { chatCompletion, extractCode, extractJson } from "./src/ai.ts";
+export { chatCompletion, clampMaxTokens, extractCode, extractJson, isRetriableError, resolveChatConfig } from "./src/ai.ts";
 export type { ChatConfig, ChatFn, ChatMessage } from "./src/ai.ts";
 
 export { walkParagraphs } from "./src/walk.ts";
@@ -202,5 +207,29 @@ export {
   stripCommentElements,
 } from "./src/comments.ts";
 export type { DocumentComment } from "./src/comments.ts";
+
+export { enableDocxUpdateFields, findHeadingBookmarkName, updateTableOfContents } from "./src/toc.ts";
+
+export {
+  collectTables,
+  extractTableStyle,
+  findAncestorTable,
+  summarizeTableStyle,
+} from "./src/table-style.ts";
+export type { TableBorders, TableCellMargin, TableStyleInfo } from "./src/table-style.ts";
+
+export {
+  A_NS,
+  childElementsOf,
+  createWordElement,
+  directChildrenNamed,
+  elementList,
+  PIC_NS,
+  R_NS,
+  W14_NS,
+  WORD_NS,
+  WP_NS,
+} from "./src/ooxml.ts";
+export type { XmlElement } from "./src/ooxml.ts";
 
 

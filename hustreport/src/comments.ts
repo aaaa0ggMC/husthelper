@@ -12,9 +12,12 @@ export interface DocumentComment {
 }
 
 /**
- * 从 Word 文档中提取批注（Comments），并尝试关联到具体的段落文本与锚点 (hrseg)。
+ * 从 Word 文档中提取批注（Comments），并尝试关联到具体的段落文本与锚点。
+ *
+ * @param prefix 只把该前缀的隐藏书签（默认 `hrseg`）视为本系统的锚点，避免误关联文档里
+ *               其它以 `hr` 开头的书签。
  */
-export function extractDocumentComments(doc: VirtualWordDocument): DocumentComment[] {
+export function extractDocumentComments(doc: VirtualWordDocument, prefix: string = "hrseg"): DocumentComment[] {
   const anyDoc = doc as unknown as { partsData?: Array<{ path: string; xmlDocument: XmlElement }> };
   if (!Array.isArray(anyDoc.partsData)) return [];
 
@@ -51,7 +54,7 @@ export function extractDocumentComments(doc: VirtualWordDocument): DocumentComme
         let anchorRef: string | undefined;
         for (let k = 0; k < bms.length; k += 1) {
           const name = bms[k].getAttribute("w:name");
-          if (name && (name.startsWith("hrseg") || name.startsWith("hr"))) {
+          if (name && prefix && name.startsWith(prefix)) {
             anchorRef = name;
             break;
           }

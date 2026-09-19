@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildTemplateAiMessages, mergeTemplateAiResponse } from "../src/template-ai.ts";
+import { buildTemplateAiMessages, ensureJsonResponse, mergeTemplateAiResponse } from "../src/template-ai.ts";
+import type { ChatMessage } from "../src/ai.ts";
 import { TEMPLATE_KIND, TEMPLATE_VERSION, type TemplateInfo } from "../src/template.ts";
 
 function fakeInfo(): TemplateInfo {
@@ -131,6 +132,33 @@ test("mergeTemplateAiResponse: 正确验证并接收 AI 声明的 edits 操作",
   assert.equal((firstEdit as any)?.ref, "hrseg0003");
   assert.ok(merged.warnings.some((w) => w.includes("nonexistent_anchor")));
   assert.ok(merged.warnings.some((w) => w.includes("非法")));
+});
+
+test("ensureJsonResponse：首轮非 JSON 时自动发起修复回合", async () => {
+  const calls: ChatMessage[][] = [];
+  const chat = async (messages: ChatMessage[]) => {
+    calls.push(messages);
+    return calls.length === 1 ? "抱歉，我不明白你的意思。" : '{"skeleton":"ok"}';
+  };
+
+  const raw = await ensureJsonResponse(chat, [{ role: "user", content: "生成模板" }]);
+  assert.equal(calls.length, 2);
+  assert.equal(raw, '{"skeleton":"ok"}');
+  // 第二回合的末尾应是一条要求只输出 JSON 的修复指令
+  const lastMessage = calls[1][calls[1].length - 1];
+  assert.equal(lastMessage.role, "user");
+  assert.match(lastMessage.content, /JSON/);
+});
+
+test("ensureJsonResponse：首轮即合法 JSON 时不重试", async () => {
+  let count = 0;
+  const chat = async () => {
+    count += 1;
+    return '```json\n{"a":1}\n```';
+  };
+  const raw = await ensureJsonResponse(chat, [{ role: "user", content: "x" }]);
+  assert.equal(count, 1);
+  assert.match(raw, /"a":1/);
 });
 
 

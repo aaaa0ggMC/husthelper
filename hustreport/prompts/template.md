@@ -49,8 +49,10 @@
   否则，当用户在 Word / WPS 中点击“更新目录”或追加新标题时，Word/WPS 的目录域会按样式大纲级别（`Heading1`/`Heading2`）重新扫描，如果一级标题绑定了 `Heading2` 样式，会导致其缩进错乱变成二级目录项！
 - **图片规则（type: "image"）**：
   可配置 `options.captionRef`（指定图注/图标题样式绑定的锚点）或 `options.captionStyle`，以及 `options.align: "center"`，`options.size: "max"`。也可单独增加 `{"match": {"type": "caption"}, "style": {"anchor": "..."}}` 规则。
+  - **图注/表注样式是可选配置**：样式表中 `role=caption` 的条目是系统识别出的图注/表注样式，优先用它绑定 `captionRef`；如果文档没有图注样式，**可以省略**，渲染器会自动使用默认图注格式（居中、黑体五号）。
 - **表格规则（type: "table"）**：
   可配置 `options.theme: "academic"`（学术三线表，默认）| `"grid"`（细网格）| `"striped"`（斑马纹）| `"clean"`（极简），以及 `options.header: true`（首行表头）或 `false`（无表头）。
+  - **复用文档已有表格样式**：若用户消息里给出了「表格样式」清单（tbl1、tbl2…），并且你希望渲染的新表格沿用其中某张表的样式（命名表样式 / 边框 / 列宽 / 单元格字体等），请写 `"options": { "styleAnchor": "<该表内任一锚点 ref>" }`；引擎会克隆该表的表属性与单元格格式。
 
 ## feedback：缺失样式诊断与用户指导（极其重要！）
 
@@ -101,6 +103,7 @@
 { "op": "set",    "ref": "hrseg0012", "text": "" }          // 清空
 { "op": "delete", "target": "comment", "id": "0" }           // 显式删除某条批注（气泡与内容）
 { "op": "delete", "target": "comments" }                     // 显式删除全部批注
+{ "op": "delete", "target": "table", "ref": "hrseg0012" }    // 删除整张表格（ref 可为表内任一锚点）
 ```
 
 如果原模板带有批注（Comment），且这些批注是给模板使用者的指导性说明（如排版格式说明、要求等），你可以在 `edits` 中显式指定删除，或者在根字段输出 `"stripComments": true`。

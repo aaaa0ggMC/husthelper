@@ -1,9 +1,3 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { existsSync } from "node:fs";
 import { loadDocx } from "docx-edit";
 import type { VirtualWordDocument } from "docx-edit";
 import { analyzeDocument, type AnalyzeOptions, type AnalyzableDocument } from "./analyze.ts";
@@ -11,9 +5,14 @@ import type { DocumentAnalysis } from "./types.ts";
 
 export type { VirtualWordDocument };
 
-const execFileAsync = promisify(execFile);
 const OLE2_HEADER = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
 
+/**
+ * 旧版 `.doc` 是 OLE2 复合二进制格式，纯 JS 无法无损解析（只有「提取纯文本」这类有损方案，
+ * 与 hustreport「保格式」的前提冲突），因此本系统不处理 `.doc`。
+ *
+ * 该函数仅用于检测并给出可操作的错误提示。
+ */
 export function isDocFormat(input: string | Buffer): boolean {
   if (typeof input === "string") {
     return input.toLowerCase().endsWith(".doc") && !input.toLowerCase().endsWith(".docx");
@@ -24,48 +23,15 @@ export function isDocFormat(input: string | Buffer): boolean {
   return false;
 }
 
-export async function convertDocToDocx(input: string | Buffer): Promise<Buffer> {
-  const tempDir = await mkdtemp(path.join(tmpdir(), "hustreport-doc-"));
-  try {
-    let sourcePath = "";
-    if (typeof input === "string" && existsSync(input)) {
-      sourcePath = path.resolve(input);
-    } else {
-      sourcePath = path.join(tempDir, "input.doc");
-      await writeFile(sourcePath, Buffer.isBuffer(input) ? input : await readFile(input));
-    }
+/** 遇到旧版 `.doc` 时的统一提示。 */
+export const DOC_FORMAT_HINT =
+  "hustreport 只处理 .docx。检测到旧版 .doc 格式（OLE2 二进制），无法无损解析；" +
+  "请在 WPS / Word 中打开后「另存为」或「导出」为 .docx 再重试。";
 
-    try {
-      await execFileAsync("soffice", [
-        "--headless",
-        "--convert-to",
-        "docx",
-        "--outdir",
-        tempDir,
-        sourcePath,
-      ]);
-    } catch (err: any) {
-      throw new Error(
-        `检测到旧版 Word .doc 格式，自动转换为 .docx 失败（需安装 LibreOffice / soffice）：${err.message || String(err)}`,
-      );
-    }
-
-    const baseName = path.basename(sourcePath, path.extname(sourcePath));
-    const targetDocx = path.join(tempDir, `${baseName}.docx`);
-    if (!existsSync(targetDocx)) {
-      throw new Error(`LibreOffice 转换未产出预期文件: ${targetDocx}`);
-    }
-    return await readFile(targetDocx);
-  } finally {
-    await rm(tempDir, { recursive: true, force: true }).catch(() => {});
-  }
-}
-
-/** 读取 docx 或自动转换旧版 .doc（路径或 Buffer）。 */
+/** 读取 `.docx`（路径或字节）。传入旧版 `.doc` 会抛出可操作的错误。 */
 export async function openDocx(input: string | Buffer): Promise<VirtualWordDocument> {
   if (isDocFormat(input)) {
-    const docxBuffer = await convertDocToDocx(input);
-    return loadDocx(docxBuffer);
+    throw new Error(DOC_FORMAT_HINT);
   }
   return loadDocx(input);
 }

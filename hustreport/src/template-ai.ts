@@ -21,6 +21,8 @@ import { parseDocument } from "./render.ts";
 import { readAnchors } from "./stamp.ts";
 import { writeRunElements } from "./edits.ts";
 import { stripCommentElements, stripCommentElementsById, stripDocumentComments } from "./comments.ts";
+import { childElementsOf, WORD_NS } from "./ooxml.ts";
+import { summarizeTableStyle } from "./table-style.ts";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type XmlElement = any;
@@ -39,7 +41,9 @@ export type TemplateEdit =
   | { op: "set"; ref: string; text: string; mode?: "replace" | "append" | "prepend" }
   | { op: "delete"; ref: string; as?: "run" | "paragraph" }
   | { op: "delete"; target: "comment"; id: string }
-  | { op: "delete"; target: "comments" };
+  | { op: "delete"; target: "comments" }
+  /** 删除整张表格：ref 可以是表内任意锚点。 */
+  | { op: "delete"; target: "table"; ref: string };
 
 export interface TemplateAiResponse {
   /** 只覆盖锚点的 kind/label/tags 等元信息（style 仍由锚点自身决定）。 */
@@ -100,6 +104,23 @@ export interface BuildTemplateAiResult extends MergeResult {
   normalized: { applied: number; deleted: number };
 }
 
+/** 请求模型输出 JSON；若首轮无法解析，则追加一个「修复回合」再试一次。 */
+export async function ensureJsonResponse(chat: ChatFn, messages: ChatMessage[]): Promise<string> {
+  const raw = await chat(messages);
+  if (extractJson(raw) !== null) return raw;
+  const repairMessages: ChatMessage[] = [
+    ...messages,
+    { role: "assistant", content: raw.slice(0, 6000) },
+    {
+      role: "user",
+      content:
+        "你上一次的输出不是合法 JSON，无法被程序解析。请重新输出：只输出一个 JSON 对象本身，" +
+        "不要任何解释文字、不要 Markdown 代码围栏，字段与要求与上一条消息完全一致。",
+    },
+  ];
+  return chat(repairMessages);
+}
+
 /** 端到端：读 docx → AI → 落盘三件套。 */
 export async function buildTemplateWithAi(options: BuildTemplateAiOptions): Promise<BuildTemplateAiResult> {
   const doc = await openDocx(options.input);
@@ -116,7 +137,7 @@ export async function buildTemplateWithAi(options: BuildTemplateAiOptions): Prom
     maxAnchors: options.maxAnchors,
   });
   options.onMessages?.(messages);
-  const raw = await options.chat(messages);
+  const raw = await ensureJsonResponse(options.chat, messages);
   const merged = mergeTemplateAiResponse(raw, info);
 
   // 应用规范化建议：删掉引导/占位内容，得到干净模板；再按剩余书签裁剪锚点表。
@@ -125,11 +146,37 @@ export async function buildTemplateWithAi(options: BuildTemplateAiOptions): Prom
   );
   const normalized = applyNormalization(doc, merged.edits, merged.warnings);
   const remaining = new Set(readAnchors(doc, info.anchorPrefix).map((range) => range.ref));
+  const deletedRefs: string[] = [];
   for (const ref of Object.keys(merged.info.anchors)) {
-    if (!remaining.has(ref)) delete merged.info.anchors[ref];
+    if (!remaining.has(ref)) {
+      delete merged.info.anchors[ref];
+      deletedRefs.push(ref);
+    }
+  }
+  // 无损性兜底：AI 的删除决策可能把 skeleton 里还要用的槽位/章节锚点删掉，
+  // 渲染时会静默跳过。这里显式告警，提示人工复核。
+  if (deletedRefs.length > 0) {
+    const deleted = new Set(deletedRefs);
+    for (const ref of collectSkeletonRefs(merged.skeleton)) {
+      if (deleted.has(ref)) {
+        merged.warnings.push(`skeleton 引用的锚点 ${ref} 在规范化删除后已不存在，渲染会被跳过，请复核 AI 的 edits`);
+      }
+    }
   }
   merged.warnings.push(...remapDanglingAnchors(merged.info, styleIdOf));
   merged.warnings.push(...pruneTemplateRefs(merged.info));
+  // 同步清理已被删空的表格样式条目，避免 template.json 里残留失效的 tblN 引用。
+  if (merged.info.tables) {
+    const usedTableRefs = new Set(
+      Object.values(merged.info.anchors)
+        .map((anchor) => anchor.tableRef)
+        .filter((ref): ref is string => Boolean(ref)),
+    );
+    for (const id of Object.keys(merged.info.tables)) {
+      if (!usedTableRefs.has(id)) delete merged.info.tables[id];
+    }
+    if (Object.keys(merged.info.tables).length === 0) delete merged.info.tables;
+  }
   // 兜底：规范化后 AI 的规则可能大多失效，用剩余文档重新推断补齐基础规则。
   augmentProfileFromDoc(doc, merged.info);
 
@@ -156,6 +203,8 @@ function augmentProfileFromDoc(doc: import("docx-edit").VirtualWordDocument, inf
     kind: anchor.kind,
     label: anchor.label ?? "",
     styleId: anchor.styleId ?? -1,
+    inTable: anchor.inTable,
+    tableRef: anchor.tableRef,
   }));
   const inferred = inferTemplate(analysis, stamped);
   const name = info.defaultProfile;
@@ -177,6 +226,27 @@ export function applyNormalization(
   const ranges = new Map(readAnchors(doc).map((range) => [range.ref, range]));
   let applied = 0;
   let deleted = 0;
+  // 被编辑触及的表格：若编辑后整表已无任何文本，说明 AI 想清掉它，连同空框架一并移除。
+  const touchedTables = new Set<XmlElement>();
+
+  const findTable = (element: XmlElement | null | undefined): XmlElement | null => {
+    let node: XmlElement = element?.parentNode ?? null;
+    while (node) {
+      if (node.nodeName === "w:tbl") return node;
+      if (node.nodeName === "w:body" || node.nodeName === "#document") return null;
+      node = node.parentNode;
+    }
+    return null;
+  };
+  const tableHasText = (table: XmlElement): boolean => (table.textContent ?? "").replace(/\s+/g, "").length > 0;
+  /** 删除单元格内段落时，若该单元格已无段落，补一个空段落，保证 OOXML 结构合法。 */
+  const ensureCellParagraph = (cell: XmlElement | null): void => {
+    if (!cell || cell.nodeName !== "w:tc") return;
+    const hasParagraph = childElementsOf(cell).some((child) => child.nodeName === "w:p");
+    if (!hasParagraph) {
+      cell.appendChild(cell.ownerDocument.createElementNS(WORD_NS, "w:p"));
+    }
+  };
 
   for (const edit of edits) {
     if (edit.op === "delete" && "target" in edit) {
@@ -192,6 +262,15 @@ export function applyNormalization(
       } else if (edit.target === "comments") {
         const count = stripCommentElements(doc);
         if (count > 0) deleted += count;
+      } else if (edit.target === "table") {
+        const range = ranges.get(edit.ref);
+        const table = range ? findTable(range.paragraphEl) : null;
+        if (table?.parentNode) {
+          table.parentNode.removeChild(table);
+          deleted += 1;
+        } else {
+          warnings.push(`规范化：锚点 ${edit.ref} 不在表格内，无法删除整表，已忽略`);
+        }
       }
       continue;
     }
@@ -209,9 +288,13 @@ export function applyNormalization(
     // delete
     if (edit.as === "paragraph") {
       const paragraphEl = range.paragraphEl as XmlElement;
-      if (paragraphEl?.parentNode) {
-        paragraphEl.parentNode.removeChild(paragraphEl);
+      const table = findTable(paragraphEl);
+      if (table) touchedTables.add(table);
+      const parent = paragraphEl?.parentNode as XmlElement | null;
+      if (parent) {
+        parent.removeChild(paragraphEl);
         deleted += 1;
+        ensureCellParagraph(parent);
       }
       continue;
     }
@@ -223,6 +306,15 @@ export function applyNormalization(
       }
     }
     if (removed > 0) deleted += 1;
+  }
+
+  // 兜底：被删空的示范 / 占位表格，连同空框架一并移除，避免模板残留无内容空表。
+  for (const table of touchedTables) {
+    if (table.parentNode && !tableHasText(table)) {
+      table.parentNode.removeChild(table);
+      deleted += 1;
+      warnings.push("规范化：表格内容已全部删除，已连同空表格框架一并移除");
+    }
   }
 
   return { applied, deleted };
@@ -296,7 +388,8 @@ export function buildTemplateContext(info: TemplateInfo, options: TemplatePrompt
         const detailStr = details.length > 0 ? ` [${details.join(", ")}]` : "";
         const ex = s.examples.length > 0 ? ` 样例=${JSON.stringify(s.examples.join("; "))}` : "";
         const refStr = s.anchorRef ? ` (样本锚点: ${s.anchorRef})` : "";
-        return `- [styleId=${s.styleId}]${refStr}${detailStr}: ${s.summary}${ex}`;
+        const roleStr = s.role ? ` role=${s.role}` : "";
+        return `- [styleId=${s.styleId}]${refStr}${roleStr}${detailStr}: ${s.summary}${ex}`;
       })
       .join("\n");
   } else {
@@ -330,6 +423,15 @@ export function buildTemplateContext(info: TemplateInfo, options: TemplatePrompt
       `可在 JSON 返回中通过 "toc": { "enabled": true, "maxLevel": 2 } 声明或调整目录设置。`;
   }
 
+  let tablesSection = "";
+  if (info.tables && Object.keys(info.tables).length > 0) {
+    const lines = Object.entries(info.tables).map(([id, style]) => `- ${id}: ${summarizeTableStyle(style)}`);
+    tablesSection =
+      `文档中已存在的表格样式（可直接识别并在渲染时复用）：\n${lines.join("\n")}\n` +
+      `若希望渲染的新表格沿用它，可在对应 table 规则里写 "options": { "styleAnchor": "<该表内任一锚点 ref>" }，` +
+      `引擎会克隆该表的表属性/列宽/边框与单元格格式；也可以只用 "options": { "theme": "academic" } 使用内置主题。`;
+  }
+
   let anchors = Object.entries(info.anchors).map(([ref, anchor]) => {
     let label = anchor.label ?? "";
     const pText = anchor.paragraphText;
@@ -341,11 +443,16 @@ export function buildTemplateContext(info: TemplateInfo, options: TemplatePrompt
       kind: anchor.kind,
       styleId: anchor.styleId,
       label,
+      inTable: Boolean(anchor.inTable),
+      tableRef: anchor.tableRef,
     };
   });
   if (options.maxAnchors && anchors.length > options.maxAnchors) anchors = anchors.slice(0, options.maxAnchors);
   const anchorTable = anchors
-    .map((anchor) => `${anchor.ref}\tstyle=${anchor.styleId}\t${anchor.kind}\t${JSON.stringify(anchor.label)}`)
+    .map((anchor) => {
+      const tableTag = anchor.inTable ? `\t[表格内${anchor.tableRef ? ` ${anchor.tableRef}` : ""}]` : "";
+      return `${anchor.ref}\tstyle=${anchor.styleId}\t${anchor.kind}${tableTag}\t${JSON.stringify(anchor.label)}`;
+    })
     .join("\n");
 
   const schemaHint = `示例（注意：
@@ -353,6 +460,7 @@ export function buildTemplateContext(info: TemplateInfo, options: TemplatePrompt
    - 封面：原地填空 slot（统一加 padding=cover 保证等宽对齐）；
    - 正文各章节：insert 插入点（如 ## 1.1 程序改错与跟踪调试 {ref:hrseg0070}），学生在章节标题下方撰写正文、插入代码块与图表；
 2. 彻底清理引导内容与批注：面向写作者的作答指引、解题要求、说明提示（如『正文：宋体小4号，1.5倍行距』）、示范占位符（××××、......）必须在 edits 中以 op: "delete", as: "paragraph" 彻底删除，绝不留在 template.docx 中或当成 slot；
+   若这些示范/占位内容位于**表格**内（锚点行标注了 [表格内]），删光单元格后残留的空表格会很难看：请对整张表输出 {"op":"delete","target":"table","ref":"<表内任一锚点>"} 直接删除整表；
 3. 区分批注/指导文字与正文样式：原文档中红色文字（如 #FF0000）或文字本身是排版说明的，属于提示文字而非正文样式，绝不能把红色的提示段落作为正文 body 样式！正文必须是黑色、小四号、1.5倍行距、首行缩进；
 4. 样式组装与反馈：若文档缺少规范样式，可以输出 inline: { paragraph: {...}, run: {...} } 自行组装，或者在 feedback.missingStyles 中指导用户；
 5. 支持图片与表格规则配置）：
@@ -380,7 +488,8 @@ export function buildTemplateContext(info: TemplateInfo, options: TemplatePrompt
   },
   "edits": [
     {"op":"delete","ref":"hrseg0046","as":"paragraph"},
-    {"op":"delete","ref":"hrseg0048","as":"paragraph"}
+    {"op":"delete","ref":"hrseg0048","as":"paragraph"},
+    {"op":"delete","target":"table","ref":"表格内任一锚点"}
   ],
   "skeleton": "---\\nprofile: default\\n---\\n\\n[计算机科学与技术学院](ref:hrseg0017 | padding=cover)\\n[网络空间安全2401班](ref:hrseg0019 | padding=cover)\\n[U202412345](ref:hrseg0021 | padding=cover)\\n[张三](ref:hrseg0023 | padding=cover)\\n[李老师](ref:hrseg0025 | padding=cover)\\n\\n## 1.1 程序改错与跟踪调试 {ref:hrseg0070}\\n\\n(在此记录改错与调试过程与结果)\\n\\n## 1.4 小结 {ref:hrseg0099}\\n\\n(在此填写心得体会)\\n"
 }`;
@@ -395,6 +504,7 @@ export function buildTemplateContext(info: TemplateInfo, options: TemplatePrompt
     options.task ? `用户说明：${options.task}` : "",
     commentsSection,
     tocSection,
+    tablesSection,
     `已检测到的文档样式列表（styleId 仅是编号，样式来源必须用锚点引用）：\n${styleTable}`,
     `锚点表（ref / 样式 / 类型 / 示例文本）：\n${anchorTable}`,
     standardSchemaSection,
@@ -419,6 +529,26 @@ export function buildTemplateAiMessages(info: TemplateInfo, options: string | Te
         : DEFAULT_TEMPLATE_SYSTEM_PROMPT;
   const user = buildTemplateContext(info, opts);
   return systemPrompt ? [{ role: "system", content: systemPrompt }, { role: "user", content: user }] : [{ role: "user", content: user }];
+}
+
+/** 收集 fill.md / skeleton.md 中引用到的所有锚点 ref（去重，保序）。 */
+export function collectSkeletonRefs(skeleton: string): string[] {
+  const parsedDoc = parseDocument(skeleton);
+  return [
+    ...new Set<string>([
+      ...parsedDoc.fills.map((fill) => fill.ref),
+      ...parsedDoc.blocks.map((block) => block.ref).filter((ref): ref is string => Boolean(ref)),
+    ]),
+  ];
+}
+
+/** 校验 skeleton 引用的锚点是否都存在于模板里，返回告警列表。 */
+export function validateSkeletonRefs(skeleton: string, info: TemplateInfo): string[] {
+  const warnings: string[] = [];
+  for (const ref of collectSkeletonRefs(skeleton)) {
+    if (!info.anchors[ref]) warnings.push(`skeleton 引用了不存在的锚点 ${ref}`);
+  }
+  return warnings;
 }
 
 /** 解析 AI 返回的 JSON/文本，校验后合并进 TemplateInfo。 */
@@ -483,14 +613,7 @@ export function mergeTemplateAiResponse(text: string, info: TemplateInfo): Merge
 
   // skeleton 里的 ref 校验
   if (skeleton) {
-    const parsedDoc = parseDocument(skeleton);
-    const used = new Set<string>([
-      ...parsedDoc.fills.map((fill) => fill.ref),
-      ...parsedDoc.blocks.map((block) => block.ref).filter((ref): ref is string => Boolean(ref)),
-    ]);
-    for (const ref of used) {
-      if (!next.anchors[ref]) warnings.push(`skeleton 引用了不存在的锚点 ${ref}`);
-    }
+    warnings.push(...validateSkeletonRefs(skeleton, next));
   } else {
     warnings.push("AI 未给出 skeleton，已产出空填字稿");
   }

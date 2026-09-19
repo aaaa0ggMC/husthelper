@@ -5,6 +5,7 @@ import { stampAnchors, type StampOptions, type StampedAnchor } from "./stamp.ts"
 import type { DocumentAnalysis, Segment, StyleObject } from "./types.ts";
 import { extractDocumentComments, stripDocumentComments, type DocumentComment } from "./comments.ts";
 import { describeFontSize, summarizeStylePair } from "./util.ts";
+import { collectTables, type TableStyleInfo } from "./table-style.ts";
 
 /**
  * 模板 DSL（`hustreport/template`）。
@@ -32,6 +33,9 @@ export type StyleRef =
 
 export type AnchorKind = "slot" | "insert" | "section" | "table" | "image";
 
+/** 样式角色（启发式猜测，供 AI 参考；缺失时 AI 可自行省略或给默认值）。 */
+export type StyleRole = "heading" | "caption" | "code" | "body";
+
 export interface AnchorInfo {
   kind: AnchorKind;
   /** 便于人/AI 理解的标签。 */
@@ -46,6 +50,10 @@ export interface AnchorInfo {
   paragraphText?: string;
   part?: string;
   paragraph?: number;
+  /** 该锚点是否位于表格单元格内。 */
+  inTable?: boolean;
+  /** 所属表格的稳定 id（tbl1、tbl2…）。 */
+  tableRef?: string;
   /** 前向兼容：未知能力放这里，渲染器忽略但保留。 */
   extensions?: Record<string, unknown>;
 }
@@ -59,6 +67,7 @@ export type MarkdownNodeType =
   | "list"
   | "quote"
   | "image"
+  | "caption"
   | "link"
   | "thematicBreak"
   | "*";
@@ -131,6 +140,8 @@ export interface TemplateInfo {
   stripComments?: boolean;
   /** 文档已检测到的样式 Schema 表。 */
   styleSchema?: StyleSchemaEntry[];
+  /** 文档中每张表格的样式摘要（key 为 tbl1、tbl2…）。 */
+  tables?: Record<string, TableStyleInfo>;
   /** AI 或系统对模板的反馈（如缺少的样式指导）。 */
   feedback?: TemplateFeedback;
   /** 目录（TOC）配置。 */
@@ -169,6 +180,8 @@ export interface StyleSchemaEntry {
   summary: string;
   anchorRef?: string;
   examples: string[];
+  /** 启发式角色（供 AI 快速定位正文/标题/代码/图注样式）。 */
+  role?: StyleRole;
   paragraphDirect?: StyleObject;
   runDirect?: StyleObject;
   ooxmlStyleId?: string;
@@ -191,6 +204,10 @@ export interface StampedAnchorLike {
   paragraphText?: string;
   part?: string;
   paragraph?: number;
+  /** 该锚点是否位于表格单元格内。 */
+  inTable?: boolean;
+  /** 所属表格的稳定 id（tbl1、tbl2…）。 */
+  tableRef?: string;
 }
 
 export interface BuildTemplateOptions extends StampOptions {
@@ -232,8 +249,14 @@ export function buildTemplate(doc: VirtualWordDocument, options: BuildTemplateOp
     profiles[name] = normalizeProfile(partial);
   }
 
-  const comments = extractDocumentComments(doc);
+  const comments = extractDocumentComments(doc, options.prefix ?? "hrseg");
   const toc = detectDocumentToc(doc);
+  const tables: Record<string, TableStyleInfo> = {};
+  for (const table of collectTables(doc)) tables[table.id] = table.style;
+  // 依据 segment 文本（而非样式样例）判定哪些样式用于图注/表注，避免共用样式时漏判。
+  const captionStyleIds = new Set(
+    analysis.segments.filter((segment) => looksLikeCaption(segment.text)).map((segment) => segment.styleId),
+  );
   const styleSchema: StyleSchemaEntry[] = analysis.styles.map((style) => {
     const summary = summarizeStylePair(style.paragraph, style.run);
     const anchor = anchors.find((a) => a.styleId === style.id);
@@ -254,9 +277,20 @@ export function buildTemplate(doc: VirtualWordDocument, options: BuildTemplateOp
     const lineSpacing = spacing?.line ? String(spacing.line) : undefined;
     const indent = style.paragraph.effective.indent ? JSON.stringify(style.paragraph.effective.indent) : undefined;
 
+    const role: StyleRole | undefined = style.paragraph.headingLevel
+      ? "heading"
+      : looksLikeCode(style.run.effective) || looksLikeCode(style.run.direct)
+        ? "code"
+        : captionStyleIds.has(style.id) ||
+            style.examples.some(looksLikeCaption) ||
+            /caption|题注|图注|表注|图题|表题|图标题|表标题/i.test(`${ooxml ?? ""} ${summary}`)
+          ? "caption"
+          : undefined;
+
     return {
       styleId: style.id,
       summary,
+      role,
       anchorRef: anchor?.ref,
       examples: style.examples.slice(0, 2),
       paragraphDirect: style.paragraph.direct,
@@ -288,6 +322,7 @@ export function buildTemplate(doc: VirtualWordDocument, options: BuildTemplateOp
     profiles,
     comments: comments.length > 0 ? comments : undefined,
     styleSchema: styleSchema.length > 0 ? styleSchema : undefined,
+    tables: Object.keys(tables).length > 0 ? tables : undefined,
     toc,
   };
 
@@ -587,6 +622,27 @@ export function inferTemplate(
   const codeRef = codeStyle ? refFor(codeStyle.id) : null;
   if (codeRef) styles.code = codeRef;
 
+  // 图注 / 表注样式（可选；文档未提供则跳过，渲染器会用默认）
+  const captionStyleIds = new Set(
+    analysis.segments.filter((segment) => looksLikeCaption(segment.text)).map((segment) => segment.styleId),
+  );
+  const captionStyle =
+    analysis.styles.find(
+      (style) =>
+        !style.paragraph.headingLevel &&
+        style.id !== nonHeading[0]?.id &&
+        (captionStyleIds.has(style.id) || style.examples.some(looksLikeCaption)),
+    ) ??
+    analysis.styles.find(
+      (style) =>
+        style.id !== nonHeading[0]?.id &&
+        /caption|题注|图注|表注|图题|表题|图标题|表标题/i.test(
+          `${style.paragraph.ooxmlStyleId ?? ""} ${style.run.ooxmlStyleId ?? ""}`,
+        ),
+    );
+  const captionRef = captionStyle ? refFor(captionStyle.id) : null;
+  if (captionRef) styles.caption = captionRef;
+
   // 规则
   const rules: TemplateRule[] = [];
   const headingByLevel = new Map<number, StyleRef>();
@@ -601,6 +657,7 @@ export function inferTemplate(
   }
   if (bodyRef) rules.push({ match: { type: "paragraph" }, style: bodyRef });
   if (codeRef) rules.push({ match: { type: "code" }, style: codeRef });
+  if (captionRef) rules.push({ match: { type: "caption" }, style: captionRef });
 
   // 锚点
   const anchorInfos: Record<string, AnchorInfo> = {};
@@ -614,6 +671,8 @@ export function inferTemplate(
       paragraphText: anchor.paragraphText,
       part: anchor.part,
       paragraph: anchor.paragraph,
+      inTable: anchor.inTable,
+      tableRef: anchor.tableRef,
     };
   }
 
@@ -643,6 +702,15 @@ function looksLikeCode(style: StyleObject): boolean {
   const fontFamily = style.fontFamily as Record<string, unknown> | undefined;
   if (!fontFamily) return false;
   return Object.values(fontFamily).some((value) => typeof value === "string" && /mono|consolas|courier|menlo|monaco|fira/i.test(value));
+}
+
+/** 启发式判断一段文本是否像图注 / 表注（如「图 3-1 …」「表2 …」「Figure 1 …」）。 */
+export function looksLikeCaption(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  if (/^(图|表)\s*[\d一二三四五六七八九十]/u.test(trimmed)) return true;
+  if (/^(figure|table)\s*\d/i.test(trimmed)) return true;
+  return false;
 }
 
 function halfPoints(value: unknown): number {

@@ -2,11 +2,12 @@ import type { VirtualWordDocument, VNode } from "docx-edit";
 import { analyzeDocument } from "./analyze.ts";
 import { paragraphKey, paragraphKeyOfRef, walkParagraphs } from "./walk.ts";
 import type { Segment } from "./types.ts";
+import { elementList, WORD_NS } from "./ooxml.ts";
+import { collectTables, findAncestorTable } from "./table-style.ts";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type XmlElement = any;
 
-const WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const DEFAULT_PREFIX = "hrseg";
 
 /** 注入到文档里的持久锚点（书签）元数据。 */
@@ -22,6 +23,10 @@ export interface StampedAnchor {
   part: string;
   paragraph: number;
   paragraphText?: string;
+  /** 该段是否位于表格单元格内（用于 AI 判断整表删除/保留）。 */
+  inTable?: boolean;
+  /** 所属表格的稳定 id（tbl1、tbl2…），仅在表格内时存在。 */
+  tableRef?: string;
 }
 
 export interface StampOptions {
@@ -47,6 +52,9 @@ export function stampAnchors(doc: VirtualWordDocument, options: StampOptions = {
   const usedNames = new Set<string>();
   collectExistingBookmarks(doc, usedIds, usedNames);
 
+  const tableElementIds = new Map<XmlElement, string>();
+  for (const table of collectTables(doc)) tableElementIds.set(table.element, table.id);
+
   let counter = 0;
   const stamped: StampedAnchor[] = [];
 
@@ -70,6 +78,7 @@ export function stampAnchors(doc: VirtualWordDocument, options: StampOptions = {
     insertBookmarkPair(paragraphEl, firstRun, lastRun, id, name);
 
     const fullParagraphText = paragraph.runs.map((r) => r.text).join("");
+    const table = findAncestorTable(paragraphEl);
     stamped.push({
       ref: name,
       kind: isPlaceholder(segment.text) ? "slot" : "insert",
@@ -78,6 +87,8 @@ export function stampAnchors(doc: VirtualWordDocument, options: StampOptions = {
       part: segment.ref.part,
       paragraph: segment.ref.paragraph,
       paragraphText: fullParagraphText,
+      inTable: isInsideTable(paragraphEl),
+      tableRef: table ? tableElementIds.get(table) : undefined,
     });
   }
 
@@ -227,6 +238,17 @@ function isPlaceholder(text: string): boolean {
   return trimmed.length === 0 || /^[_\-—\s.．。·]+$/.test(trimmed) || /^(此处|待填|填写|xxx|XXX|todo)/i.test(trimmed);
 }
 
+/** 判断段落元素是否位于表格单元格内（向上找最近的 `w:tbl`）。 */
+export function isInsideTable(element: XmlElement): boolean {
+  let node: XmlElement = element?.parentNode ?? null;
+  while (node) {
+    if (node.nodeName === "w:tbl") return true;
+    if (node.nodeName === "w:body" || node.nodeName === "#document") return false;
+    node = node.parentNode;
+  }
+  return false;
+}
+
 function resolveRawTree(doc: VirtualWordDocument): VNode {
   const candidate = (doc as unknown as { rootVNode?: VNode }).rootVNode;
   return candidate ?? doc.toComponentTree();
@@ -238,9 +260,3 @@ function partRoots(doc: VirtualWordDocument): XmlElement[] {
   return parts.map((part) => part.xmlDocument?.documentElement).filter(Boolean);
 }
 
-function elementList(list: { length: number; [index: number]: any } | undefined | null): XmlElement[] {
-  const out: XmlElement[] = [];
-  if (!list) return out;
-  for (let i = 0; i < list.length; i += 1) out.push(list[i]);
-  return out;
-}

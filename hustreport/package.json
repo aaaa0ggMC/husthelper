@@ -15,7 +15,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/*.test.ts"
+    "test": "node --test test/*.test.ts",
+    "check": "tsc --noEmit && node --test test/*.test.ts"
   },
   "keywords": [
     "hust",

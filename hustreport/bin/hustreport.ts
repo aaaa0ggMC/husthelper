@@ -12,7 +12,7 @@ import {
   formatStylesCsv,
   openDocx,
   renderTemplateFile,
-  type ChatConfig,
+  resolveChatConfig,
   type EditPlan,
   type TextEdit,
 } from "../index.ts";
@@ -36,6 +36,7 @@ interface CliOptions {
   configFile?: string;
   codeTemplate?: string;
   keepComments?: boolean;
+  maxAnchors?: number;
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -88,6 +89,9 @@ function parseArgs(argv: string[]): CliOptions {
       case "--keep-comments":
         options.keepComments = true;
         break;
+      case "--max-anchors":
+        options.maxAnchors = Number(rest[++i]);
+        break;
       case "--set":
         options.sets.push(rest[++i]);
         break;
@@ -115,8 +119,9 @@ function usage(): void {
   hustreport edit        <file.docx> --out <out.docx> (--edits <edits.json> | --set <ref>=<text> ...)
   hustreport template    <file.docx> [--out <dir>]
       # 纯规则打底：注入持久书签锚点并推断默认 DSL，产出 template.docx + template.json（无 AI）
-  hustreport ai-template <file.docx> [--out <dir>] [--task "说明"] [--preset generic|labReport] [--system-prompt prompt.md] [--extra "附加要求"]
+  hustreport ai-template <file.docx> [--out <dir>] [--task "说明"] [--preset generic|labReport] [--system-prompt prompt.md] [--extra "附加要求"] [--max-anchors <n>]
       # AI 智能生成：提取样式表/批注要求 → AI 规范化剪裁 + 生成规则与 skeleton.md 填字稿
+      # 超大文档可用 --max-anchors 截断喂给 AI 的锚点数量，避免 prompt 过长
   hustreport render      <template.docx> --info <template.json> --md <fill.md> --out <out.docx>
                          [--config <config.json>] [--extra "key=val"] [--code-template <name>] [--keep-comments]
       # 确定性渲染：按 template.json 规则渲染 Markdown，支持 TOC 目录同步生成更新、代码块语法高亮、图片排版与学术三线表
@@ -125,32 +130,8 @@ function usage(): void {
   analyze      解析 docx，输出 segments.csv / styles.csv / media.csv / styles.json / analysis.json
   ai-template  结合 AI 生成高保真模板，自动识别目录结构与样式规范，输出缺失样式诊断反馈
   render       将 Markdown 填入模板，支持 --keep-comments 保留原底板批注，默认自动清理批注标记
+  ⚠️ 本工具为辅助排版，产出后需人工审核；若模板含目录（TOC），请在 Word/WPS 中执行「更新目录 / 更新域」刷新页码。
 `);
-}
-
-async function loadChatConfig(): Promise<ChatConfig> {
-  let raw: { openai?: Partial<ChatConfig>; ai?: Partial<ChatConfig> } = {};
-  try {
-    raw = JSON.parse(await readFile(path.resolve(process.cwd(), "config.json"), "utf-8"));
-  } catch {
-    // 没有 config.json 就只看环境变量
-  }
-  const ai = raw.openai ?? raw.ai ?? {};
-  const baseURL = process.env.HUST_AI_BASE_URL ?? ai.baseURL;
-  const apiKey = process.env.HUST_AI_API_KEY ?? ai.apiKey;
-  const model = process.env.HUST_AI_MODEL ?? ai.model;
-  const maxTokens = Number(process.env.HUST_AI_MAX_TOKENS ?? ai.maxTokens ?? 65536);
-  const timeout = Number(process.env.HUST_AI_TIMEOUT ?? ai.timeout ?? 0);
-  if (!baseURL || !apiKey || !model) {
-    throw new Error("缺少 AI 配置：请在 config.json 的 openai 段或环境变量 HUST_AI_BASE_URL / HUST_AI_API_KEY / HUST_AI_MODEL 中提供");
-  }
-  return {
-    baseURL,
-    apiKey,
-    model,
-    ...(maxTokens > 0 ? { maxTokens } : {}),
-    ...(timeout > 0 ? { timeout } : {}),
-  };
 }
 
 async function readPlan(options: CliOptions): Promise<EditPlan> {
@@ -182,7 +163,7 @@ async function main(): Promise<void> {
 
   if (options.command === "ai-template") {
     const outDir = options.outDir ?? path.join(process.cwd(), "report-template");
-    const config = await loadChatConfig();
+    const config = resolveChatConfig();
     const systemPrompt = options.systemPromptFile ? await readFile(options.systemPromptFile, "utf-8") : undefined;
     const result = await buildTemplateWithAi({
       input: options.file,
@@ -191,6 +172,7 @@ async function main(): Promise<void> {
       preset: options.preset as "generic" | "labReport" | undefined,
       systemPrompt,
       extraInstructions: options.extra,
+      maxAnchors: Number.isFinite(options.maxAnchors) && (options.maxAnchors ?? 0) > 0 ? options.maxAnchors : undefined,
       chat: chatCompletion(config),
     });
     console.log(`已生成：${result.templatePath}`);
@@ -209,6 +191,9 @@ async function main(): Promise<void> {
       }
       console.log("");
     }
+    if (result.info.toc?.enabled) {
+      console.log("ℹ️  模板包含目录（TOC）：渲染成稿后请在 Word / WPS 中「更新目录 / 更新域」以刷新页码。");
+    }
     return;
   }
 
@@ -223,6 +208,10 @@ async function main(): Promise<void> {
     });
     console.log(`已渲染 ${result.filled} 处（profile=${result.profile}）-> ${outFile}`);
     for (const warning of result.warnings) console.log(`  警告: ${warning}`);
+    if (result.hasToc) {
+      console.log("");
+      console.log("⚠️  该模板包含目录（TOC）。请在 Word / WPS 中打开成稿后，右键目录 →「更新域 / 更新目录」（或选中目录按 F9）刷新页码与条目。");
+    }
     return;
   }
 

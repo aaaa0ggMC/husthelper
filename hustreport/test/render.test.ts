@@ -319,4 +319,66 @@ test("renderTemplate: 动态根据渲染标题生成目录 TOC 与 PAGEREF 书�
   assert.ok(bodyStarts.some((bs) => bs.getAttribute("w:name") === bookmark1));
 });
 
+test("renderTemplate: TOC 覆盖骨架未提及、原样保留的章节标题（不丢目录项）", () => {
+  const docxEditRequire = createRequire(require.resolve("docx-edit"));
+  const { DOMParser } = docxEditRequire("@xmldom/xmldom");
+  const WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+  const xml =
+    `<?xml version="1.0" encoding="UTF-8"?>` +
+    `<w:document xmlns:w="${WORD_NS}">` +
+    `<w:body>` +
+    `<w:sdt>` +
+    `<w:sdtPr><w:docPartObj><w:docPartGallery w:val="Table of Contents"/></w:docPartObj></w:sdtPr>` +
+    `<w:sdtContent>` +
+    `<w:p><w:pPr><w:pStyle w:val="TOC1"/></w:pPr><w:r><w:t>旧目录</w:t></w:r></w:p>` +
+    `</w:sdtContent>` +
+    `</w:sdt>` +
+    // 已有章标题：带 Word 目录书签，但骨架里完全没有提到它
+    `<w:p>` +
+    `<w:pPr><w:pStyle w:val="Heading1"/></w:pPr>` +
+    `<w:bookmarkStart w:id="1" w:name="__RefHeading___Toc111"/>` +
+    `<w:r><w:t>实验6 指针程序设计实验</w:t></w:r>` +
+    `<w:bookmarkEnd w:id="1"/>` +
+    `</w:p>` +
+    // 骨架引用的节标题
+    `<w:p>` +
+    `<w:pPr><w:pStyle w:val="Heading2"/></w:pPr>` +
+    `<w:bookmarkStart w:id="2" w:name="hrseg0002"/>` +
+    `<w:r><w:t>1.1 程序改错</w:t></w:r>` +
+    `<w:bookmarkEnd w:id="2"/>` +
+    `</w:p>` +
+    `</w:body></w:document>`;
+  const doc = new DOMParser().parseFromString(xml, "application/xml");
+  const mockDoc = { partsData: [{ xmlDocument: doc, path: "word/document.xml" }], xmlDoc: doc };
+
+  const info: any = {
+    version: 2,
+    kind: "hustreport/template",
+    defaultProfile: "default",
+    anchors: { hrseg0002: { kind: "insert", label: "1.1 程序改错", tags: ["heading2"] } },
+    toc: { enabled: true, type: "sdt", maxLevel: 2, levels: { "1": { pStyle: "TOC1" }, "2": { pStyle: "TOC2" } } },
+    profiles: {
+      default: {
+        styles: { body: { inline: { paragraph: { styleId: "Normal" } } } },
+        rules: [
+          { match: { type: "heading", level: 1 }, style: { ooxmlStyleId: "Heading1" } },
+          { match: { type: "heading", level: 2 }, style: { ooxmlStyleId: "Heading2" } },
+          { match: { type: "paragraph" }, style: { inline: { paragraph: { styleId: "Normal" } } } },
+        ],
+      },
+    },
+  };
+
+  const result = renderTemplate(mockDoc as any, info, "## 1.1 程序改错 {ref:hrseg0002}", { strip: false });
+  assert.equal(result.warnings.length, 0);
+
+  const sdtContent = doc.getElementsByTagName("w:sdtContent")[0];
+  const tocPs = Array.from(sdtContent.getElementsByTagName("w:p")) as any[];
+  assert.equal(tocPs.length, 2);
+  const joined = tocPs.map((p) => p.textContent).join("|");
+  assert.match(joined, /实验6 指针程序设计实验/);
+  assert.match(joined, /1\.1 程序改错/);
+});
+
+
 
