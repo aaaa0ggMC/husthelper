@@ -66,9 +66,18 @@ const client = hust
 
 | 字段 | 类型 | 默认 | 说明 |
 | --- | --- | --- | --- |
-| `command` | `string` | `process.execPath` | 解释器/命令 |
+| `command` | `string` | 自动探测 | 运行器命令（如 `"tsx"`）；不传则按下面的规则推断 |
 | `cliPath` | `string` | 内置 `stdchar/cli.ts` | 子进程入口 |
 | `timeout` | `number` | `15000` | 毫秒 |
+
+子进程启动方式按以下顺序推断：
+
+1. 父进程已在用 TS 运行器（`tsx`/`ts-node`/`--experimental-strip-types`/`--import`/`--loader`，含写在 `NODE_OPTIONS` 里的）——直接复用其加载参数；
+2. 否则若 CLI 位于 `node_modules` 下（包被安装为依赖）——自动改用 `tsx`，找不到再试 `ts-node`；
+3. 否则用当前 `node` 直接运行（单仓内 CLI 在仓库里，原生类型剥离可用）。
+
+> ⚠️ 场景 2 中两样都找不到时会直接报错提示：Node 拒绝对 `node_modules` 内的文件剥离类型，
+> 此时请安装 `tsx`（`pnpm add -D tsx`）或显式 `withStdChar({ command: "tsx" })`。
 
 ### withParsedOcr(fn)
 

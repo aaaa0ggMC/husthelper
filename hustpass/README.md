@@ -22,6 +22,11 @@
 依赖 **Node.js 22+**（Node 22 需加 `--experimental-strip-types`，Node 23+ 默认启用）。
 在本仓库根目录执行 `pnpm install` 后，包内即可 `import hust from "hustpass"`（由 pnpm workspace 链接）。
 
+> **作为依赖被安装到 `node_modules` 时**（如 `pnpm add github:RockonDreaming/husthelper`）：
+> Node 拒绝对 `node_modules` 内的文件剥离类型，`--experimental-strip-types` 对此也无济于事，
+> 因此宿主程序必须运行在 `tsx` / `ts-node` 下。`withStdChar()` 的内置验证码识别子进程会
+> 自动沿用宿主运行器，找不到时则提示安装 `tsx`。
+
 ## 快速上手
 
 ```ts
