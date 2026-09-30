@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "HUST 报告文档处理：基于 docx-edit 的样式分段、路径索引与 CSV 导出",
   "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "exports": {
     ".": {
       "types": "./index.ts",

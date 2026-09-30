@@ -314,14 +314,33 @@ async function readPlan(options: CliOptions): Promise<EditPlan> {
   return plan;
 }
 
+function requireFiles(entries: Array<[label: string, file: string | undefined]>): void {
+  for (const [label, file] of entries) {
+    if (file && !existsSync(file)) throw new Error(`${label} 指向的文件不存在：${file}`);
+  }
+}
+
 async function main(options: CliOptions): Promise<unknown> {
   const log = createLogger(options.json);
   const commands = new Set(["analyze", "edit", "template", "ai-template", "render"]);
+  if (options.command !== "help" && !commands.has(options.command)) {
+    console.error(`未知命令：${options.command}（可用：${[...commands].join(" | ")}）\n`);
+  }
   if (!options.file || !commands.has(options.command)) {
     usage();
     process.exitCode = options.command === "help" ? 0 : 1;
     return undefined;
   }
+
+  requireFiles([
+    ["输入文件", options.file],
+    ["--info", options.infoFile],
+    ["--md", options.mdFile],
+    ["--edits", options.editsFile],
+    ["--from-response", options.fromResponse],
+    ["--system-prompt", options.systemPromptFile],
+    ["--config", options.configFile],
+  ]);
 
   if (options.command === "ai-template") {
     const outDir = resolveOutDir(options, path.join(process.cwd(), "report-template"));
