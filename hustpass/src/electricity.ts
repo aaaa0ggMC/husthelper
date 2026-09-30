@@ -112,6 +112,24 @@ export function electricityAuthHeaders(now: number = Math.floor(Date.now() / 100
   return { "X-AuthToken": authToken, "X-Timestamp": timestamp, "X-Signature": signature };
 }
 
+/** 正文是 JSON 且提示「身份认证已过期 / 请重新登录」。 */
+function isSessionExpiredBody(body: string): boolean {
+  return /identity authentication has expired|please login/i.test(body);
+}
+
+/** 接口偶尔直接返回 JSON 错误（而不是 XML）：取出 msg，避免被吞成「未知错误」。 */
+function parseJsonError(body: string): string | undefined {
+  const trimmed = body.trimStart();
+  if (!trimmed.startsWith("{")) return undefined;
+  try {
+    const data = JSON.parse(trimmed) as { result?: unknown; msg?: unknown };
+    if (String(data.result) === "1") return undefined;
+    return typeof data.msg === "string" && data.msg ? data.msg : `result=${String(data.result)}`;
+  } catch {
+    return undefined;
+  }
+}
+
 function isHttpError(error: unknown): boolean {
   const status = (error as { response?: { status?: number } } | undefined)?.response?.status;
   return typeof status === "number" && status >= 400;
@@ -151,17 +169,33 @@ export class ElectricityApi {
       return typeof response.data === "string" ? response.data : "";
     };
 
+    /** 重新获取电费系统会话：丢弃旧的 ASP.NET_SessionId，再走一遍 CAS 免密换票。 */
+    const reacquire = async (): Promise<void> => {
+      const session = await this.runtime.ensureService(electricityService);
+      session.deleteCookie(ELECTRICITY_SESSION_COOKIE, ELECTRICITY_HOST);
+      await this.runtime.ensureService(electricityService);
+    };
+
     let body: string;
     try {
       body = await send();
     } catch (error) {
       if (!isHttpError(error)) throw error;
       this.runtime.logger.warn("electricity: 会话已失效，重新获取");
-      const session = await this.runtime.ensureService(electricityService);
-      session.deleteCookie(ELECTRICITY_SESSION_COOKIE, ELECTRICITY_HOST);
-      await this.runtime.ensureService(electricityService);
+      await reacquire();
       body = await send();
     }
+
+    // 业务层的会话过期：HTTP 200，但正文是 JSON `{"result":0,"msg":"The identity authentication has expired..."}`
+    // （本地 cookie 还在，就会一直复用这个失效会话）。丢弃后重取一次。
+    if (isSessionExpiredBody(body)) {
+      this.runtime.logger.warn("electricity: 服务端提示身份认证已过期，重新获取会话");
+      await reacquire();
+      body = await send();
+    }
+
+    const json = parseJsonError(body);
+    if (json) throw new Error(`电费接口失败: ${json}`);
 
     const parsed = unwrap(this.parser.parse(body) as Record<string, unknown>);
     const info = asRecord(parsed.resultInfo);
