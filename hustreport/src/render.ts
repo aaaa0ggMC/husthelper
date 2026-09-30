@@ -24,6 +24,7 @@ import {
   type ReportConfig,
   type TableBlockConfig,
 } from "./config.ts";
+import { fitFontSize } from "./code-fit.ts";
 import {
   formatCjkSpacing,
   isCjkSpacingActive,
@@ -1126,7 +1127,10 @@ function renderBlocks(
         const bodyRuleStyle = (profile.rules ?? []).find((r) => r.match?.type === "paragraph")?.style;
         const bodySample =
           styleRefToSample(profile.styles?.body, profile, anchorRanges) ?? styleRefToSample(bodyRuleStyle, profile, anchorRanges);
-        const codeTable = buildCodeTable(block, settings, sample, ownerDoc, extractSampleFont(bodySample));
+        const codeTable = buildCodeTable(block, settings, sample, ownerDoc, extractSampleFont(bodySample), (kind, message) => {
+          if (kind === "shrunk") entry.note = entry.note ? `${entry.note}；${message}` : message;
+          else if (!warnings.includes(message)) warnings.push(message);
+        });
         container.insertBefore(codeTable, refNode);
         cursorLast = codeTable;
         if (anchored) cursorFallback = container;
@@ -1456,6 +1460,7 @@ function buildCodeTable(
   sample: StyleSample | null,
   ownerDoc: XmlElement,
   bodyFont: { family?: string; eastAsia?: string; size?: number } = {},
+  onFit?: (kind: "shrunk" | "overflow", message: string) => void,
 ): XmlElement {
   const codeConfig = { fontFamily: settings.fontFamily, fontEastAsia: settings.fontEastAsia, fontSize: settings.fontSize };
   const theme = loadCodeThemeSync(settings.theme.value);
@@ -1501,6 +1506,17 @@ function buildCodeTable(
   const digits = Math.max(2, String(hl.lines.length).length);
   const gutterWidth = 360 + digits * 140;
   const codeWidth = 9000 - (showLineNumbers ? gutterWidth : 0);
+
+  // 自动适配宽度：最长行放不下就缩小字号，避免折行破坏对齐；缩到下限仍放不下才折行并告警
+  if (settings.fit.value) {
+    const fit = fitFontSize(
+      hl.lines.map((line) => line.runs.map((run) => run.text).join("")),
+      { fontSize, codeWidthTwips: codeWidth, minFontSize: settings.minFontSize },
+    );
+    if (fit.shrunk) onFit?.("shrunk", `代码卡片字号自动缩小 ${fontSize / 2}pt -> ${fit.fontSize / 2}pt 以放下最长行`);
+    if (fit.overflow) onFit?.("overflow", `代码块最长行仍放不下（已缩到下限 ${fit.fontSize / 2}pt），该行会折行；可缩短行长或用 {fit=false} 关闭自动缩小`);
+    fontSize = fit.fontSize;
+  }
 
   const tbl = ownerDoc.createElementNS(WORD_NS, "w:tbl");
 
