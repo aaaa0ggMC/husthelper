@@ -19,7 +19,7 @@ export type SettingLayer = "block" | "user" | "template" | "default";
 export type UserSettings = Pick<ReportConfig, "code" | "image" | "table">;
 
 export const BUILTIN_DEFAULTS = {
-  code: { template: "default", lineNumbers: true, border: true, tabSize: 4, lint: true, fit: true, minFontSize: 14 },
+  code: { template: "default", lineNumbers: true, border: true, tabSize: 4, lint: true },
   image: { align: "center", size: "max", captionAlign: "center", maxWidth: 430 },
   table: { theme: "academic", header: true, align: "center" },
 } as const;
@@ -83,8 +83,6 @@ export interface CodeSettings {
   lineNumbers: Resolved<boolean>;
   border: Resolved<boolean>;
   lint: Resolved<boolean>;
-  fit: Resolved<boolean>;
-  minFontSize: number;
   tabSize: number;
   fontFamily?: string;
   fontEastAsia?: string;
@@ -174,8 +172,6 @@ export function resolveCodeSettings(input: {
     lineNumbers: pickLayer(attrBool(attrs.line ?? attrs.lineNumbers), user.lineNumbers, undefined, BUILTIN_DEFAULTS.code.lineNumbers),
     border: pickLayer(attrBool(attrs.border), user.border, undefined, BUILTIN_DEFAULTS.code.border),
     lint: pickLayer(attrBool(attrs.lint), user.lint, rule?.lint, BUILTIN_DEFAULTS.code.lint),
-    fit: pickLayer(attrBool(attrs.fit), user.fit, undefined, BUILTIN_DEFAULTS.code.fit),
-    minFontSize: user.minFontSize ?? BUILTIN_DEFAULTS.code.minFontSize,
     tabSize: user.tabSize ?? BUILTIN_DEFAULTS.code.tabSize,
     fontFamily: user.fontFamily ?? ruleFont.fontFamily,
     fontEastAsia: user.fontEastAsia ?? ruleFont.fontEastAsia,

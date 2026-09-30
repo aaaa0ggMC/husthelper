@@ -145,7 +145,6 @@ export HUST_AI_MAX_TOKENS=32768      # 建议设置较大预算以生成完整 s
   3. 模板：规则给了 `theme` → 卡片；规则绑定了原生代码样式 → 原生；
   4. 默认：卡片。要求原生但模板没有原生样式时，回退卡片并在 `--trace` 里注明。
 - **代码卡片字体**（西文 `fontFamily` / 中文 `fontEastAsia` / 字号 `fontSize`）：块属性与使用者配置 > 模板规则显式写的 `options.fontFamily`（字符串，或 AI 常用的 `{ "ascii": "Consolas", "eastAsia": "仿宋" }` 对象）/`options.fontEastAsia`/`options.fontSize` > **复制文档正文样式**（中文取 eastAsia、西文取 ascii）> 主题默认。无法识别的取值（如数字）不会静默忽略，而是在渲染警告里指出。
-- **卡片自动适配宽度**：最长行放不下时，按估算宽度（西文 0.6 em、中文 1 em，偏保守）自动缩小字号，避免折行破坏对齐；下限默认 7pt（配置 `code.minFontSize`，半磅数值），缩到下限仍放不下才折行并给出警告。块属性 `{fit=false}` 或配置 `code.fit=false` 可关闭。缩小记录见 `--trace`。
 - **行内代码**：`inlineCode` 规则若绑定文档里的真实样式则整体套用；若是 `inline` 样式（AI 常见），其中的字体/字号/颜色会叠加到代码 run 上，嵌在 `**…**` 里的行内代码同样生效。
 - **`--code-template` 只换卡片配色，不再改变模式**。旧版本里它会静默把 AI 选好的原生代码样式换成卡片——现在要卡片请显式 `--code-mode card`。
 - **表格样板**：模板规则的 `options.styleAnchor`（克隆文档里已有的表）属于“模板层的主题”；只要块或使用者指定了 `theme`，就改用该主题。

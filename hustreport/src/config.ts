@@ -12,10 +12,6 @@ export interface CodeBlockConfig {
   fontSize?: number | string;
   /** 是否展示行号，默认 true。 */
   lineNumbers?: boolean;
-  /** 卡片自动适配宽度：最长行放不下时缩小字号（默认 true）。块级 `{fit=false}` 可关闭。 */
-  fit?: boolean;
-  /** 自动缩小的字号下限（半磅，默认 14 = 7pt）；缩到下限仍放不下才折行并告警。 */
-  minFontSize?: number;
   /**
    * 代码块排版模式：auto（默认：模板有原生代码样式就用原生段落，否则卡片）、
    * native（强制原生段落）、card（强制行号卡片表格）。块级 `{mode=...}` 优先。
