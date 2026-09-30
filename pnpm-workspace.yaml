@@ -4,3 +4,5 @@ packages:
   - hustpass
   - hustreport
   - mcp
+allowBuilds:
+  esbuild: false

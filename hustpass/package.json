@@ -14,16 +14,17 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "hustcore": "workspace:*",
     "axios": "^1.20.0",
     "fast-xml-parser": "^4.5.7",
     "gifuct-js": "^2.1.2",
+    "hustcore": "workspace:*",
     "jpeg-js": "^0.4.4",
     "sm-crypto": "^0.5.7"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/sm-crypto": "^0.3.4",
+    "esbuild": "^0.28.2",
     "typescript": "^5.7.0"
   },
   "license": "MIT"
