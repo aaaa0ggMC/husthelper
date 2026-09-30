@@ -91,6 +91,13 @@ export function decodeIhusterToken(token: string): {
   }
 }
 
+/** 信封层面的「令牌已过期 / 无效」：code 406，或提示里带 expire。 */
+function isTokenRejected(envelope: { code?: unknown; msg?: unknown } | undefined): boolean {
+  if (!envelope) return false;
+  if (String(envelope.code ?? "") === "406") return true;
+  return /token.*expire|expire.*token/i.test(String(envelope.msg ?? ""));
+}
+
 function isTokenUsable(token: string, marginMs = 60_000): boolean {
   const { exp } = decodeIhusterToken(token);
   if (exp === undefined) return true;
@@ -248,13 +255,16 @@ export class IhusterApi {
     };
 
     let response = await send();
-    if (response.status === 401) {
+    let envelope = parseJson<IhusterEnvelope<T>>(response.data);
+    // 令牌失效有两种表现：HTTP 401，或 HTTP 200 + 信封 code=406 / msg 含 "expire"
+    // （服务端认为过期，但本地 JWT 的 exp 还没到，缓存的令牌就会一直被复用）。丢弃缓存、重取一次。
+    if (response.status === 401 || isTokenRejected(envelope)) {
       this.runtime.logger.warn("ihuster: JWT 被拒绝，重新获取后重试");
       this.invalidate();
       response = await send();
+      envelope = parseJson<IhusterEnvelope<T>>(response.data);
     }
 
-    const envelope = parseJson<IhusterEnvelope<T>>(response.data);
     if (String(envelope?.code ?? "200") !== "200") {
       throw new Error(`ihuster 接口失败(${envelope?.code}): ${envelope?.msg ?? "未知错误"}`);
     }

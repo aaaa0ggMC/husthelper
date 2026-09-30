@@ -1,5 +1,4 @@
-import crypto from "node:crypto";
-import { sm2 } from "sm-crypto";
+import smCrypto from "sm-crypto";
 import { XMLParser } from "fast-xml-parser";
 import type { CasService } from "./cas.ts";
 import type { ClientRuntime } from "./runtime.ts";
@@ -25,6 +24,7 @@ export const ELECTRICITY_SESSION_COOKIE = "ASP.NET_SessionId";
 export const ELECTRICITY_REFERER = `${ELECTRICITY_BASE}/hust/`;
 
 /** 服务端接口公钥（SM2，非用户凭据） */
+const { sm2, sm3 } = smCrypto;
 const SM2_PUBLIC_KEY =
   "044c964312722be15cdfb97434ca17b5e4bd99df4fca4c2187fcac69377fc2e63a61d80fd565f4caf7cf628143da4f3afb7316648a70f829c5750e22cfcf929518";
 /** 签名盐（SM3） */
@@ -106,7 +106,9 @@ export function electricityAuthHeaders(now: number = Math.floor(Date.now() / 100
   const payload = `{"um":"phAPI","pw":"phAPI","tm":${timestamp}}`;
   // 服务端期望 gmsm 风格密文：0x04 || C1 || C3 || C2，而 sm-crypto 的 C1C3C2 输出省略了 0x04 前缀
   const authToken = `04${sm2.doEncrypt(payload, SM2_PUBLIC_KEY, 1)}`;
-  const signature = crypto.createHash("sm3").update(authToken + timestamp + SIGN_SALT).digest("hex");
+  // 用 sm-crypto 的纯 JS SM3：Node 原生 createHash("sm3") 依赖 OpenSSL 的国密支持，
+  // 在 Electron（BoringSSL）里会抛 "Digest method not supported"。
+  const signature = sm3(authToken + timestamp + SIGN_SALT);
   return { "X-AuthToken": authToken, "X-Timestamp": timestamp, "X-Signature": signature };
 }
 
