@@ -36,6 +36,18 @@ import {
   type XmlElement,
 } from "./ooxml.ts";
 import { enableDocxUpdateFields, findHeadingBookmarkName, updateTableOfContents } from "./toc.ts";
+import {
+  buildUserSettings,
+  codeAttrsForceCard,
+  resolveCodeSettings,
+  isDocumentStyleRef,
+  resolveImageSettings,
+  resolveTableSettings,
+  type CodeSettings,
+  type ImageSettings,
+  type TableSettings,
+  type UserSettings,
+} from "./settings.ts";
 
 /**
  * 渲染器。
@@ -101,6 +113,8 @@ export interface ParsedDocument {
   profile?: string;
   blocks: MarkdownBlock[];
   fills: RenderFill[];
+  /** 解析阶段发现的可疑写法（如把程序输出写进 ```text 被逐行展开成正文）。 */
+  warnings: string[];
 }
 
 export interface RenderOptions {
@@ -131,6 +145,54 @@ export interface RenderOptions {
   markdownDir?: string;
   /** 全局合并后的配置对象。 */
   config?: ReportConfig;
+  /** 代码块排版模式（覆盖 config.code.mode）：auto / native / card。 */
+  codeMode?: "auto" | "native" | "card";
+  /** 严格模式：缺图直接报错；renderTemplateFile 在有任何警告时报错且不写出成稿。 */
+  strict?: boolean;
+  /** 只渲染与统计，不写出文件（renderTemplateFile 生效）。 */
+  dryRun?: boolean;
+  /** 合并后的使用者层设置（由 renderTemplate 计算，调用方无需传）。 */
+  user?: UserSettings;
+}
+
+/** 单个 Markdown 块的渲染记录（供 --json / 自检使用，免去解析 XML）。 */
+export interface RenderTraceEntry {
+  index: number;
+  type: BlockType;
+  /** 文本预览（最多 40 字）。 */
+  text: string;
+  ref?: string;
+  /** inserted：新插入；updated：改写了已有段落；fill：按填空处理；placeholder：缺资源已占位；skipped：未渲染。 */
+  status: "inserted" | "updated" | "fill" | "placeholder" | "skipped";
+  /** 代码块：实际选用的排版模式。 */
+  mode?: "native" | "card";
+  /** 代码/表格主题。 */
+  theme?: string;
+  /** 样式来源（anchor:hrseg0012 / recipe:body / inline / style:Heading1 / default）。 */
+  style?: string;
+  /** 插入的段落/表格元素数。 */
+  elements?: number;
+  /** 跳过或降级原因。 */
+  note?: string;
+}
+
+export interface RenderStats {
+  /** 就地填空数。 */
+  filled: number;
+  /** 渲染成功的 Markdown 块数（不含填空）。 */
+  blocks: number;
+  /** 插入的段落/表格元素总数。 */
+  elements: number;
+  headings: number;
+  paragraphs: number;
+  lists: number;
+  tables: number;
+  images: number;
+  codeNative: number;
+  codeCard: number;
+  /** 缺失图片（已用占位段落代替）。 */
+  missingImages: string[];
+  skipped: number;
 }
 
 export interface RenderResult {
@@ -142,6 +204,12 @@ export interface RenderResult {
   blocks: MarkdownBlock[];
   /** 模板是否包含目录（TOC）——成稿后需用户在 Word/WPS 中「更新目录/更新域」。 */
   hasToc: boolean;
+  /** 逐块渲染记录。 */
+  trace: RenderTraceEntry[];
+  /** 汇总统计。 */
+  stats: RenderStats;
+  /** 实际加载的渲染配置文件（未找到则为 undefined）。 */
+  configSource?: string;
 }
 
 const REF_PATTERN = /\[([^\]]*)\]\(\s*ref\s*:\s*([^)\s|]+)([^)]*)\)/g;
@@ -268,6 +336,7 @@ export function parseDocument(markdown: string, options: RenderOptions = {}): Pa
   const lines = body.split(/\r?\n/);
   const blocks: MarkdownBlock[] = [];
   const fills: RenderFill[] = [];
+  const parseWarnings: string[] = [];
   const seen = new Set<string>();
   let sectionProfile: string | undefined = docDefault;
 
@@ -323,8 +392,15 @@ export function parseDocument(markdown: string, options: RenderOptions = {}): Pa
       }
       i += 1;
       const codeText = buffer.join("\n");
-      if (isPureTextCodeBlock(lang, codeText, attrs)) {
+      if (isPureTextCodeBlock(lang, codeText, attrs) && !codeAttrsForceCard(attrs)) {
         const nonBlank = buffer.filter((l) => l.trim().length > 0);
+        // ```text 会被逐行展开成比例字体正文，空行与空格对齐都会丢；像程序输出/日志的多行块要提醒。
+        if (nonBlank.length >= 4 || nonBlank.some((l) => /\S {3,}\S/.test(l))) {
+          parseWarnings.push(
+            `第 ${i - buffer.length} 行起的 \`\`\`${lang} 块被当作纯文本正文逐行展开（${nonBlank.length} 行，丢弃空行与对齐空格）；` +
+              `若是程序输出/日志，请改用 \`\`\`console 或加 {mode=card}`,
+          );
+        }
         nonBlank.forEach((rawLine, idx) => {
           blocks.push({
             type: "paragraph",
@@ -345,6 +421,7 @@ export function parseDocument(markdown: string, options: RenderOptions = {}): Pa
         profile: attrs.profile ?? sectionProfile,
         position: attrPosition(attrs.pos),
         theme: attrs.theme ?? attrs.template,
+        attrs,
       });
       continue;
     }
@@ -496,7 +573,7 @@ export function parseDocument(markdown: string, options: RenderOptions = {}): Pa
     });
   }
 
-  return { profile: docDefault, blocks, fills };
+  return { profile: docDefault, blocks, fills, warnings: parseWarnings };
 }
 
 /** 兼容旧入口：只取 fills。 */
@@ -515,15 +592,23 @@ export function renderTemplate(
 ): RenderResult {
   const effectiveConfig =
     options.config ?? resolveReportConfigSync({ configFile: options.configFile, extra: options.extra });
-  const effectiveOptions: RenderOptions = {
-    ...options,
-    config: effectiveConfig,
-    codeConfig: { ...(effectiveConfig.code ?? {}), ...(options.codeConfig ?? {}) },
-    codeTemplate: options.codeTemplate,
-    showLineNumbers: options.showLineNumbers ?? effectiveConfig.code?.lineNumbers ?? true,
-  };
+  // 使用者层一次性合并：CLI/API 选项 > --extra > 配置文件（覆盖准则见 settings.ts）
+  const user = buildUserSettings(effectiveConfig, {
+    code: {
+      ...(options.codeConfig ?? {}),
+      template: options.codeTemplate ?? options.codeConfig?.template,
+      mode: options.codeMode ?? options.codeConfig?.mode,
+      lineNumbers: options.showLineNumbers ?? options.codeConfig?.lineNumbers,
+    },
+    image: options.imageConfig,
+    table: options.tableConfig,
+  });
+  const effectiveOptions: RenderOptions = { ...options, config: effectiveConfig, user };
   const parsed = parseDocument(markdown, effectiveOptions);
-  const warnings: string[] = [];
+  const warnings: string[] = [...parsed.warnings];
+  for (const fill of parsed.fills) {
+    if (/^\s*【[^】]+】\s*$/.test(fill.text)) warnings.push(`填空 ${fill.ref} 仍是占位标记 ${fill.text.trim()}，请替换成真实内容`);
+  }
   const anchorRanges = new Map(readAnchors(doc, info.anchorPrefix).map((range) => [range.ref, range]));
 
   // 1) 填空
@@ -562,6 +647,7 @@ export function renderTemplate(
 
   // 2) 结构化插入
   let inserted = 0;
+  const trace: RenderTraceEntry[] = [];
   if (effectiveOptions.structured ?? true) {
     inserted = renderBlocks(
       doc,
@@ -571,6 +657,7 @@ export function renderTemplate(
       warnings,
       effectiveOptions.appendUnanchored ?? false,
       effectiveOptions,
+      trace,
     );
   }
 
@@ -591,7 +678,72 @@ export function renderTemplate(
     fills: parsed.fills,
     blocks: parsed.blocks,
     hasToc: Boolean(info.toc?.enabled),
+    trace,
+    stats: summarizeTrace(trace, filled),
+    configSource: effectiveConfig.source,
   };
+}
+
+/** 由逐块记录汇总统计。 */
+export function summarizeTrace(trace: readonly RenderTraceEntry[], filled: number): RenderStats {
+  const stats: RenderStats = {
+    filled,
+    blocks: 0,
+    elements: 0,
+    headings: 0,
+    paragraphs: 0,
+    lists: 0,
+    tables: 0,
+    images: 0,
+    codeNative: 0,
+    codeCard: 0,
+    missingImages: [],
+    skipped: 0,
+  };
+  for (const entry of trace) {
+    if (entry.status === "skipped") {
+      stats.skipped += 1;
+      continue;
+    }
+    if (entry.status === "fill") continue;
+    stats.blocks += 1;
+    stats.elements += entry.elements ?? 0;
+    if (entry.status === "placeholder" && entry.type === "image") {
+      stats.missingImages.push(entry.note ?? entry.text);
+      continue;
+    }
+    switch (entry.type) {
+      case "heading":
+        stats.headings += 1;
+        break;
+      case "list":
+        stats.lists += 1;
+        break;
+      case "table":
+        stats.tables += 1;
+        break;
+      case "image":
+        stats.images += 1;
+        break;
+      case "code":
+        if (entry.mode === "native") stats.codeNative += 1;
+        else stats.codeCard += 1;
+        break;
+      default:
+        stats.paragraphs += 1;
+    }
+  }
+  return stats;
+}
+
+function describeStyleRef(ref: StyleRef | undefined): string {
+  if (!ref) return "default";
+  if ("anchor" in ref) return `anchor:${ref.anchor}`;
+  if ("recipe" in ref) return `recipe:${ref.recipe}`;
+  if ("inline" in ref) return "inline";
+  if ("ooxmlStyleId" in ref) return `style:${ref.ooxmlStyleId}`;
+  if ("styleName" in ref) return `style:${ref.styleName}`;
+  return "default";
 }
 
 function hasVisibleTextBefore(p: XmlElement, node: XmlElement): boolean {
@@ -748,8 +900,10 @@ function renderBlocks(
   warnings: string[],
   appendUnanchored: boolean,
   options: RenderOptions = {},
+  trace: RenderTraceEntry[] = [],
 ): number {
   let count = 0;
+  const tocEnabled = Boolean(info.toc?.enabled);
   let cursorLast: XmlElement | null = null;
   let cursorFallback: XmlElement | null = null;
   const profileCache = new Map<string, TemplateProfile>();
@@ -767,6 +921,8 @@ function renderBlocks(
     const text = block.text.trim();
     if (!text) return;
 
+    // 无目录的模板不需要 TOC 书签，避免与用户后续手工插入的书签混杂
+    if (!tocEnabled) return;
     let bookmarkName = findHeadingBookmarkName(paragraphEl);
     if (!bookmarkName) {
       headingBookmarkCounter += 1;
@@ -781,8 +937,24 @@ function renderBlocks(
     renderedHeadings.push({ level, text, bookmarkName });
   };
 
-  for (const block of parsed.blocks) {
-    if (block.type === "paragraph" && !block.rawRuns && (FILL_ONLY.test(block.text) || HAS_REF_LINK.test(block.text))) continue; // ref 链接按填空处理
+  for (const [blockIndex, block] of parsed.blocks.entries()) {
+    const entry: RenderTraceEntry = {
+      index: blockIndex,
+      type: block.type,
+      text: previewText(block),
+      ...(block.ref ? { ref: block.ref } : {}),
+      status: "skipped",
+    };
+    trace.push(entry);
+    const countBefore = count;
+    const skip = (note: string): void => {
+      warnings.push(note);
+      entry.note = note;
+    };
+    if (block.type === "paragraph" && !block.rawRuns && (FILL_ONLY.test(block.text) || HAS_REF_LINK.test(block.text))) {
+      entry.status = "fill"; // ref 链接按填空处理
+      continue;
+    }
 
 
     const profileName = block.profile ?? parsed.profile ?? info.defaultProfile;
@@ -803,7 +975,7 @@ function renderBlocks(
     if (block.ref) {
       const range = anchorRanges.get(block.ref);
       if (!range) {
-        warnings.push(`未知 ref: ${block.ref}（${describeBlock(block)}）`);
+        skip(`未知 ref: ${block.ref}（${describeBlock(block)}）`);
         continue;
       }
       container = range.paragraphEl.parentNode;
@@ -817,10 +989,14 @@ function renderBlocks(
       container = defaultContainer;
       refNode = trailingAnchor(defaultContainer);
     } else {
-      warnings.push(`${describeBlock(block)} 没有 ref 也没有前置锚点，已跳过`);
+      skip(`${describeBlock(block)} 没有 ref 也没有前置锚点，已跳过（可给它加 {ref:锚点}，或用 appendUnanchored 追加到文末）`);
       continue;
     }
-    if (!container) continue;
+    if (!container) {
+      skip(`${describeBlock(block)} 的插入位置无效，已跳过`);
+      continue;
+    }
+    entry.style = describeStyleRef(rule?.style ?? profile.defaults?.style ?? profile.styles?.body);
 
     const sample =
       styleRefToSample(rule?.style ?? profile.defaults?.style, profile, anchorRanges) ??
@@ -867,25 +1043,31 @@ function renderBlocks(
         recordHeading(block, range.paragraphEl);
         cursorLast = range.paragraphEl;
         cursorFallback = container;
+        entry.status = "updated";
+        entry.elements = 0;
         continue;
       }
     }
 
     if (block.type === "code") {
-      const hasExplicitTheme = Boolean(
-        block.theme ||
-        (rule?.theme && rule.theme.trim().length > 0) ||
-        options.codeTemplate,
-      );
-      const hasDocumentStyle = Boolean(sample && (rule?.style || profile.styles?.code));
+      const settings = resolveCodeSettings({
+        attrs: block.attrs ?? {},
+        blockTheme: block.theme,
+        rule,
+        user: options.user?.code,
+        hasDocumentStyle: Boolean(sample && (isDocumentStyleRef(rule?.style) || isDocumentStyleRef(profile.styles?.code))),
+      });
+      const useNative = settings.mode.value === "native";
+      entry.mode = settings.mode.value;
+      if (!useNative) entry.theme = settings.theme.value;
+      if (settings.note) entry.note = settings.note;
 
-      if (hasDocumentStyle && !hasExplicitTheme) {
+      if (useNative) {
         // 模式 A：文档已明确代码样式（XML Style ID），套用原文档样式，按 lint 设置进行语法着色
         const { lastEl, lineCount } = renderStyledCodeParagraphs(
           block,
-          rule ?? { match: { type: "code" } },
+          settings,
           sample!,
-          options,
           container,
           refNode,
           ownerDoc,
@@ -895,19 +1077,51 @@ function renderBlocks(
           if (anchored) cursorFallback = container;
         }
         count += lineCount;
+        entry.status = "inserted";
+        entry.elements = lineCount;
         continue;
       } else {
         // 模式 B：代码卡片表格（CodeInWord 风格，带行号栏、外边框与主题底色）
-        const codeTable = buildCodeTable(block, rule, sample, options, ownerDoc);
+        // 字体优先复制文档正文样式（中文/西文分别取 eastAsia/ascii），显式设置才覆盖
+        const bodyRuleStyle = (profile.rules ?? []).find((r) => r.match?.type === "paragraph")?.style;
+        const bodySample =
+          styleRefToSample(profile.styles?.body, profile, anchorRanges) ?? styleRefToSample(bodyRuleStyle, profile, anchorRanges);
+        const codeTable = buildCodeTable(block, settings, sample, ownerDoc, extractSampleFont(bodySample));
         container.insertBefore(codeTable, refNode);
         cursorLast = codeTable;
         if (anchored) cursorFallback = container;
         count += 1;
+        entry.status = "inserted";
+        entry.elements = 1;
         continue;
       }
     }
 
     if (block.type === "image") {
+      const imagePath = resolveImagePath(block.src ?? "", options.markdownDir);
+      if (!imagePath) {
+        const message = `图片文件未找到: ${block.src}${options.markdownDir ? `（相对 ${options.markdownDir} 解析）` : ""}`;
+        if (options.strict) throw new Error(message);
+        // 默认降级：插一段醒目的占位文字（含图注），不中断整份渲染
+        const caption = block.caption?.trim();
+        const placeholder = buildParagraph(
+          sample,
+          [{ text: `【缺图：${block.src}】${caption ? ` ${caption}` : ""}`, color: "FF0000" }],
+          null,
+          () => null,
+          ownerDoc,
+        );
+        setParagraphAlign(placeholder, "center");
+        container.insertBefore(placeholder, refNode);
+        cursorLast = placeholder;
+        if (anchored) cursorFallback = container;
+        count += 1;
+        warnings.push(`${message}，已插入占位文字（--strict 时报错）`);
+        entry.status = "placeholder";
+        entry.elements = 1;
+        entry.note = block.src;
+        continue;
+      }
       const { paragraphEl, captionEl } = buildImageElement(
         ownerDoc,
         doc,
@@ -916,10 +1130,8 @@ function renderBlocks(
         profile,
         anchorRanges,
         {
-          imageConfig: options.imageConfig ?? options.config?.image,
-          config: options.config,
-          sample,
-          markdownDir: options.markdownDir,
+          settings: resolveImageSettings({ attrs: block.attrs ?? {}, rule, user: options.user?.image }),
+          imagePath,
           docPrId: docPrIdCounter++,
         },
       );
@@ -933,31 +1145,32 @@ function renderBlocks(
       }
       cursorLast = lastEl;
       if (anchored) cursorFallback = container;
+      entry.status = "inserted";
+      entry.elements = captionEl ? 2 : 1;
       continue;
     }
 
     if (block.type === "table") {
+      const tableSettings = resolveTableSettings({ attrs: block.attrs ?? {}, rule, user: options.user?.table });
       const tableEl = buildTableElement(
         ownerDoc,
         block,
-        rule,
-        profile,
         anchorRanges,
-        {
-          tableConfig: options.tableConfig ?? options.config?.table,
-          config: options.config,
-          sample,
-        },
+        tableSettings,
       );
       container.insertBefore(tableEl, refNode);
       cursorLast = tableEl;
       if (anchored) cursorFallback = container;
       count += 1;
+      entry.status = "inserted";
+      entry.elements = 1;
+      entry.theme = tableSettings.styleAnchor ? `sample:${tableSettings.styleAnchor}` : tableSettings.theme.value;
+      delete entry.style; // 表格样式由主题/样板表决定，不走段落样式
       continue;
     }
 
     if (!sample) {
-      warnings.push(`${describeBlock(block)} 找不到可用样式（rules/profile 未覆盖），已跳过`);
+      skip(`${describeBlock(block)} 找不到可用样式（rules/profile 未覆盖），已跳过`);
       continue;
     }
 
@@ -970,6 +1183,8 @@ function renderBlocks(
       cursorLast = ruleEl;
       if (anchored) cursorFallback = container;
       count += 1;
+      entry.status = "inserted";
+      entry.elements = 1;
       continue;
     }
 
@@ -997,6 +1212,8 @@ function renderBlocks(
       cursorLast = last;
       if (anchored) cursorFallback = container;
     }
+    entry.status = "inserted";
+    entry.elements = count - countBefore;
   }
 
   if (info.toc?.enabled) {
@@ -1085,13 +1302,13 @@ function buildHorizontalRule(sample: StyleSample, ownerDoc: XmlElement): XmlElem
   return paragraphEl;
 }
 
-function extractSampleFont(sample: StyleSample | null): { family?: string; size?: number } {
+function extractSampleFont(sample: StyleSample | null): { family?: string; eastAsia?: string; size?: number } {
   if (sample?.inline?.run) {
     const run = sample.inline.run;
     const fontFamily = run.fontFamily as Record<string, unknown> | undefined;
     const family = (fontFamily?.ascii ?? fontFamily?.eastAsia ?? run.font) as string | undefined;
     const size = run.fontSize ? parseInt(String(run.fontSize), 10) : undefined;
-    return { family, size };
+    return { family, eastAsia: fontFamily?.eastAsia as string | undefined, size };
   }
   if (!sample?.runEl) return {};
   const rPr = childElementsOf(sample.runEl).find((c) => c.nodeName === "w:rPr");
@@ -1100,6 +1317,7 @@ function extractSampleFont(sample: StyleSample | null): { family?: string; size?
   const sz = childElementsOf(rPr).find((c) => c.nodeName === "w:sz");
   return {
     family: rFonts?.getAttribute?.("w:ascii") || rFonts?.getAttribute?.("w:eastAsia") || undefined,
+    eastAsia: rFonts?.getAttribute?.("w:eastAsia") || undefined,
     size: sz?.getAttribute?.("w:val") ? parseInt(sz.getAttribute("w:val"), 10) : undefined,
   };
 }
@@ -1122,15 +1340,14 @@ const STANDARD_LINT_COLORS: Record<string, { color?: string; bold?: boolean; ita
 
 function renderStyledCodeParagraphs(
   block: MarkdownBlock,
-  rule: TemplateRule,
+  settings: CodeSettings,
   sample: StyleSample,
-  options: RenderOptions,
   container: XmlElement,
   refNode: XmlElement | null,
   ownerDoc: XmlElement,
 ): { lastEl: XmlElement | null; lineCount: number } {
-  const isLint = rule.lint !== false;
-  const tabSize = options.codeConfig?.tabSize ?? 4;
+  const isLint = settings.lint.value;
+  const tabSize = settings.tabSize;
   const hl = highlightCode(block.text, { lang: block.lang, tabSize });
 
   let last: XmlElement | null = null;
@@ -1179,27 +1396,23 @@ function renderStyledCodeParagraphs(
 
 function buildCodeTable(
   block: MarkdownBlock,
-  rule: TemplateRule | undefined,
+  settings: CodeSettings,
   sample: StyleSample | null,
-  options: RenderOptions,
   ownerDoc: XmlElement,
+  bodyFont: { family?: string; eastAsia?: string; size?: number } = {},
 ): XmlElement {
-  const codeConfig = options.codeConfig ?? options.config?.code ?? {};
-  const themeFromRule = rule?.theme && rule.theme.trim().length > 0 ? rule.theme.trim() : undefined;
-  const themeName =
-    block.theme ??
-    themeFromRule ??
-    options.codeTemplate ??
-    codeConfig.template ??
-    "default";
-  const theme = loadCodeThemeSync(themeName);
+  const codeConfig = { fontFamily: settings.fontFamily, fontEastAsia: settings.fontEastAsia, fontSize: settings.fontSize };
+  const theme = loadCodeThemeSync(settings.theme.value);
 
   const sampleFont = extractSampleFont(sample);
 
   // 字体配置：支持 "inherit" 随正文/代码样板字体
-  let fontFamily = codeConfig.fontFamily ?? theme.container.fontFamily;
+  let fontFamily = codeConfig.fontFamily ?? bodyFont.family ?? theme.container.fontFamily;
   if (fontFamily === "inherit") fontFamily = sampleFont.family || "Consolas";
   if (!fontFamily) fontFamily = "Consolas";
+  // 中文字体：单独设置（如 宋体），"inherit" 取样板的中文字体；未设置则不写 eastAsia（沿用文档默认）
+  let eastAsia: string | undefined = codeConfig.fontEastAsia ?? bodyFont.eastAsia;
+  if (eastAsia === "inherit") eastAsia = sampleFont.eastAsia || undefined;
 
   // 字号配置：支持 "inherit" 随正文字号
   let fontSize: number;
@@ -1213,8 +1426,9 @@ function buildCodeTable(
     fontSize = theme.container.fontSize ?? 19;
   }
 
-  const tabSize = codeConfig.tabSize ?? 4;
-  const showLineNumbers = options.showLineNumbers ?? codeConfig.lineNumbers ?? true;
+  const tabSize = settings.tabSize;
+  const showLineNumbers = settings.lineNumbers.value;
+  const showBorder = settings.border.value;
 
   const hl = highlightCode(block.text, { lang: block.lang, tabSize });
 
@@ -1248,10 +1462,12 @@ function buildCodeTable(
   const tblBorders = ownerDoc.createElementNS(WORD_NS, "w:tblBorders");
   for (const side of ["top", "left", "bottom", "right"]) {
     const b = ownerDoc.createElementNS(WORD_NS, `w:${side}`);
-    b.setAttribute("w:val", "single");
-    b.setAttribute("w:sz", borderSize);
-    b.setAttribute("w:space", "0");
-    b.setAttribute("w:color", borderColor);
+    b.setAttribute("w:val", showBorder ? "single" : "none");
+    if (showBorder) {
+      b.setAttribute("w:sz", borderSize);
+      b.setAttribute("w:space", "0");
+      b.setAttribute("w:color", borderColor);
+    }
     tblBorders.appendChild(b);
   }
   for (const side of ["insideH", "insideV"]) {
@@ -1353,6 +1569,7 @@ function buildCodeTable(
       const rFonts = ownerDoc.createElementNS(WORD_NS, "w:rFonts");
       rFonts.setAttribute("w:ascii", fontFamily);
       rFonts.setAttribute("w:hAnsi", fontFamily);
+      if (eastAsia) rFonts.setAttribute("w:eastAsia", eastAsia);
       rPr.appendChild(rFonts);
       const colEl = ownerDoc.createElementNS(WORD_NS, "w:color");
       colEl.setAttribute("w:val", gutterColor);
@@ -1443,6 +1660,7 @@ function buildCodeTable(
         const rFonts = ownerDoc.createElementNS(WORD_NS, "w:rFonts");
         rFonts.setAttribute("w:ascii", fontFamily);
         rFonts.setAttribute("w:hAnsi", fontFamily);
+        if (eastAsia) rFonts.setAttribute("w:eastAsia", eastAsia);
         rPr.appendChild(rFonts);
 
         const colEl = ownerDoc.createElementNS(WORD_NS, "w:color");
@@ -1815,6 +2033,19 @@ function matchesRule(rule: TemplateRule, target: MatchTarget): boolean {
   return true;
 }
 
+function previewText(block: MarkdownBlock): string {
+  const raw =
+    block.type === "image"
+      ? (block.caption || block.src || "")
+      : block.type === "list"
+        ? (block.items ?? []).map((item) => item.text).join(" / ")
+        : block.type === "table"
+          ? (block.rows?.[0] ?? []).join(" | ")
+          : block.text;
+  const flat = raw.replace(/\s+/g, " ").trim();
+  return flat.length > 40 ? `${flat.slice(0, 40)}…` : flat;
+}
+
 function describeBlock(block: MarkdownBlock): string {
   switch (block.type) {
     case "heading":
@@ -1855,8 +2086,38 @@ export async function renderTemplateFile(
   if (shouldStripComments) {
     await stripDocumentComments(doc);
   }
-  await doc.saveAs(outputPath);
+  result.warnings.push(...(await dropDanglingStyleRefs(doc)));
+  if (options.strict && result.warnings.length > 0) {
+    throw new Error(`--strict：渲染产生 ${result.warnings.length} 条警告，未写出成稿：\n  ${result.warnings.join("\n  ")}`);
+  }
+  if (!options.dryRun) await doc.saveAs(outputPath);
   return result;
+}
+
+/**
+ * AI 的内联样式常写 `styleId: "Heading1"` 之类，而原文档 styles.xml 里并没有该样式；
+ * 悬空的 `w:pStyle` / `w:rStyle` 在 Word 里等于没设。这里剥掉未定义的引用（标题层级另由 outlineLvl 保证），并返回告警。
+ */
+export async function dropDanglingStyleRefs(doc: VirtualWordDocument): Promise<string[]> {
+  const anyDoc = doc as unknown as {
+    zip?: { file: (name: string) => any };
+    partsData?: Array<{ path?: string; xmlDocument?: any }>;
+  };
+  const stylesFile = anyDoc.zip?.file?.("word/styles.xml");
+  const root = anyDoc.partsData?.find((part) => part.path === "word/document.xml")?.xmlDocument?.documentElement;
+  if (!stylesFile || typeof stylesFile.async !== "function" || !root) return [];
+  const stylesXml: string = await stylesFile.async("text");
+  const defined = new Set(Array.from(stylesXml.matchAll(/w:styleId="([^"]+)"/g), (m) => m[1]));
+  const dropped = new Map<string, number>();
+  for (const tag of ["w:pStyle", "w:rStyle"]) {
+    for (const el of Array.from(root.getElementsByTagName(tag) ?? []) as XmlElement[]) {
+      const id = el.getAttribute("w:val");
+      if (!id || defined.has(id)) continue;
+      el.parentNode?.removeChild(el);
+      dropped.set(id, (dropped.get(id) ?? 0) + 1);
+    }
+  }
+  return [...dropped].map(([id, n]) => `模板样式表里没有样式 “${id}”，已移除 ${n} 处悬空引用（改用直接格式）`);
 }
 
 interface Attrs {
@@ -1931,6 +2192,30 @@ function parseEnhancedAttrs(attrStr?: string): Attrs {
 
 let docPrIdCounter = 1000;
 
+/** 解析图片路径：相对路径优先相对 Markdown 所在目录，其次相对 cwd；不存在返回 null。 */
+function resolveImagePath(src: string, markdownDir?: string): string | null {
+  if (!src) return null;
+  if (markdownDir && !path.isAbsolute(src)) {
+    const candidate = path.resolve(markdownDir, src);
+    if (existsSync(candidate)) return candidate;
+  }
+  return existsSync(src) ? src : null;
+}
+
+function setParagraphAlign(paragraphEl: XmlElement, align: string): void {
+  let pPr = childElementsOf(paragraphEl).find((child) => child.nodeName === "w:pPr") ?? null;
+  if (!pPr) {
+    pPr = createWordElement(paragraphEl, "w:pPr");
+    paragraphEl.insertBefore(pPr, paragraphEl.firstChild);
+  }
+  let jc = childElementsOf(pPr).find((child) => child.nodeName === "w:jc") ?? null;
+  if (!jc) {
+    jc = createWordElement(pPr, "w:jc");
+    pPr.appendChild(jc);
+  }
+  jc.setAttribute("w:val", align);
+}
+
 function buildImageElement(
   ownerDoc: XmlElement,
   doc: VirtualWordDocument,
@@ -1939,50 +2224,25 @@ function buildImageElement(
   profile: TemplateProfile,
   anchorRanges: Map<string, BookmarkRange>,
   ctx: {
-    imageConfig?: ImageBlockConfig;
-    config?: ReportConfig;
-    sample: XmlElement | null;
-    markdownDir?: string;
+    settings: ImageSettings;
+    /** 已解析且确认存在的图片路径。 */
+    imagePath: string;
     docPrId: number;
   },
 ): { paragraphEl: XmlElement; captionEl: XmlElement | null } {
-  let imagePath = block.src || "";
-  if (ctx.markdownDir && !path.isAbsolute(imagePath)) {
-    const candidate = path.resolve(ctx.markdownDir, imagePath);
-    if (existsSync(candidate)) {
-      imagePath = candidate;
-    }
-  }
-  if (!existsSync(imagePath)) {
-    throw new Error(`图片文件未找到: ${block.src} (解析路径: ${imagePath})`);
-  }
+  const imagePath = ctx.imagePath;
 
   const buffer = readFileSync(imagePath);
   const dims = getImageDimensions(buffer);
 
-  const align =
-    block.attrs?.align ||
-    (rule?.options as any)?.align ||
-    ctx.imageConfig?.align ||
-    "center";
-
-  const size =
-    block.attrs?.size ||
-    (rule?.options as any)?.size ||
-    ctx.imageConfig?.size ||
-    "max";
-
-  const width =
-    block.attrs?.width ||
-    (rule?.options as any)?.width ||
-    ctx.imageConfig?.width;
-
-  const height =
-    block.attrs?.height ||
-    (rule?.options as any)?.height ||
-    ctx.imageConfig?.height;
-
-  const emuSize = calculateImageEmuSize(dims, { size, width, height, maxWidthPt: ctx.imageConfig?.maxWidth });
+  const { settings } = ctx;
+  const align = settings.align.value;
+  const emuSize = calculateImageEmuSize(dims, {
+    size: settings.size.value,
+    width: settings.width,
+    height: settings.height,
+    maxWidthPt: settings.maxWidth,
+  });
 
   const ext = path.extname(imagePath).replace(/^\./, "").toLowerCase() || dims.type;
   const mimeMap: Record<string, string> = {
@@ -2094,35 +2354,26 @@ function buildImageElement(
 
   let captionEl: XmlElement | null = null;
   if (block.caption && block.caption.trim()) {
-    const aiCaptionRef = (rule?.options as any)?.captionRef;
-    const aiCaptionStyle = (rule?.options as any)?.captionStyle;
-    const profileCaptionRule = matchRule(profile.rules, { type: "caption" } as any);
-    const userCaptionStyle = block.attrs?.captionStyle || block.attrs?.style || ctx.imageConfig?.captionStyle;
-
+    // 图注样式同样遵循覆盖准则：块属性 / 使用者配置（样式名、锚点或配方名）> 模板规则的 captionRef/captionStyle > profile 的 caption 规则
+    const byName = (name: string): StyleRef =>
+      anchorRanges.has(name) ? { anchor: name } : profile.styles?.[name] ? { recipe: name } : { styleName: name };
     let targetStyleRef: StyleRef | undefined;
-    if (aiCaptionRef) {
-      targetStyleRef = typeof aiCaptionRef === "string" ? { anchor: aiCaptionRef } : aiCaptionRef;
-    } else if (aiCaptionStyle) {
-      targetStyleRef = typeof aiCaptionStyle === "string"
-        ? (profile.styles?.[aiCaptionStyle] ? { recipe: aiCaptionStyle } : { styleName: aiCaptionStyle })
-        : aiCaptionStyle;
-    } else if (profileCaptionRule?.style) {
-      targetStyleRef = profileCaptionRule.style;
-    } else if (userCaptionStyle) {
-      targetStyleRef = anchorRanges.has(userCaptionStyle)
-        ? { anchor: userCaptionStyle }
-        : profile.styles?.[userCaptionStyle]
-        ? { recipe: userCaptionStyle }
-        : { styleName: userCaptionStyle };
+    const chosen = settings.captionStyle;
+    if (chosen && (chosen.from === "block" || chosen.from === "user") && typeof chosen.value === "string") {
+      targetStyleRef = byName(chosen.value);
+    } else if (chosen?.from === "template") {
+      const tpl = chosen.value as { captionRef?: unknown; captionStyle?: unknown };
+      if (tpl.captionRef !== undefined) {
+        targetStyleRef = typeof tpl.captionRef === "string" ? { anchor: tpl.captionRef } : (tpl.captionRef as StyleRef);
+      } else if (tpl.captionStyle !== undefined) {
+        targetStyleRef = typeof tpl.captionStyle === "string" ? byName(tpl.captionStyle) : (tpl.captionStyle as StyleRef);
+      }
     }
+    targetStyleRef ??= matchRule(profile.rules, { type: "caption" } as any)?.style;
 
     const captionSample = styleRefToSample(targetStyleRef ?? (rule?.style || profile.defaults?.style), profile, anchorRanges);
 
-    const captionAlign =
-      block.attrs?.captionAlign ||
-      (rule?.options as any)?.captionAlign ||
-      ctx.imageConfig?.captionAlign ||
-      "center";
+    const captionAlign = settings.captionAlign.value;
 
     if (captionSample && !captionSample.inline && captionSample.paragraphEl) {
       captionEl = captionSample.paragraphEl.cloneNode(true) as XmlElement;
@@ -2287,12 +2538,9 @@ function buildTableFromSample(
         p.appendChild(pPr);
       }
 
-      const run = ownerDoc.createElementNS(WORD_NS, "w:r");
-      if (sampleRPr) run.appendChild(sampleRPr.cloneNode(true));
-      const t = createWordElement(run, "w:t");
-      t.textContent = cellText;
-      run.appendChild(t);
-      p.appendChild(run);
+      const baseRun = ownerDoc.createElementNS(WORD_NS, "w:r");
+      if (sampleRPr) baseRun.appendChild(sampleRPr.cloneNode(true));
+      appendInlineCellRuns(p, baseRun, cellText);
       tc.appendChild(p);
       tr.appendChild(tc);
     }
@@ -2302,48 +2550,51 @@ function buildTableFromSample(
   return tbl;
 }
 
+/** 单元格支持行内 Markdown（`代码`、**粗**、*斜*、~~删除~~、链接文字），以 baseRun 的格式为底。 */
+function appendInlineCellRuns(paragraphEl: XmlElement, baseRun: XmlElement, text: string): void {
+  for (const run of parseInline(text)) {
+    const runEl = cloneRunWithText(baseRun, run.text, run.link ? { ...run, underline: true, color: run.color ?? "0563C1" } : run);
+    if (run.code) setMonospaceFont(runEl);
+    paragraphEl.appendChild(runEl);
+  }
+}
+
+/** 行内代码：把 run 的西文字体设为等宽（中文字体保持不变）。 */
+function setMonospaceFont(runEl: XmlElement): void {
+  let rPr = childElementsOf(runEl).find((child) => child.nodeName === "w:rPr") ?? null;
+  if (!rPr) {
+    rPr = createWordElement(runEl, "w:rPr");
+    runEl.insertBefore(rPr, runEl.firstChild);
+  }
+  let fonts = childElementsOf(rPr).find((child) => child.nodeName === "w:rFonts") ?? null;
+  if (!fonts) {
+    fonts = createWordElement(rPr, "w:rFonts");
+    const rStyle = childElementsOf(rPr).find((child) => child.nodeName === "w:rStyle");
+    rPr.insertBefore(fonts, rStyle ? rStyle.nextSibling : rPr.firstChild);
+  }
+  fonts.setAttribute("w:ascii", "Consolas");
+  fonts.setAttribute("w:hAnsi", "Consolas");
+  fonts.removeAttribute("w:asciiTheme");
+  fonts.removeAttribute("w:hAnsiTheme");
+}
+
 function buildTableElement(
   ownerDoc: XmlElement,
   block: MarkdownBlock,
-  rule: TemplateRule | null | undefined,
-  profile: TemplateProfile,
   anchorRanges: Map<string, BookmarkRange>,
-  ctx: {
-    tableConfig?: TableBlockConfig;
-    config?: ReportConfig;
-    sample: XmlElement | null;
-  },
+  settings: TableSettings,
 ): XmlElement {
   const rows = block.rows || [];
   const colCount = Math.max(...rows.map((r) => r.length), 1);
   const alignments = block.alignments || [];
 
-  const theme =
-    block.attrs?.theme ||
-    (rule?.options as any)?.theme ||
-    ctx.tableConfig?.theme ||
-    "academic";
+  const theme = settings.theme.value;
+  const hasHeader = settings.header.value && rows.length > 0;
+  const tableAlign = settings.align.value;
 
-  const headerOpt =
-    block.attrs?.header !== undefined
-      ? block.attrs.header !== "false"
-      : (rule?.options as any)?.header !== undefined
-      ? (rule?.options as any).header !== false
-      : ctx.tableConfig?.header !== undefined
-      ? ctx.tableConfig.header !== false
-      : true;
-
-  const hasHeader = headerOpt && rows.length > 0;
-
-  const tableAlign =
-    block.attrs?.align ||
-    (rule?.options as any)?.align ||
-    ctx.tableConfig?.align ||
-    "center";
-
-  // 复用文档中已有表格的样式：规则里给 options.styleAnchor（表内任一锚点）时，
-  // 克隆该表的表属性/列宽/边框与单元格格式。
-  const styleAnchor = (rule?.options as any)?.styleAnchor as string | undefined;
+  // 复用文档中已有表格的样式：模板规则里给 options.styleAnchor（表内任一锚点）时，
+  // 克隆该表的表属性/列宽/边框与单元格格式（块/使用者显式指定主题时不生效）。
+  const styleAnchor = settings.styleAnchor;
   if (styleAnchor) {
     const sampleTable = resolveSampleTable(styleAnchor, anchorRanges);
     if (sampleTable) {
@@ -2501,20 +2752,16 @@ function buildTableElement(
       pPr.appendChild(jc);
       p.appendChild(pPr);
 
-      const run = ownerDoc.createElementNS(WORD_NS, "w:r");
+      const baseRun = ownerDoc.createElementNS(WORD_NS, "w:r");
       const rPr = ownerDoc.createElementNS(WORD_NS, "w:rPr");
-      const sz = ownerDoc.createElementNS(WORD_NS, "w:sz");
-      sz.setAttribute("w:val", "21"); // 10.5pt (五号)
-      rPr.appendChild(sz);
       if (isHeader) {
         rPr.appendChild(ownerDoc.createElementNS(WORD_NS, "w:b"));
       }
-      run.appendChild(rPr);
-
-      const t = ownerDoc.createElementNS(WORD_NS, "w:t");
-      t.textContent = cellText;
-      run.appendChild(t);
-      p.appendChild(run);
+      const sz = ownerDoc.createElementNS(WORD_NS, "w:sz");
+      sz.setAttribute("w:val", "21"); // 10.5pt (五号)
+      rPr.appendChild(sz);
+      baseRun.appendChild(rPr);
+      appendInlineCellRuns(p, baseRun, cellText);
 
       tc.appendChild(p);
       tr.appendChild(tc);

@@ -23,8 +23,8 @@ test("mergeConfig: 深度合并", () => {
   assert.equal(merged.code.tabSize, 4);
 });
 
-test("resolveReportConfigSync: 空参数回退默认配置", () => {
-  const conf = resolveReportConfigSync();
-  assert.equal(conf.code?.template, "default");
-  assert.equal(conf.code?.lineNumbers, true);
+test("resolveReportConfigSync: 只返回使用者层，不混入内置默认", () => {
+  const conf = resolveReportConfigSync({ cwd: "/", extra: "code.template=dark" });
+  assert.equal(conf.code?.template, "dark");
+  assert.equal(conf.code?.lineNumbers, undefined);
 });

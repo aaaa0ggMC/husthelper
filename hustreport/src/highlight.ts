@@ -85,11 +85,18 @@ const loadedLangs = new Set<string>(["markup", "css", "clike", "javascript"]);
 function ensureLanguage(lang: string): string {
   const target = LANG_ALIASES[lang.toLowerCase()] ?? lang.toLowerCase();
   if (target && !loadedLangs.has(target)) {
+    // Prism 对未知语言会直接 console.warn，且不抛异常；这里静音并只尝试一次，回退纯文本。
+    const warn = console.warn;
+    const log = console.log;
+    console.warn = console.log = () => {};
     try {
       loadLanguages([target]);
-      loadedLangs.add(target);
     } catch {
       // 忽略无法加载的语言，回退纯文本
+    } finally {
+      console.warn = warn;
+      console.log = log;
+      loadedLangs.add(target);
     }
   }
   return target;

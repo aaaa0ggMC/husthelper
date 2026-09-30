@@ -260,3 +260,159 @@ test("代码块纯文本解析与渲染 (作为正文段落填入，避开 Markd
     "第二条参考文献也应完整保留为纯文本",
   );
 });
+test("代码块属性 (line=false)：隐藏行号栏", () => {
+  const mockDoc = createMockDoc();
+  const info: TemplateInfo = {
+    version: 2,
+    kind: "hustreport/template",
+    meta: { source: "test.docx", createdAt: "2026-01-01", generator: "test" },
+    anchorPrefix: "hrseg",
+    defaultProfile: "default",
+    anchors: { hrseg0001: { kind: "slot" } },
+    profiles: {
+      default: {
+        styles: { body: { anchor: "hrseg0001" } },
+        rules: [{ match: { type: "paragraph" }, style: { recipe: "body" } }],
+      },
+    },
+  };
+
+  const md = ["[正文更新](ref:hrseg0001)", "", "```python {line=false, ref: hrseg0001}", "a = 1", "b = 2", "```"].join("\n");
+  const result = renderTemplate(mockDoc as any, info, md, { strip: false });
+  assert.equal(result.inserted, 1);
+
+  const body = mockDoc.xmlDoc.getElementsByTagNameNS(WORD_NS, "body")[0];
+  const tbl = body.getElementsByTagNameNS(WORD_NS, "tbl")[0];
+  assert.ok(tbl, "应生成卡片表格");
+  const tcList = tbl.getElementsByTagNameNS(WORD_NS, "tc");
+  assert.equal(tcList.length, 2, "line=false 时只有代码单元格，无行号单元格");
+});
+
+test("代码块属性 (border=false)：去掉外边框", () => {
+  const mockDoc = createMockDoc();
+  const info: TemplateInfo = {
+    version: 2,
+    kind: "hustreport/template",
+    meta: { source: "test.docx", createdAt: "2026-01-01", generator: "test" },
+    anchorPrefix: "hrseg",
+    defaultProfile: "default",
+    anchors: { hrseg0001: { kind: "slot" } },
+    profiles: {
+      default: {
+        styles: { body: { anchor: "hrseg0001" } },
+        rules: [{ match: { type: "paragraph" }, style: { recipe: "body" } }],
+      },
+    },
+  };
+
+  const md = ["[正文更新](ref:hrseg0001)", "", "```python {border=false, ref: hrseg0001}", "a = 1", "```"].join("\n");
+  renderTemplate(mockDoc as any, info, md, { strip: false });
+
+  const body = mockDoc.xmlDoc.getElementsByTagNameNS(WORD_NS, "body")[0];
+  const tbl = body.getElementsByTagNameNS(WORD_NS, "tbl")[0];
+  const tblBorders = tbl.getElementsByTagNameNS(WORD_NS, "tblBorders")[0];
+  assert.ok(tblBorders, "应有 tblBorders 节点");
+  for (const side of ["top", "left", "bottom", "right"]) {
+    const b = tblBorders.getElementsByTagNameNS(WORD_NS, side)[0];
+    assert.equal(b.getAttribute("w:val"), "none", `${side} 边框应为 none`);
+  }
+});
+
+test("代码块属性 (mode=card)：覆盖模板原生代码样式", () => {
+  const mockDoc = createMockDoc();
+  const info: TemplateInfo = {
+    version: 2,
+    kind: "hustreport/template",
+    meta: { source: "test.docx", createdAt: "2026-01-01", generator: "test" },
+    anchorPrefix: "hrseg",
+    defaultProfile: "default",
+    anchors: { hrseg0001: { kind: "slot" }, hrseg0002: { kind: "slot" } },
+    profiles: {
+      default: {
+        styles: { body: { anchor: "hrseg0001" }, code: { anchor: "hrseg0002" } },
+        rules: [
+          { match: { type: "paragraph" }, style: { recipe: "body" } },
+          { match: { type: "code" }, style: { anchor: "hrseg0002" }, lint: true },
+        ],
+      },
+    },
+  };
+
+  // 不加 mode 时默认命中原生段落模式；加 mode=card 后强制卡片模式
+  const md = ["[正文更新](ref:hrseg0001)", "", "```python {mode=card, ref: hrseg0001}", "def foo():", "    return 1", "```"].join("\n");
+  renderTemplate(mockDoc as any, info, md, { strip: false });
+
+  const body = mockDoc.xmlDoc.getElementsByTagNameNS(WORD_NS, "body")[0];
+  const tables = body.getElementsByTagNameNS(WORD_NS, "tbl");
+  assert.equal(tables.length, 1, "mode=card 应生成卡片表格而非段落");
+});
+
+test("代码块属性 (line=true)：让 text 块也渲染为带行号的卡片", () => {
+  const mockDoc = createMockDoc();
+  const info: TemplateInfo = {
+    version: 2,
+    kind: "hustreport/template",
+    meta: { source: "test.docx", createdAt: "2026-01-01", generator: "test" },
+    anchorPrefix: "hrseg",
+    defaultProfile: "default",
+    anchors: { hrseg0001: { kind: "slot" } },
+    profiles: {
+      default: {
+        styles: { body: { anchor: "hrseg0001" } },
+        rules: [{ match: { type: "paragraph" }, style: { recipe: "body" } }],
+      },
+    },
+  };
+
+  // 普通 ```text 会被当作纯文本段落；显式 line=true 后应转为卡片
+  const md = ["[正文更新](ref:hrseg0001)", "", "```text {line=true, ref: hrseg0001}", "hello", "world", "```"].join("\n");
+  renderTemplate(mockDoc as any, info, md, { strip: false });
+
+  const body = mockDoc.xmlDoc.getElementsByTagNameNS(WORD_NS, "body")[0];
+  const tables = body.getElementsByTagNameNS(WORD_NS, "tbl");
+  assert.equal(tables.length, 1, "显式 line=true 的 text 块应生成卡片表格");
+  const tcList = tables[0].getElementsByTagNameNS(WORD_NS, "tc");
+  assert.equal(tcList.length, 4, "2 行文本应有 2 行号 + 2 代码单元格");
+});
+
+test("parseDocument: 多行 ```text 块给出告警，console 围栏走 code 块", () => {
+  const md = "```text\na   b\nc\nd\ne\n```\n\n```console\nx   y\n```\n";
+  const parsed = parseDocument(md);
+  assert.equal(parsed.warnings.length, 1);
+  assert.match(parsed.warnings[0], /console/);
+  assert.equal(parsed.blocks.filter((b) => b.type === "code").length, 1);
+});
+
+test("parseDocument: 【占位】填空可被识别为待替换", () => {
+  const parsed = parseDocument("[【学号】](ref:hrseg0001 | padding=cover)\n");
+  assert.equal(parsed.fills.length, 1);
+  assert.match(parsed.fills[0].text, /^【学号】$/);
+});
+
+test("resolveCodeSettings: inline/recipe 只是字体规格 → 仍走卡片并带出字体；anchor 才走原生", async () => {
+  const { resolveCodeSettings, isDocumentStyleRef } = await import("../src/settings.ts");
+  const inlineRule = {
+    match: { type: "code" },
+    style: { inline: { run: { fontFamily: { eastAsia: "宋体" }, fontSize: "21" } } },
+  } as any;
+  assert.equal(isDocumentStyleRef(inlineRule.style), false);
+  const card = resolveCodeSettings({ attrs: {}, rule: inlineRule, user: undefined, hasDocumentStyle: isDocumentStyleRef(inlineRule.style) });
+  assert.equal(card.mode.value, "card");
+  assert.equal(card.lineNumbers.value, true);
+  assert.equal(card.border.value, true);
+  assert.equal(card.fontEastAsia, undefined); // inline 里的字体不作数，交给渲染器复制正文样式
+  assert.equal(card.fontFamily, undefined);
+  assert.equal(card.fontSize, 21);
+  const split = resolveCodeSettings({
+    attrs: {},
+    rule: { match: { type: "code" }, options: { fontFamily: "Times New Roman", fontEastAsia: "宋体" } } as any,
+    user: undefined,
+    hasDocumentStyle: false,
+  });
+  assert.equal(split.fontFamily, "Times New Roman");
+  assert.equal(split.fontEastAsia, "宋体");
+
+  const anchorRule = { match: { type: "code" }, style: { anchor: "hrseg0040" } } as any;
+  const native = resolveCodeSettings({ attrs: {}, rule: anchorRule, user: undefined, hasDocumentStyle: isDocumentStyleRef(anchorRule.style) });
+  assert.equal(native.mode.value, "native");
+});

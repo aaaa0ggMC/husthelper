@@ -115,6 +115,7 @@ export {
   parseSkeleton,
   renderTemplate,
   renderTemplateFile,
+  summarizeTrace,
 } from "./src/render.ts";
 export type {
   BlockType,
@@ -124,12 +125,23 @@ export type {
   RenderFill,
   RenderOptions,
   RenderResult,
+  RenderStats,
+  RenderTraceEntry,
 } from "./src/render.ts";
+export {
+  BUILTIN_DEFAULTS,
+  buildUserSettings,
+  pickLayer,
+  resolveCodeSettings,
+  resolveImageSettings,
+  resolveTableSettings,
+} from "./src/settings.ts";
+export type { CodeSettings, ImageSettings, Resolved, SettingLayer, TableSettings, UserSettings } from "./src/settings.ts";
 
 export { EDITOR_API_DOC, runEditSandbox } from "./src/sandbox.ts";
 export type { SandboxRunOptions, SandboxRunResult } from "./src/sandbox.ts";
 
-export { chatCompletion, clampMaxTokens, extractCode, extractJson, isRetriableError, resolveChatConfig } from "./src/ai.ts";
+export { AI_CONFIG_NAMES, chatCompletion, clampMaxTokens, extractCode, extractJson, isRetriableError, resolveChatConfig } from "./src/ai.ts";
 export type { ChatConfig, ChatFn, ChatMessage } from "./src/ai.ts";
 
 export { walkParagraphs } from "./src/walk.ts";
@@ -181,6 +193,9 @@ export type {
 export {
   mergeConfig,
   parseExtraConfig,
+  findConfigUpwards,
+  locateReportConfig,
+  REPORT_CONFIG_NAMES,
   resolveReportConfig,
   resolveReportConfigSync,
 } from "./src/config.ts";

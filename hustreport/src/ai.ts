@@ -1,6 +1,7 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import OpenAI from "openai";
+import { findConfigUpwards } from "./config.ts";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -19,6 +20,15 @@ export interface ChatConfig {
   maxRetries?: number;
   /** 首次重试的基础延迟毫秒（默认 800，指数退避 + 抖动）。 */
   retryDelayMs?: number;
+  /** 配置来源（文件路径或 "env"），仅用于日志展示。 */
+  source?: string;
+}
+
+/** AI 配置文件名（按优先级，逐级向上查找第一个含 openai/ai 段的文件）。 */
+export const AI_CONFIG_NAMES = ["hustreport.config.json", "config.json"];
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** 可注入的对话函数，便于测试或替换成别的模型服务。 */
@@ -39,7 +49,7 @@ export function clampMaxTokens(value: number | undefined): number {
 }
 
 interface ResolveChatConfigOptions {
-  /** 配置文件路径；默认读取 `<cwd>/config.json`。 */
+  /** 配置文件路径；默认从 cwd 向上查找 `hustreport.config.json` / `config.json`。 */
   configFile?: string;
   /** 工作目录，默认 `process.cwd()`。 */
   cwd?: string;
@@ -61,11 +71,26 @@ export function resolveChatConfig(options: ResolveChatConfigOptions = {}): ChatC
   const env = options.env ?? process.env;
 
   let raw: { openai?: Partial<ChatConfig>; ai?: Partial<ChatConfig> } = {};
-  const candidate = options.configFile ?? path.resolve(cwd, "config.json");
-  try {
-    raw = JSON.parse(readFileSync(candidate, "utf-8"));
-  } catch {
-    // 没有 / 读不到配置文件就只看环境变量
+  let source: string | undefined;
+  if (options.configFile) {
+    // 显式指定的配置文件必须存在且可解析，避免“以为生效其实没读到”
+    source = path.resolve(cwd, options.configFile);
+    if (!existsSync(source)) throw new Error(`配置文件不存在：${source}`);
+    try {
+      raw = JSON.parse(readFileSync(source, "utf-8"));
+    } catch (error) {
+      throw new Error(`配置文件解析失败：${source}：${error instanceof Error ? error.message : String(error)}`);
+    }
+  } else {
+    // 从 cwd 向上回溯，找第一个含 openai / ai 段的配置文件
+    source = findConfigUpwards(AI_CONFIG_NAMES, cwd, (json) => isObject(json.openai) || isObject(json.ai));
+    if (source) {
+      try {
+        raw = JSON.parse(readFileSync(source, "utf-8"));
+      } catch {
+        source = undefined;
+      }
+    }
   }
 
   const ai = raw.openai ?? raw.ai ?? {};
@@ -77,7 +102,9 @@ export function resolveChatConfig(options: ResolveChatConfigOptions = {}): ChatC
 
   if (!baseURL || !apiKey || !model) {
     throw new Error(
-      "缺少 AI 配置：请在 config.json 的 openai 段或环境变量 HUST_AI_BASE_URL / HUST_AI_API_KEY / HUST_AI_MODEL 中提供",
+      "缺少 AI 配置：请在 hustreport.config.json / config.json（当前目录或任一父目录）的 openai 段、" +
+        "--config 指定的文件，或环境变量 HUST_AI_BASE_URL / HUST_AI_API_KEY / HUST_AI_MODEL 中提供" +
+        (source ? `（已读取 ${source}，但字段不全）` : ""),
     );
   }
 
@@ -87,6 +114,7 @@ export function resolveChatConfig(options: ResolveChatConfigOptions = {}): ChatC
     model,
     ...(maxTokens !== undefined ? { maxTokens } : {}),
     ...(timeout !== undefined ? { timeout } : {}),
+    source: env.HUST_AI_BASE_URL && env.HUST_AI_API_KEY && env.HUST_AI_MODEL ? "env" : (source ?? "env"),
   };
 }
 

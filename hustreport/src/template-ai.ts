@@ -80,7 +80,15 @@ export interface BuildTemplateAiOptions {
   outDir: string;
   /** 用户对文档/报告的说明，帮助 AI 判断结构。 */
   task?: string;
-  chat: ChatFn;
+  /** 调用模型的函数；提供 rawResponse 时可省略。 */
+  chat?: ChatFn;
+  /**
+   * 直接使用已保存的模型原始输出（如上次落盘的 ai-response.txt）重新合并，不再调用模型。
+   * 适合调整合并逻辑/规范化后快速重跑，或人工修改 AI 输出后复用。
+   */
+  rawResponse?: string;
+  /** 是否把 prompt 与模型原始输出落盘到 outDir（ai-prompt.md / ai-response.txt），默认 true。 */
+  saveTranscript?: boolean;
   /** 书签前缀。 */
   anchorPrefix?: string;
   /** 只看前 N 个锚点（超大文档时避免 prompt 过长）。 */
@@ -100,6 +108,10 @@ export interface BuildTemplateAiResult extends MergeResult {
   templatePath: string;
   infoPath: string;
   skeletonPath: string;
+  /** 模型原始输出落盘路径（saveTranscript=false 时为 undefined）。 */
+  responsePath?: string;
+  /** 本次是否复用了已保存的原始输出（未调用模型）。 */
+  reusedResponse: boolean;
   /** 规范化结果。 */
   normalized: { applied: number; deleted: number };
 }
@@ -137,7 +149,22 @@ export async function buildTemplateWithAi(options: BuildTemplateAiOptions): Prom
     maxAnchors: options.maxAnchors,
   });
   options.onMessages?.(messages);
-  const raw = await ensureJsonResponse(options.chat, messages);
+  const saveTranscript = options.saveTranscript ?? true;
+  await mkdir(options.outDir, { recursive: true });
+  if (saveTranscript) {
+    const transcript = messages.map((m) => `<!-- role: ${m.role} -->\n${m.content}`).join("\n\n");
+    await writeFile(path.join(options.outDir, "ai-prompt.md"), transcript, "utf-8");
+  }
+  let raw: string;
+  if (options.rawResponse !== undefined) {
+    raw = options.rawResponse;
+  } else {
+    if (!options.chat) throw new Error("buildTemplateWithAi 需要 chat 或 rawResponse");
+    raw = await ensureJsonResponse(options.chat, messages);
+  }
+  // 先落盘原始输出：即使后续合并失败，也能复盘或用 --from-response 重新合并
+  const responsePath = saveTranscript ? path.join(options.outDir, "ai-response.txt") : undefined;
+  if (responsePath && options.rawResponse === undefined) await writeFile(responsePath, raw, "utf-8");
   const merged = mergeTemplateAiResponse(raw, info);
 
   // 应用规范化建议：删掉引导/占位内容，得到干净模板；再按剩余书签裁剪锚点表。
@@ -180,7 +207,6 @@ export async function buildTemplateWithAi(options: BuildTemplateAiOptions): Prom
   // 兜底：规范化后 AI 的规则可能大多失效，用剩余文档重新推断补齐基础规则。
   augmentProfileFromDoc(doc, merged.info);
 
-  await mkdir(options.outDir, { recursive: true });
   const templatePath = path.join(options.outDir, "template.docx");
   const infoPath = path.join(options.outDir, "template.json");
   const skeletonPath = path.join(options.outDir, "skeleton.md");
@@ -192,7 +218,15 @@ export async function buildTemplateWithAi(options: BuildTemplateAiOptions): Prom
   await writeFile(infoPath, JSON.stringify(merged.info, null, 2), "utf-8");
   await writeFile(skeletonPath, merged.skeleton, "utf-8");
 
-  return { ...merged, templatePath, infoPath, skeletonPath, normalized };
+  return {
+    ...merged,
+    templatePath,
+    infoPath,
+    skeletonPath,
+    ...(responsePath ? { responsePath } : {}),
+    reusedResponse: options.rawResponse !== undefined,
+    normalized,
+  };
 }
 
 /** 用规范化后的文档重新推断基础 rules/styles，附加到默认 profile（AI 规则优先，推断补齐）。 */
@@ -462,7 +496,9 @@ export function buildTemplateContext(info: TemplateInfo, options: TemplatePrompt
 2. 彻底清理引导内容与批注：面向写作者的作答指引、解题要求、说明提示（如『正文：宋体小4号，1.5倍行距』）、示范占位符（××××、......）必须在 edits 中以 op: "delete", as: "paragraph" 彻底删除，绝不留在 template.docx 中或当成 slot；
    若这些示范/占位内容位于**表格**内（锚点行标注了 [表格内]），删光单元格后残留的空表格会很难看：请对整张表输出 {"op":"delete","target":"table","ref":"<表内任一锚点>"} 直接删除整表；
 3. 区分批注/指导文字与正文样式：原文档中红色文字（如 #FF0000）或文字本身是排版说明的，属于提示文字而非正文样式，绝不能把红色的提示段落作为正文 body 样式！正文必须是黑色、小四号、1.5倍行距、首行缩进；
-4. 样式组装与反馈：若文档缺少规范样式，可以输出 inline: { paragraph: {...}, run: {...} } 自行组装，或者在 feedback.missingStyles 中指导用户；
+4. 样式组装与反馈：若文档缺少某个规范样式（如图注/表题、代码块），但要求明确（来自批注、题面或常规规范），**优先**用 inline: { paragraph: {...}, run: {...} } 按要求直接组装并写进对应规则（如 {"match":{"type":"caption"},"style":{"inline":{...}}}），让渲染立即可用；
+   只有要求本身不明确、无法可靠组装时，才在 feedback.missingStyles 中请用户补样例。已自动组装的，在 feedback.notes 里说明「已按 xx 要求组装」，不要再列进 missingStyles；
+   代码块：若题面/批注对源码字体字号有明确要求（如「源码 5 号宋体」），以要求为准绑定对应段落样式或 inline 组装；否则优先等宽字体（Consolas）。不要在 code 规则上同时给 style 和 theme（给 theme 会让渲染走行号卡片模式）；
 5. 支持图片与表格规则配置）：
 {
   "rules": [
