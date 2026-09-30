@@ -456,6 +456,19 @@ export class HustClient {
 
   /** 获取（或重新获取）某个 CAS 应用的会话：先复用 `CASTGC`，失效再按配置的登录方式执行 */
   private async acquireService(service: CasService): Promise<string> {
+    // 串行化：聚合层会并发取多个来源，冷启动时若各自登录会同时过验证码，识别失败叠加会触发
+    // 账号锁定（连续失败 5 次锁 1 分钟）。排队后，后到者能直接用先到者拿到的 CASTGC 免密换票。
+    const run = this.acquireChain.then(() => this.acquireServiceUnlocked(service));
+    this.acquireChain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  private acquireChain: Promise<void> = Promise.resolve();
+
+  private async acquireServiceUnlocked(service: CasService): Promise<string> {
     const session = this.ensureJar();
     const logger = this.logger;
 
