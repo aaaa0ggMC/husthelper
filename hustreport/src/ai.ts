@@ -176,7 +176,8 @@ export function chatCompletion(config: ChatConfig): ChatFn {
       const status = error?.status ?? error?.statusCode ?? "无响应";
       const message = error?.message ?? String(lastError);
       throw new Error(
-        `OpenAI 接口请求失败 (${status}) model=${config.model} url=${config.baseURL}: ${message.slice(0, 800)}`,
+        `OpenAI 接口请求失败 (${status}) model=${config.model} url=${config.baseURL}: ${message.slice(0, 800)}` +
+          apiErrorHint(status),
       );
     }
 
@@ -253,4 +254,22 @@ function sliceBalanced(text: string): string {
     }
   }
   return text.slice(start);
+}
+
+/** 按 HTTP 状态码给出下一步该做什么（是重试还是充值/改配置），并提示可用 --from-response 复用旧结果。 */
+export function apiErrorHint(status: number | string): string {
+  const reuse = "；已有 ai-response.txt 时可用 --from-response 不调模型直接重新合并";
+  switch (Number(status)) {
+    case 401:
+    case 403:
+      return `\n  提示：鉴权失败，请检查 apiKey 是否正确、是否有该模型的权限（配置来源见上方“AI 配置来源”）${reuse}`;
+    case 402:
+      return `\n  提示：服务方报告余额不足，充值后直接重跑即可（重试无效）${reuse}`;
+    case 404:
+      return "\n  提示：地址或模型名不存在，请检查 baseURL（通常需以 /v1 结尾）与 model";
+    case 429:
+      return "\n  提示：触发限流，稍等片刻重试（已自动退避重试仍失败时，可降低并发或换模型）";
+    default:
+      return "";
+  }
 }

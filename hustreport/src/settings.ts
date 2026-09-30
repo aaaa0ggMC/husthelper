@@ -87,6 +87,8 @@ export interface CodeSettings {
   fontFamily?: string;
   fontEastAsia?: string;
   fontSize?: number | string;
+  /** 规则中无法识别的取值（已忽略），由渲染器汇总为警告。 */
+  warnings: string[];
   /** 请求 native 但模板没有原生代码样式时的回退说明。 */
   note?: string;
 }
@@ -97,26 +99,47 @@ export function isDocumentStyleRef(ref: unknown): boolean {
 }
 
 /**
- * 从规则里取“只有字体要求”的代码字体：`options.fontFamily`（西文）/ `options.fontEastAsia`（中文）/ `options.fontSize` 优先，
- * 字号其次取 `inline.run.fontSize`（半磅值）。未指定字体时由渲染器复制文档正文样式。
+ * 从规则里取“只有字体要求”的代码字体：
+ *   - `options.fontFamily`：字符串（西文字体），或 `{ ascii, eastAsia }` 对象（AI 常用写法）；
+ *   - `options.fontEastAsia`：中文字体，优先于对象里的 eastAsia；
+ *   - `options.fontSize`：半磅值；其次取 `inline.run.fontSize`。
+ * AI 拼的 `inline.run.fontFamily` 不作数（应复制文档正文样式）。无法识别的取值不再静默忽略，返回 warnings。
  */
 export function ruleCodeFont(rule: TemplateRule | null | undefined): {
   fontFamily?: string;
   fontEastAsia?: string;
   fontSize?: number | string;
+  warnings: string[];
 } {
   const opts = (rule?.options ?? {}) as Record<string, unknown>;
   const ref = rule?.style as { inline?: { run?: Record<string, any> } } | undefined;
   const run = ref?.inline?.run ?? {};
-  // AI 拼的 inline 字体不作数（应复制文档正文样式）；字体只认显式的 options，inline 里只取字号
-  const ascii = str(opts.fontFamily);
-  const eastAsia = str(opts.fontEastAsia);
+  const warnings: string[] = [];
+
+  let ascii: string | undefined;
+  let eastAsia: string | undefined;
+  const ff = opts.fontFamily;
+  if (typeof ff === "string") {
+    ascii = str(ff);
+  } else if (ff && typeof ff === "object" && !Array.isArray(ff)) {
+    const obj = ff as Record<string, unknown>;
+    ascii = str(obj.ascii) ?? str(obj.hAnsi);
+    eastAsia = str(obj.eastAsia);
+  } else if (ff !== undefined && ff !== null && ff !== "") {
+    warnings.push(`代码规则的 options.fontFamily 只接受字符串或 { ascii, eastAsia } 对象，已忽略：${JSON.stringify(ff)}`);
+  }
+  eastAsia = str(opts.fontEastAsia) ?? eastAsia;
+
   const rawSize = opts.fontSize ?? run.fontSize;
   const size = typeof rawSize === "number" ? rawSize : typeof rawSize === "string" && /^\d+$/.test(rawSize) ? Number(rawSize) : undefined;
+  if (rawSize !== undefined && rawSize !== null && rawSize !== "" && size === undefined) {
+    warnings.push(`代码规则的 fontSize 应为半磅数值（如 21 = 五号），已忽略：${JSON.stringify(rawSize)}`);
+  }
   return {
     ...(ascii ? { fontFamily: ascii } : {}),
     ...(eastAsia ? { fontEastAsia: eastAsia } : {}),
     ...(size ? { fontSize: size } : {}),
+    warnings,
   };
 }
 
@@ -131,6 +154,7 @@ export function resolveCodeSettings(input: {
   const { attrs, rule, hasDocumentStyle } = input;
   const user = input.user ?? {};
   const ruleTheme = str(rule?.theme);
+  const ruleFont = ruleCodeFont(rule);
 
   const userMode = user.mode && user.mode !== "auto" ? user.mode : undefined;
   // 模板层：规则给了主题 → 卡片；绑定了原生样式 → 原生；都没有 → 卡片
@@ -149,9 +173,10 @@ export function resolveCodeSettings(input: {
     border: pickLayer(attrBool(attrs.border), user.border, undefined, BUILTIN_DEFAULTS.code.border),
     lint: pickLayer(attrBool(attrs.lint), user.lint, rule?.lint, BUILTIN_DEFAULTS.code.lint),
     tabSize: user.tabSize ?? BUILTIN_DEFAULTS.code.tabSize,
-    fontFamily: user.fontFamily ?? ruleCodeFont(rule).fontFamily,
-    fontEastAsia: user.fontEastAsia ?? ruleCodeFont(rule).fontEastAsia,
-    fontSize: user.fontSize ?? ruleCodeFont(rule).fontSize,
+    fontFamily: user.fontFamily ?? ruleFont.fontFamily,
+    fontEastAsia: user.fontEastAsia ?? ruleFont.fontEastAsia,
+    fontSize: user.fontSize ?? ruleFont.fontSize,
+    warnings: ruleFont.warnings,
     ...(note ? { note } : {}),
   };
 }

@@ -53,8 +53,19 @@ export interface TableBlockConfig {
   cellPadding?: number;
 }
 
+/** 中英文空格排版（详见 typography.ts）。 */
+export interface FormatConfig {
+  /** 预设：keep（默认）/ space / tight。 */
+  cjkSpacing?: string;
+  /** 中文→西文 边界的空格：add | remove | keep。 */
+  lspace?: string;
+  /** 西文→中文 边界的空格：add | remove | keep。 */
+  rspace?: string;
+}
+
 export interface ReportConfig {
   code?: CodeBlockConfig;
+  format?: FormatConfig;
   image?: ImageBlockConfig;
   table?: TableBlockConfig;
   profile?: string;

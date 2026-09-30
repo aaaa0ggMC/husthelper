@@ -12,6 +12,7 @@ import {
   formatSegmentsCsv,
   formatStylesCsv,
   openDocx,
+  parseSpaceAction,
   renderTemplateFile,
   resolveChatConfig,
   type ChatFn,
@@ -41,6 +42,9 @@ interface CliOptions {
   keepComments?: boolean;
   maxAnchors?: number;
   codeMode?: "auto" | "native" | "card";
+  cjkSpacing?: string;
+  lspace?: string;
+  rspace?: string;
   strict: boolean;
   dryRun: boolean;
   json: boolean;
@@ -86,6 +90,18 @@ function parseArgs(argv: string[]): CliOptions {
         options.codeMode = mode;
         break;
       }
+      case "--cjk-spacing":
+        options.cjkSpacing = rest[++i];
+        parseSpaceAction(options.cjkSpacing, "--cjk-spacing");
+        break;
+      case "--lspace":
+        options.lspace = rest[++i];
+        parseSpaceAction(options.lspace, "--lspace");
+        break;
+      case "--rspace":
+        options.rspace = rest[++i];
+        parseSpaceAction(options.rspace, "--rspace");
+        break;
       case "--strict":
         options.strict = true;
         break;
@@ -173,6 +189,7 @@ function usage(): void {
       # --from-response 直接复用已保存的模型输出重新合并，不再调用模型
   hustreport render      <template.docx> --info <template.json> --md <fill.md> [--out-file <out.docx>]
                          [--config <file>] [--extra "key=val"] [--code-template <name>] [--code-mode auto|native|card]
+                         [--cjk-spacing keep|space|tight] [--lspace add|remove|keep] [--rspace add|remove|keep]
                          [--strict] [--dry-run] [--trace] [--append-unanchored] [--keep-comments]
   hustreport edit        <file.docx> --out-file <out.docx> (--edits <edits.json> | --set <ref>=<text> ...) [--dry-run]
 
@@ -181,6 +198,9 @@ function usage(): void {
   --out        兼容旧写法：analyze/template/ai-template 视为目录，render/edit 视为文件
 
 render 参数：
+  --cjk-spacing    中英文/数字之间的空格：keep（默认，不动）/ space（两侧都加）/ tight（两侧都不留）
+  --lspace         中文→西文/数字 边界（西文左侧）：add | remove | keep，覆盖 --cjk-spacing
+  --rspace         西文/数字→中文 边界（西文右侧）：add | remove | keep，覆盖 --cjk-spacing
   --code-mode      代码块排版：auto（默认，模板有原生代码样式就用原生段落）/ native / card（行号卡片）
   --code-template  卡片模式的配色主题（default/classic/eclipse/dark 或 CSS 路径），不改变模式
   --strict         缺图直接报错；有任何警告时报错且不写出成稿
@@ -367,6 +387,7 @@ async function main(options: CliOptions): Promise<unknown> {
     const result = await renderTemplateFile(options.file, options.infoFile, options.mdFile, outFile, {
       codeTemplate: options.codeTemplate,
       codeMode: options.codeMode,
+      format: { cjkSpacing: options.cjkSpacing, lspace: options.lspace, rspace: options.rspace },
       configFile: options.configFile,
       extra: options.extra,
       strict: options.strict,
@@ -378,6 +399,7 @@ async function main(options: CliOptions): Promise<unknown> {
       `${options.dryRun ? "[dry-run] 未写文件" : `已渲染 -> ${outFile}`}（profile=${result.profile}，配置：${result.configSource ?? "无（仅内置默认）"}）`,
     );
     for (const line of formatRenderSummary(result)) log(line);
+    if (result.cjkSpacing) log(`  中英文空格：lspace=${result.cjkSpacing.lspace} rspace=${result.cjkSpacing.rspace}`);
     if (options.trace) {
       log("逐块渲染记录（+ 插入  ~ 改写已有  = 填空  ? 占位  ✗ 跳过）：");
       for (const line of formatTrace(result)) log(line);
@@ -393,6 +415,7 @@ async function main(options: CliOptions): Promise<unknown> {
       dryRun: options.dryRun,
       profile: result.profile,
       configSource: result.configSource ?? null,
+      cjkSpacing: result.cjkSpacing ?? null,
       hasToc: result.hasToc,
       stats: result.stats,
       warnings: result.warnings,

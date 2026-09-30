@@ -416,3 +416,37 @@ test("resolveCodeSettings: inline/recipe 只是字体规格 → 仍走卡片并�
   const native = resolveCodeSettings({ attrs: {}, rule: anchorRule, user: undefined, hasDocumentStyle: isDocumentStyleRef(anchorRule.style) });
   assert.equal(native.mode.value, "native");
 });
+
+test("parseInline: 加粗/斜体/删除线内部嵌套行内代码时叠加样式而不是输出反引号", async () => {
+  const { parseInline } = await import("../src/render.ts");
+  const runs = parseInline("**算法优化三（`sort_counting`）**：说明，*斜`x`体*");
+  assert.ok(!runs.some((r) => r.text.includes("`")), "不应残留反引号");
+  const code = runs.find((r) => r.text === "sort_counting");
+  assert.equal(code?.code, true);
+  assert.equal(code?.bold, true);
+  assert.equal(runs.find((r) => r.text === "算法优化三（")?.bold, true);
+  assert.equal(runs.find((r) => r.text === "x")?.italic, true);
+  assert.equal(runs.find((r) => r.text === "：说明，")?.bold, undefined);
+});
+
+test("ruleCodeFont: 接受 {ascii,eastAsia} 对象；无法识别的取值给出告警而不是静默忽略", async () => {
+  const { ruleCodeFont } = await import("../src/settings.ts");
+  const obj = ruleCodeFont({ match: { type: "code" }, options: { fontFamily: { ascii: "Consolas", eastAsia: "仿宋" }, fontSize: 21 } } as any);
+  assert.equal(obj.fontFamily, "Consolas");
+  assert.equal(obj.fontEastAsia, "仿宋");
+  assert.equal(obj.fontSize, 21);
+  assert.deepEqual(obj.warnings, []);
+  // fontEastAsia 单独字段优先于对象里的 eastAsia
+  assert.equal(ruleCodeFont({ match: { type: "code" }, options: { fontFamily: { eastAsia: "仿宋" }, fontEastAsia: "宋体" } } as any).fontEastAsia, "宋体");
+  const bad = ruleCodeFont({ match: { type: "code" }, options: { fontFamily: 123, fontSize: "10.5pt" } } as any);
+  assert.equal(bad.fontFamily, undefined);
+  assert.equal(bad.warnings.length, 2);
+});
+
+test("inlineCodeRunOverride: inline 样式的 inlineCode 规则提供字体/字号/颜色覆盖", async () => {
+  const { inlineCodeRunOverride } = await import("../src/render.ts");
+  assert.equal(inlineCodeRunOverride(null), null);
+  assert.equal(inlineCodeRunOverride({ inline: { run: {} } } as any), null);
+  const ov = inlineCodeRunOverride({ inline: { run: { fontFamily: { ascii: "Consolas", eastAsia: "仿宋" }, fontSize: "21" } } } as any);
+  assert.deepEqual(ov, { fontFamily: { ascii: "Consolas", eastAsia: "仿宋" }, fontSize: "21" });
+});

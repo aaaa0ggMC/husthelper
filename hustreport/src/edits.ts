@@ -391,6 +391,10 @@ export interface InlineRun {
   link?: string;
   underline?: boolean;
   color?: string;
+  /** 字体（w:rFonts 属性，如 { ascii, eastAsia }），用于行内代码套用 inlineCode 规则的字体。 */
+  fontFamily?: Record<string, string>;
+  /** 字号（半磅值，如 "21"）。 */
+  fontSize?: string | number;
 }
 
 /**
@@ -457,6 +461,10 @@ function applyInlineMods(runEl: XmlElement, mods: Omit<InlineRun, "text">): void
   if (mods.strike) setRPrChild(rPr, "w:strike");
   if (mods.underline) setRPrChild(rPr, "w:u", { val: "single" });
   if (mods.color) setRPrChild(rPr, "w:color", { val: mods.color });
+  if (mods.fontFamily && Object.keys(mods.fontFamily).length > 0) {
+    setRPrChild(rPr, "w:rFonts", Object.fromEntries(Object.entries(mods.fontFamily).map(([k, v]) => [k, String(v)])));
+  }
+  if (mods.fontSize) setRPrChild(rPr, "w:sz", { val: String(mods.fontSize) });
 }
 
 /** 用样板 run 的 `w:rPr` 覆盖目标 run 的格式（填空时可按指定样式重排）。 */

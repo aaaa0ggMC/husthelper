@@ -112,3 +112,13 @@ test("extractCode：优先围栏代码块", () => {
   assert.equal(extractCode("```js\nconst a = 1;\n```"), "const a = 1;");
   assert.equal(extractCode("const a = 1;"), "const a = 1;");
 });
+
+test("apiErrorHint：按状态码给出可操作的提示", async () => {
+  const { apiErrorHint } = await import("../src/ai.ts");
+  assert.match(apiErrorHint(402), /余额不足.*--from-response/s);
+  assert.match(apiErrorHint(401), /apiKey/);
+  assert.match(apiErrorHint(429), /限流/);
+  assert.match(apiErrorHint(404), /baseURL/);
+  assert.equal(apiErrorHint(500), "");
+  assert.equal(apiErrorHint("无响应"), "");
+});

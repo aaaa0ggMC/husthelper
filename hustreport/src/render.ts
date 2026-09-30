@@ -19,10 +19,17 @@ import { loadCodeThemeSync, parseFontSizeToHalfPoints, type CodeTokenStyle } fro
 import {
   resolveReportConfigSync,
   type CodeBlockConfig,
+  type FormatConfig,
   type ImageBlockConfig,
   type ReportConfig,
   type TableBlockConfig,
 } from "./config.ts";
+import {
+  formatCjkSpacing,
+  isCjkSpacingActive,
+  resolveCjkSpacing,
+  type ResolvedCjkSpacing,
+} from "./typography.ts";
 import { calculateImageEmuSize, getImageDimensions } from "./image-size.ts";
 import { stripCommentElements, stripDocumentComments } from "./comments.ts";
 import {
@@ -147,6 +154,8 @@ export interface RenderOptions {
   config?: ReportConfig;
   /** 代码块排版模式（覆盖 config.code.mode）：auto / native / card。 */
   codeMode?: "auto" | "native" | "card";
+  /** 中英文空格排版（覆盖 config.format）：cjkSpacing 预设与 lspace / rspace。 */
+  format?: FormatConfig;
   /** 严格模式：缺图直接报错；renderTemplateFile 在有任何警告时报错且不写出成稿。 */
   strict?: boolean;
   /** 只渲染与统计，不写出文件（renderTemplateFile 生效）。 */
@@ -210,6 +219,8 @@ export interface RenderResult {
   stats: RenderStats;
   /** 实际加载的渲染配置文件（未找到则为 undefined）。 */
   configSource?: string;
+  /** 生效的中英文空格设置（未启用时为 undefined）。 */
+  cjkSpacing?: ResolvedCjkSpacing;
 }
 
 const REF_PATTERN = /\[([^\]]*)\]\(\s*ref\s*:\s*([^)\s|]+)([^)]*)\)/g;
@@ -576,6 +587,31 @@ export function parseDocument(markdown: string, options: RenderOptions = {}): Pa
   return { profile: docDefault, blocks, fills, warnings: parseWarnings };
 }
 
+/** CLI/API 选项优先于配置文件；只覆盖有值的键。 */
+function mergeFormat(config: FormatConfig | undefined, cli: FormatConfig | undefined): FormatConfig {
+  const pick = (v: string | undefined): string | undefined => (v === undefined || v === "" ? undefined : v);
+  return {
+    cjkSpacing: pick(cli?.cjkSpacing) ?? pick(config?.cjkSpacing),
+    lspace: pick(cli?.lspace) ?? pick(config?.lspace),
+    rspace: pick(cli?.rspace) ?? pick(config?.rspace),
+  };
+}
+
+/**
+ * 对解析后的块套用中英文空格排版。代码块、水平线不动；` ```text ` 展开的纯文本段落（带 rawRuns）是
+ * “原样照搬”语义（如参考文献），同样不动。
+ */
+export function applySpacingToBlocks(blocks: MarkdownBlock[], spacing: ResolvedCjkSpacing): void {
+  const fmt = (text: string): string => formatCjkSpacing(text, spacing);
+  for (const block of blocks) {
+    if (block.type === "code" || block.type === "hr" || block.rawRuns) continue;
+    block.text = fmt(block.text);
+    if (block.caption) block.caption = fmt(block.caption);
+    for (const item of block.items ?? []) item.text = fmt(item.text);
+    if (block.rows) block.rows = block.rows.map((row) => row.map(fmt));
+  }
+}
+
 /** 兼容旧入口：只取 fills。 */
 export function parseSkeleton(markdown: string, options: RenderOptions = {}): { profile?: string; fills: RenderFill[] } {
   const { profile, fills } = parseDocument(markdown, options);
@@ -606,6 +642,8 @@ export function renderTemplate(
   const effectiveOptions: RenderOptions = { ...options, config: effectiveConfig, user };
   const parsed = parseDocument(markdown, effectiveOptions);
   const warnings: string[] = [...parsed.warnings];
+  const spacing = resolveCjkSpacing(mergeFormat(effectiveConfig.format, options.format));
+  if (isCjkSpacingActive(spacing)) applySpacingToBlocks(parsed.blocks, spacing);
   for (const fill of parsed.fills) {
     if (/^\s*【[^】]+】\s*$/.test(fill.text)) warnings.push(`填空 ${fill.ref} 仍是占位标记 ${fill.text.trim()}，请替换成真实内容`);
   }
@@ -681,6 +719,7 @@ export function renderTemplate(
     trace,
     stats: summarizeTrace(trace, filled),
     configSource: effectiveConfig.source,
+    ...(isCjkSpacingActive(spacing) ? { cjkSpacing: spacing } : {}),
   };
 }
 
@@ -1057,6 +1096,7 @@ function renderBlocks(
         user: options.user?.code,
         hasDocumentStyle: Boolean(sample && (isDocumentStyleRef(rule?.style) || isDocumentStyleRef(profile.styles?.code))),
       });
+      for (const w of settings.warnings) if (!warnings.includes(w)) warnings.push(w);
       const useNative = settings.mode.value === "native";
       entry.mode = settings.mode.value;
       if (!useNative) entry.theme = settings.theme.value;
@@ -1230,6 +1270,17 @@ function renderBlocks(
   return count;
 }
 
+/** inlineCode 规则为 inline 样式时，取其 run 里的字体/字号/颜色作为代码 run 的覆盖项。 */
+export function inlineCodeRunOverride(sample: StyleSample | null): Partial<InlineRun> | null {
+  const run = sample?.inline?.run as Record<string, any> | undefined;
+  if (!run) return null;
+  const out: Partial<InlineRun> = {};
+  if (run.fontFamily && typeof run.fontFamily === "object") out.fontFamily = run.fontFamily;
+  if (run.fontSize) out.fontSize = run.fontSize;
+  if (run.color) out.color = run.color;
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 function buildParagraph(
   sample: StyleSample,
   runs: readonly InlineRun[],
@@ -1237,8 +1288,12 @@ function buildParagraph(
   hyperlink: (ownerDoc: XmlElement, link: string) => XmlElement | null,
   ownerDoc: XmlElement,
 ): XmlElement {
+  // inlineCode 规则若是 inline 样式（AI 常见），把它的字体/字号/颜色叠加到代码 run 上
+  const codeOverride = inlineCodeRunOverride(inlineCodeSample);
   if (sample.inline) {
-    const styled = runs.map((run) => (run.link ? { ...run, underline: true, color: run.color ?? "0563C1" } : run));
+    const styled = runs
+      .map((run) => (run.code && codeOverride ? { ...codeOverride, ...run } : run))
+      .map((run) => (run.link ? { ...run, underline: true, color: run.color ?? "0563C1" } : run));
     return createParagraphFromStyles(ownerDoc, sample.inline.paragraph ?? {}, sample.inline.run ?? {}, styled);
   }
 
@@ -1253,7 +1308,8 @@ function buildParagraph(
 
   for (const run of runs) {
     const runSample = run.code && inlineCodeSample && !inlineCodeSample.inline ? inlineCodeSample : sample;
-    const mods = run.link ? { ...run, underline: true, color: run.color ?? "0563C1" } : run;
+    const withCode = run.code && codeOverride ? { ...codeOverride, ...run } : run;
+    const mods = run.link ? { ...withCode, underline: true, color: withCode.color ?? "0563C1" } : withCode;
     const runEl = cloneRunWithText(runSample.runEl as XmlElement, run.text, mods);
 
     if (run.link) {
@@ -1905,16 +1961,19 @@ export function parseInline(text: string): InlineRun[] {
       } else if (link) {
         push(link[1], {}); // ref: 链接是填空，这里当普通文本
       }
-    } else if (token.startsWith("***") || token.startsWith("___")) {
-      push(token.slice(3, -3), { bold: true, italic: true });
-    } else if (token.startsWith("**") || token.startsWith("__")) {
-      push(token.slice(2, -2), { bold: true });
-    } else if (token.startsWith("~~")) {
-      push(token.slice(2, -2), { strike: true });
     } else if (token.startsWith("`")) {
       push(token.slice(1, -1), { code: true });
     } else {
-      push(token.slice(1, -1), { italic: true });
+      // 粗/斜/删除线内部还可以嵌套行内代码、链接等：递归解析后统一叠加样式
+      const [width, mods]: [number, Omit<InlineRun, "text">] =
+        token.startsWith("***") || token.startsWith("___")
+          ? [3, { bold: true, italic: true }]
+          : token.startsWith("**") || token.startsWith("__")
+            ? [2, { bold: true }]
+            : token.startsWith("~~")
+              ? [2, { strike: true }]
+              : [1, { italic: true }];
+      for (const inner of parseInline(token.slice(width, -width))) push(inner.text, { ...inner, ...mods });
     }
     last = match.index + token.length;
   }

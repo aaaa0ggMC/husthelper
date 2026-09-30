@@ -162,3 +162,19 @@ test("ensureJsonResponse：首轮即合法 JSON 时不重试", async () => {
 });
 
 
+
+test("mergeInferredRules: match 与已有规则相同的推断规则被丢弃，其余保留", async () => {
+  const { mergeInferredRules } = await import("../src/template-ai.ts");
+  const existing = [
+    { match: { type: "paragraph" }, style: { recipe: "body" } },
+    { match: { type: "heading", level: 1 }, style: { anchor: "a" } },
+  ] as any[];
+  const inferred = [
+    { match: { type: "paragraph" }, style: { anchor: "x" } }, // 必被遮蔽
+    { match: { level: 1, type: "heading" }, style: { anchor: "y" } }, // 键顺序不同也算相同
+    { match: { type: "code" }, style: { anchor: "z" } },
+  ] as any[];
+  const merged = mergeInferredRules(existing, inferred);
+  assert.equal(merged.length, 3);
+  assert.deepEqual(merged[2].match, { type: "code" });
+});

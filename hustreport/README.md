@@ -89,14 +89,38 @@ export HUST_AI_MAX_TOKENS=32768      # 建议设置较大预算以生成完整 s
 | 命令 | 常用参数 | 作用 |
 | :-- | :-- | :-- |
 | `analyze <docx>` | `--out-dir <dir>`<br>`--parts body,header`<br>`--include-empty`<br>`--stdout` | 深度分析 docx：按段落/run样式切分，输出 `segments.csv`、`styles.csv`、`media.csv`、`styles.json` 与 `analysis.json`。 |
-| `template <docx>` | `--out-dir <dir>` | 纯规则打底：注入持久隐藏书签锚点（`hrsegXXXX`），推断默认样式与规则，产出 `template.docx` 与 `template.json`。 |
+| `template <docx>` | `--out-dir <dir>` | **离线兜底，不调用 AI**（正式使用请走 `ai-template`）：仅注入锚点、推断一条正文规则，**不产出 skeleton、标题规则，也不清理写作提示**。纯规则打底：注入持久隐藏书签锚点（`hrsegXXXX`），推断默认样式与规则，产出 `template.docx` 与 `template.json`。 |
 | `ai-template <docx>` | `--out-dir <dir>`<br>`--task <str>`<br>`--preset generic\|labReport`<br>`--system-prompt <file>`<br>`--extra <str>`<br>`--max-anchors <n>`<br>`--config <file>`<br>`--from-response <file>` | 结合 AI 审查文档：执行语义级删除/清理（`edits`），校准标题样式，配置目录（TOC），给出缺失样式反馈并产出 `skeleton.md`。同时落盘 `ai-prompt.md` 与 `ai-response.txt`；`--from-response ai-response.txt` 可**不调模型**直接重新合并。请求期间每 15 秒打印一次等待进度。 |
 | `render <template.docx>` | `--info <template.json>`<br>`--md <fill.md>`<br>`--out-file <final.docx>`<br>`--config <file>` / `--extra <kv>`<br>`--code-mode auto\|native\|card`<br>`--code-template <name>`<br>`--strict` / `--dry-run` / `--trace`<br>`--append-unanchored`<br>`--keep-comments` | 将 Markdown 渲染填入模板：就地填空、插入标题/段落/列表、代码块、图片、表格，同步更新目录与清理批注。结束时输出「填空 N 处 / 插入 M 块（标题、段落、表格、图片、代码原生/卡片…）」。 |
 | `edit <docx>` | `--out-file <out.docx>`<br>`--edits <edits.json>`<br>`--set <ref>=<text>`<br>`--dry-run` | 针对 docx 进行精确的底层批处理改写、插入或删除（仅复用已有样式 ID，不污染 `styles.xml`）。 |
 
 - **通用**：`--json` 输出结构化结果；`--out` 为兼容旧写法（目录型命令视为目录，`render`/`edit` 视为文件），传错类型会给出明确提示。
+- 模型接口报错时会按状态码给出下一步：`402` 余额不足（充值后重跑，重试无效）、`401/403` 检查 apiKey 与模型权限、`404` 检查 baseURL 与 model、`429` 限流稍后重试；并提示可用 `--from-response ai-response.txt` 不调模型直接重新合并已有结果。
 - `render --strict`：缺图直接报错；**任何警告**（未知 ref、无锚点被跳过的块等）都会报错且**不写出成稿**。默认则是“占位 + 警告”继续出稿。
 - `render --append-unanchored`：没有 `{ref}` 也没有前置锚点的块追加到文末，而不是跳过。
+
+---
+
+## 中英文空格排版（`--cjk-spacing`）
+
+确定性、可配置，不含随机。以「我是 Claude Code 助理」为例：
+
+- `lspace`：中文→西文/数字 边界（「是」与「Claude」之间，即西文**左侧**）
+- `rspace`：西文/数字→中文 边界（「Code」与「助理」之间，即西文**右侧**）
+- 取值 `add`（保证恰有一个空格）/ `remove`（去掉空格）/ `keep`（原样）；西文词内部的空格（`Claude Code`）不受影响
+
+| 用法 | 效果 |
+| :-- | :-- |
+| `--cjk-spacing space` | 两侧都加：我是 Claude Code 助理 |
+| `--cjk-spacing tight` | 两侧都不留：我是Claude Code助理 |
+| `--lspace add --rspace remove` | 自定义：我是 Claude Code助理 |
+| 默认 / `keep` | 不改动 |
+
+- 「西文」包含**字母与数字**（`共 3360 个用例`）；全角标点与西文之间不加空格。
+- **行内代码**在边界上按西文对待（`调用 \`strlen\` 函数`），代码内部、链接目标、URL、块属性 `{…}` 不动。
+- **围栏代码块一律不动**；` ```text ` 展开的纯文本段落（如参考文献）是“原样照搬”语义，同样不动。表格单元格、列表、标题、图注会处理。
+- 强调标记（`**加粗**`）会隔断相邻关系，不做处理；封面填空（`[..](ref:..)`）不处理。
+- 配置文件里写 `"format": { "cjkSpacing": "space", "lspace": "add", "rspace": "keep" }`，命令行优先于配置；取值写错会直接报错。
 
 ---
 
@@ -120,6 +144,8 @@ export HUST_AI_MAX_TOKENS=32768      # 建议设置较大预算以生成完整 s
   2. 使用者：`--code-mode` 或配置 `code.mode`（`auto` = 不表态）；
   3. 模板：规则给了 `theme` → 卡片；规则绑定了原生代码样式 → 原生；
   4. 默认：卡片。要求原生但模板没有原生样式时，回退卡片并在 `--trace` 里注明。
+- **代码卡片字体**（西文 `fontFamily` / 中文 `fontEastAsia` / 字号 `fontSize`）：块属性与使用者配置 > 模板规则显式写的 `options.fontFamily`（字符串，或 AI 常用的 `{ "ascii": "Consolas", "eastAsia": "仿宋" }` 对象）/`options.fontEastAsia`/`options.fontSize` > **复制文档正文样式**（中文取 eastAsia、西文取 ascii）> 主题默认。无法识别的取值（如数字）不会静默忽略，而是在渲染警告里指出。
+- **行内代码**：`inlineCode` 规则若绑定文档里的真实样式则整体套用；若是 `inline` 样式（AI 常见），其中的字体/字号/颜色会叠加到代码 run 上，嵌在 `**…**` 里的行内代码同样生效。
 - **`--code-template` 只换卡片配色，不再改变模式**。旧版本里它会静默把 AI 选好的原生代码样式换成卡片——现在要卡片请显式 `--code-mode card`。
 - **表格样板**：模板规则的 `options.styleAnchor`（克隆文档里已有的表）属于“模板层的主题”；只要块或使用者指定了 `theme`，就改用该主题。
 - **图注样式**：块属性 `captionStyle` / 配置 `image.captionStyle`（可写锚点、配方名或样式名）> 模板规则的 `captionRef` / `captionStyle` > profile 的 `caption` 规则。

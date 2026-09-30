@@ -248,3 +248,6 @@ export {
 export type { XmlElement } from "./src/ooxml.ts";
 
 
+
+export { formatCjkSpacing, resolveCjkSpacing, isCjkSpacingActive, parseSpaceAction } from "./src/typography.ts";
+export type { CjkSpacingConfig, CjkSpacingMode, ResolvedCjkSpacing, SpaceAction } from "./src/typography.ts";

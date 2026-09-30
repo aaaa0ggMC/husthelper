@@ -229,6 +229,16 @@ export async function buildTemplateWithAi(options: BuildTemplateAiOptions): Prom
   };
 }
 
+/** 规则按 first-match-wins 匹配；追加的推断规则若 match 与已有规则完全相同，永远命中不到，直接丢弃。 */
+export function mergeInferredRules(existing: readonly TemplateRule[], inferred: readonly TemplateRule[]): TemplateRule[] {
+  const key = (rule: TemplateRule): string =>
+    JSON.stringify(rule.match, (_k, v) =>
+      v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : 1))) : v,
+    );
+  const seen = new Set(existing.map(key));
+  return [...existing, ...inferred.filter((rule) => !seen.has(key(rule)))];
+}
+
 /** 用规范化后的文档重新推断基础 rules/styles，附加到默认 profile（AI 规则优先，推断补齐）。 */
 function augmentProfileFromDoc(doc: import("docx-edit").VirtualWordDocument, info: TemplateInfo): void {
   const analysis = analyzeDocument(doc);
@@ -246,7 +256,7 @@ function augmentProfileFromDoc(doc: import("docx-edit").VirtualWordDocument, inf
   info.profiles[name] = {
     ...profile,
     styles: { ...inferred.profile.styles, ...profile.styles },
-    rules: [...profile.rules, ...inferred.profile.rules],
+    rules: mergeInferredRules(profile.rules, inferred.profile.rules),
     defaults: profile.defaults ?? inferred.profile.defaults,
   };
 }
