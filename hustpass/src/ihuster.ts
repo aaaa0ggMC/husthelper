@@ -132,6 +132,11 @@ export async function acquireIhusterToken(
   if (typeof location !== "string") {
     throw new Error("ihuster: 换票后未拿到跳转 Location");
   }
+  // 学校关闭站点时，登录端点会直接跳到 error.hust.edu.cn 的「网站关闭」提示页，
+  // 此时既不是账号问题也不是 SDK 问题，要明确告诉调用方，而不是报「缺少 JWT」。
+  if (/^https?:\/\/error\.hust\.edu\.cn\//i.test(location)) {
+    throw new Error("ihuster: 学校当前关闭了该站点（登录跳转到 error.hust.edu.cn 的“网站关闭”提示页）");
+  }
   const token = extractIhusterToken(location);
   if (!token) throw new Error("ihuster: 跳转 Location 中缺少 loginName JWT");
   return token;
