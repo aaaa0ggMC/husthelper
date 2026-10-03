@@ -774,6 +774,7 @@
   var AUTO_SUBMIT_COOLDOWN_MS = 12e4;
   var AUTOFILL_WAIT_MS = 1200;
   var KEY_AUTO = "autoSubmit";
+  var KEY_REMEMBER = "autoRemember";
   var KEY_LAST_SUBMIT = "lastAutoSubmitAt";
   var store = {
     get(key, fallback) {
@@ -888,6 +889,26 @@
     say("\u81EA\u52A8\u767B\u5F55\u4E2D\u2026", "info");
     $("index_login_btn")?.click();
   }
+  var rememberDone = false;
+  function ensureRemember() {
+    if (rememberDone || !store.get(KEY_REMEMBER, true)) return;
+    const box = $("rememberName");
+    const un = $("un");
+    if (!box || !un?.value.trim()) return;
+    rememberDone = true;
+    if (!box.checked) box.click();
+  }
+  function watchRemember() {
+    ensureRemember();
+    const un = $("un");
+    if (!un) return;
+    for (const type of ["change", "blur"]) un.addEventListener(type, ensureRemember);
+    const timer = setInterval(() => {
+      ensureRemember();
+      if (rememberDone) clearInterval(timer);
+    }, 300);
+    setTimeout(() => clearInterval(timer), 5e3);
+  }
   function registerMenu() {
     if (typeof GM_registerMenuCommand !== "function") return;
     const on = store.get(KEY_AUTO, true);
@@ -895,10 +916,16 @@
       store.set(KEY_AUTO, !on);
       location.reload();
     });
+    const remember = store.get(KEY_REMEMBER, true);
+    GM_registerMenuCommand(`\u81EA\u52A8\u52FE\u9009\u8BB0\u4F4F\u4EBA\u5458\u7F16\u53F7\uFF1A${remember ? "\u5F00\uFF08\u70B9\u51FB\u5173\u95ED\uFF09" : "\u5173\uFF08\u70B9\u51FB\u5F00\u542F\uFF09"}`, () => {
+      store.set(KEY_REMEMBER, !remember);
+      location.reload();
+    });
   }
   async function main() {
     if (!$("codeImage") || !$("code")) return;
     registerMenu();
+    watchRemember();
     window.addEventListener(
       "click",
       (event) => {

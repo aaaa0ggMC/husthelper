@@ -15,6 +15,7 @@ const AUTO_SUBMIT_COOLDOWN_MS = 120_000
 const AUTOFILL_WAIT_MS = 1200
 
 const KEY_AUTO = 'autoSubmit'
+const KEY_REMEMBER = 'autoRemember'
 const KEY_LAST_SUBMIT = 'lastAutoSubmitAt'
 
 const store = {
@@ -152,6 +153,36 @@ async function maybeSubmit(confident) {
   $('index_login_btn')?.click()
 }
 
+/* ---------------------------- 记住人员编号 ---------------------------- */
+
+/**
+ * 自动勾选「记住人员编号」。页面在勾选时若 #un 为空会报错并取消勾选，
+ * 因此只在人员编号有值时勾选（勾选会触发页面自己的 change 处理，写入 hust_cas_un cookie）。
+ * 每次页面加载只自动勾选一次：之后你手动取消勾选会被尊重。
+ */
+let rememberDone = false
+function ensureRemember() {
+  if (rememberDone || !store.get(KEY_REMEMBER, true)) return
+  const box = $('rememberName')
+  const un = $('un')
+  if (!box || !un?.value.trim()) return
+  rememberDone = true
+  if (!box.checked) box.click()
+}
+
+function watchRemember() {
+  ensureRemember()
+  const un = $('un')
+  if (!un) return
+  // 手动输入：输入完（失焦 / change）后勾选；密码管理器稍后填充：轮询兜底
+  for (const type of ['change', 'blur']) un.addEventListener(type, ensureRemember)
+  const timer = setInterval(() => {
+    ensureRemember()
+    if (rememberDone) clearInterval(timer)
+  }, 300)
+  setTimeout(() => clearInterval(timer), 5000)
+}
+
 /* --------------------------------- 入口 --------------------------------- */
 
 function registerMenu() {
@@ -161,11 +192,17 @@ function registerMenu() {
     store.set(KEY_AUTO, !on)
     location.reload()
   })
+  const remember = store.get(KEY_REMEMBER, true)
+  GM_registerMenuCommand(`自动勾选记住人员编号：${remember ? '开（点击关闭）' : '关（点击开启）'}`, () => {
+    store.set(KEY_REMEMBER, !remember)
+    location.reload()
+  })
 }
 
 async function main() {
   if (!$('codeImage') || !$('code')) return
   registerMenu()
+  watchRemember()
 
   // 点击验证码图片：用我们自己的拉取流程代替页面原有的刷新（否则显示的图与识别的图不是同一张）
   window.addEventListener(
