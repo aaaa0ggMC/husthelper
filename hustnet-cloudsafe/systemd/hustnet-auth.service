@@ -1,0 +1,13 @@
+[Unit]
+Description=HUST campus network authentication (hustnet-cloudsafe)
+Documentation=file:///opt/hustnet-cloudsafe/README.md
+After=networking.service
+Wants=networking.service
+ConditionPathExists=/etc/hustnet/hustnet.cred
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+LoadCredentialEncrypted=hustnet:/etc/hustnet/hustnet.cred
+ExecStart=/usr/local/libexec/hustnet-autologin
+TimeoutStartSec=180

@@ -1,0 +1,53 @@
+#!/bin/sh
+#
+# hustnet-autologin — systemd entry point: probe -> authenticate if needed -> route
+#
+# Invoked by hustnet-auth.service. Credentials are decrypted by systemd via
+# LoadCredentialEncrypted into $CREDENTIALS_DIRECTORY (tmpfs, service-only)
+# and are destroyed when the process exits.
+#
+# Routing policy:
+#   * authenticated / already online -> enp7s0 default route metric 100 (primary)
+#   * auth failed / offline          -> drop the metric 100 route and fall back
+#                                      to enp1s0 (metric 1002)
+#   * dhcpcd uses metric 2100 for enp7s0 so an unauthenticated link never
+#     becomes the default route
+
+set -u
+
+IFACE=${HUSTNET_IFACE:-enp7s0}
+AUTH_BIN=/usr/local/libexec/hustnet-auth
+CRED="${CREDENTIALS_DIRECTORY:-}/hustnet"
+
+log() {
+    # systemd captures stdout into the journal; no extra logger call needed
+    printf '%s\n' "$*"
+}
+
+if [ -z "${CREDENTIALS_DIRECTORY:-}" ] || [ ! -r "$CRED" ]; then
+    log "no credential configured, skipping (run: hustnet-cs set <username>)"
+    exit 0
+fi
+
+out=$("$AUTH_BIN" --iface "$IFACE" --cred "$CRED" --quiet 2>&1)
+rc=$?
+[ -n "$out" ] && printf '%s\n' "$out"
+
+gw=$(ip -4 route show default dev "$IFACE" 2>/dev/null |
+    awk '{for (i = 1; i <= NF; i++) if ($i == "via") { print $(i + 1); exit }}')
+
+if [ -z "$gw" ]; then
+    log "$IFACE has no default gateway (no DHCP lease yet), skipping route change"
+    exit 0
+fi
+
+if [ "$rc" -eq 0 ]; then
+    ip route replace default via "$gw" dev "$IFACE" metric 100 2>/dev/null ||
+        ip route add default via "$gw" dev "$IFACE" metric 100 2>/dev/null
+    log "authenticated: $IFACE is now primary (gw $gw, metric 100)"
+else
+    ip route del default dev "$IFACE" metric 100 2>/dev/null
+    log "authentication failed (exit $rc): $IFACE stays on backup route, enp1s0 preferred"
+fi
+
+exit 0

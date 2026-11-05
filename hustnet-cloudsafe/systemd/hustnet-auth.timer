@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodic HUST campus network authentication check
+
+[Timer]
+OnBootSec=20s
+OnUnitActiveSec=120s
+AccuracySec=10s
+Unit=hustnet-auth.service
+
+[Install]
+WantedBy=timers.target

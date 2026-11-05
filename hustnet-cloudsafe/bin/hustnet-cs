@@ -1,0 +1,164 @@
+#!/bin/sh
+#
+# hustnet-cs — campus network credential manager (hustnet-cloudsafe)
+#
+# Credentials are encrypted with systemd-creds into /etc/hustnet/hustnet.cred:
+#   * the file itself is ciphertext; cat shows nothing useful;
+#   * without a TPM a host key is used (bound to
+#     /var/lib/systemd/credential.secret + machine-id), so it cannot be
+#     decrypted on another machine or disk;
+#   * this tool only writes/removes credentials, it never prints plaintext;
+#   * plaintext only exists in the service's $CREDENTIALS_DIRECTORY (tmpfs)
+#     for the lifetime of the process.
+#
+# Usage:
+#   hustnet-cs set <username> [password]   store credentials (prompts if omitted)
+#   hustnet-cs unset                       delete stored credentials
+#   hustnet-cs status                      check whether the link is authenticated
+#   hustnet-cs login                       run authentication now
+#   hustnet-cs install                     (re)install and enable boot autologin
+#   hustnet-cs help                        show help
+
+set -eu
+
+CRED_DIR=/etc/hustnet
+CRED_FILE=$CRED_DIR/hustnet.cred
+IFACE=${HUSTNET_IFACE:-enp7s0}
+AUTH_BIN=/usr/local/libexec/hustnet-auth
+AUTOUNIT=hustnet-auth.service
+TIMER=hustnet-auth.timer
+
+usage() {
+    cat <<'EOF'
+hustnet-cs — campus network credential manager (encrypted, write-only)
+
+Usage:
+  hustnet-cs set <username> [password]  store credentials (prompt if omitted)
+  hustnet-cs unset                      delete stored credentials
+  hustnet-cs status                     check authentication on the uplink
+  hustnet-cs login                      authenticate once now
+  hustnet-cs install                    install and enable boot autologin
+  hustnet-cs help                       show this help
+
+Notes:
+  Credentials are encrypted with systemd-creds into
+  /etc/hustnet/hustnet.cred. There is no command to read them back.
+  Passing the password on the command line leaves it in shell history and
+  in the process list; omit it to enter it interactively.
+EOF
+}
+
+require_root() {
+    if [ "$(id -u)" -ne 0 ]; then
+        echo "error: root privileges required (sudo hustnet-cs ...)" >&2
+        exit 1
+    fi
+}
+
+cmd_set() {
+    require_root
+    username=${1:-}
+    if [ -z "$username" ]; then
+        echo "error: missing username" >&2
+        usage >&2
+        exit 1
+    fi
+
+    if [ "$#" -ge 2 ]; then
+        password=$2
+        echo "warning: passing the password on the command line leaves it in shell history and ps; prefer interactive input." >&2
+    else
+        printf 'Campus network password (input hidden): ' > /dev/tty
+        stty -echo < /dev/tty
+        IFS= read -r password < /dev/tty || true
+        stty echo < /dev/tty
+        printf '\n' > /dev/tty
+    fi
+
+    if [ -z "${password:-}" ]; then
+        echo "error: empty password" >&2
+        exit 1
+    fi
+
+    umask 077
+    mkdir -p "$CRED_DIR"
+    chmod 700 "$CRED_DIR"
+    printf '%s\n%s\n' "$username" "$password" |
+        systemd-creds encrypt --name=hustnet --with-key=auto - "$CRED_FILE"
+    chmod 600 "$CRED_FILE"
+
+    if [ ! -s "$CRED_FILE" ]; then
+        echo "error: credential file is empty" >&2
+        exit 1
+    fi
+    echo "Stored credentials for: $username"
+    echo "Encrypted into $CRED_FILE (write-only; cannot be read back)"
+}
+
+cmd_unset() {
+    require_root
+    if [ -f "$CRED_FILE" ]; then
+        rm -f "$CRED_FILE"
+        echo "Removed credentials: $CRED_FILE"
+    else
+        echo "No stored credentials."
+    fi
+}
+
+cmd_status() {
+    if [ ! -x "$AUTH_BIN" ]; then
+        echo "error: $AUTH_BIN not found; run 'hustnet-cs install' first" >&2
+        exit 1
+    fi
+    set +e
+    "$AUTH_BIN" --status --iface "$IFACE"
+    rc=$?
+    set -e
+    case $rc in
+        0) echo "status: authenticated ($IFACE)" ;;
+        1) echo "status: not authenticated ($IFACE)" ;;
+        2) echo "status: probe failed ($IFACE down or network error)" ;;
+        *) echo "status: unknown (exit $rc)" ;;
+    esac
+    return $rc
+}
+
+cmd_login() {
+    require_root
+    if [ ! -f "$CRED_FILE" ]; then
+        echo "error: no credentials stored; run 'hustnet-cs set <username>'" >&2
+        exit 1
+    fi
+    systemctl start "$AUTOUNIT"
+    echo "Authentication triggered (see: journalctl -u $AUTOUNIT -n 20)"
+}
+
+cmd_install() {
+    require_root
+    if [ ! -x /usr/local/libexec/hustnet-auth ]; then
+        echo "error: hustnet-auth is not installed" >&2
+        exit 1
+    fi
+    systemctl daemon-reload
+    systemctl enable --now "$TIMER"
+    systemctl enable "$AUTOUNIT" >/dev/null 2>&1 || true
+    echo "Boot autologin enabled: $TIMER"
+    systemctl --no-pager --lines=0 status "$TIMER" || true
+}
+
+command=${1:-help}
+[ "$#" -gt 0 ] && shift
+
+case $command in
+    set)     cmd_set "$@" ;;
+    unset|rm|delete) cmd_unset ;;
+    status)  cmd_status ;;
+    login)   cmd_login ;;
+    install) cmd_install ;;
+    help|-h|--help) usage ;;
+    *)
+        echo "unknown command: $command" >&2
+        usage >&2
+        exit 1
+        ;;
+esac
