@@ -23,7 +23,10 @@ set -eu
 
 CRED_DIR=/etc/hustnet
 CRED_FILE=$CRED_DIR/hustnet.cred
-IFACE=${HUSTNET_IFACE:-enp7s0}
+IFACE=enp7s0
+_env_iface=${HUSTNET_IFACE:-}
+[ -r /etc/hustnet/env ] && . /etc/hustnet/env
+IFACE=${_env_iface:-${HUSTNET_IFACE:-$IFACE}}
 AUTH_BIN=/usr/local/libexec/hustnet-auth
 AUTOUNIT=hustnet-auth.service
 TIMER=hustnet-auth.timer

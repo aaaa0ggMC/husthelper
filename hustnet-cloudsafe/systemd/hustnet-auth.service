@@ -8,6 +8,7 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot
+EnvironmentFile=-/etc/hustnet/env
 LoadCredentialEncrypted=hustnet:/etc/hustnet/hustnet.cred
 ExecStart=/usr/local/libexec/hustnet-autologin
 TimeoutStartSec=180

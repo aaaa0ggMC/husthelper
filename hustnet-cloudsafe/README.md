@@ -13,19 +13,26 @@
     + machine-id，拷到别处无法解密。
   - 明文仅在 systemd 服务的 `$CREDENTIALS_DIRECTORY`（tmpfs，0400）中存在，
     进程退出即销毁。
-- **指定网卡**：`SO_BINDTODEVICE` 绑定出口网卡（默认 `enp7s0`），
+- **指定网卡**：`SO_BINDTODEVICE` 绑定出口网卡（安装时 `--iface` 指定，默认 `enp7s0`），
   探测、取公钥、提交认证全部走该网卡。
 - **运行时公钥**：登录前请求 `InterFace.do?method=pageInfo` 获取
   `publicKeyModulus/Exponent`，不依赖编译期模数。
 - **自动探测**：systemd timer 每 2 分钟探测一次，掉线自动重新认证。
-- **主网卡切换**：认证成功后才把 `enp7s0` 提升为默认路由（metric 100），
-  失败则回落 `enp1s0`（metric 1002），避免未认证时断网。
+- **主网卡切换**：认证成功后才把指定网卡提升为默认路由（metric 100），
+  失败则回落其他默认路由（如 `enp1s0` metric 1002），避免未认证时断网。
 
 ## 安装
 
 ```sh
-sh install.sh
+sh install.sh                      # 默认网卡 enp7s0
+sh install.sh --iface eth1         # 指定认证出口网卡
+HUSTNET_IFACE=eth1 sh install.sh   # 同上，环境变量方式
+sh install.sh --uninstall          # 卸载（保留凭据）
 ```
+
+网卡选择会持久化写入 `/etc/hustnet/env`（`HUSTNET_IFACE=...`），
+systemd 服务与 `hustnet-cs status` 都读取该文件，重启后依然生效。
+临时覆盖：`HUSTNET_IFACE=eth2 hustnet-cs status`。
 
 安装位置：
 
@@ -34,6 +41,7 @@ sh install.sh
 | `/usr/local/bin/hustnet-cs` | 凭据管理 CLI |
 | `/usr/local/libexec/hustnet-auth` | 认证程序（C） |
 | `/usr/local/libexec/hustnet-autologin` | 服务入口：认证 + 路由调整 |
+| `/etc/hustnet/env` | 持久化的网卡设置 |
 | `/etc/hustnet/hustnet.cred` | systemd-creds 加密凭据（0600） |
 | `/etc/systemd/system/hustnet-auth.service` | 单次认证 |
 | `/etc/systemd/system/hustnet-auth.timer` | 开机后 + 每 2 分钟探测 |
