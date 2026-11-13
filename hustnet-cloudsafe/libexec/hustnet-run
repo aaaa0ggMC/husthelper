@@ -1,0 +1,69 @@
+#!/bin/sh
+#
+# hustnet-run — credential wrapper for hosts without systemd-creds
+#
+# Used by the periodic check in sysvinit mode (/etc/cron.d/hustnet).
+# The backend is recorded in /etc/hustnet/env as HUSTNET_CRED_BACKEND:
+#
+#   hostkey    /etc/hustnet/cred.enc is AES-256-CBC ciphertext whose key is
+#              derived from this machine's /etc/machine-id. At run time it is
+#              decrypted into tmpfs (/dev/shm), handed to hustnet-auth via
+#              --cred, and wiped afterwards. Copying the disk to another
+#              machine does not reveal the credential, but root on this
+#              machine can still decrypt it (no TPM binding).
+#
+#   plaintext  /etc/hustnet/cred holds "username\npassword" (0600) and is
+#              passed to hustnet-auth unchanged. Weakest option; only used
+#              when openssl is unavailable.
+#
+set -eu
+
+LIBEXEC=/usr/local/libexec
+AUTH_BIN=$LIBEXEC/hustnet-auth
+CRED_DIR=/etc/hustnet
+ENV_FILE=$CRED_DIR/env
+IFACE=wlan1
+BACKEND=hostkey
+[ -r "$ENV_FILE" ] && . "$ENV_FILE"
+IFACE=${HUSTNET_IFACE:-$IFACE}
+BACKEND=${HUSTNET_CRED_BACKEND:-$BACKEND}
+
+if [ ! -x "$AUTH_BIN" ]; then
+    echo "hustnet-run: $AUTH_BIN not found; run install.sh first" >&2
+    exit 1
+fi
+
+case "$BACKEND" in
+    hostkey)
+        if [ ! -r "$CRED_DIR/cred.enc" ]; then
+            echo "hustnet-run: $CRED_DIR/cred.enc missing; run: hustnet-cs set <username>" >&2
+            exit 1
+        fi
+        TMP=$(mktemp /dev/shm/.hustnet.XXXXXX)
+        trap 'rm -f "$TMP"' EXIT INT TERM
+        if ! openssl enc -d -aes-256-cbc -pbkdf2 \
+                -pass file:/etc/machine-id \
+                -in "$CRED_DIR/cred.enc" -out "$TMP" 2>/dev/null; then
+            echo "hustnet-run: failed to decrypt credential (wrong machine-id?)" >&2
+            exit 1
+        fi
+        chmod 600 "$TMP"
+        set +e
+        "$AUTH_BIN" --iface "$IFACE" --cred "$TMP" "$@"
+        rc=$?
+        set -e
+        rm -f "$TMP"
+        exit "$rc"
+        ;;
+    plaintext)
+        if [ ! -r "$CRED_DIR/cred" ]; then
+            echo "hustnet-run: $CRED_DIR/cred missing; run: hustnet-cs set <username>" >&2
+            exit 1
+        fi
+        exec "$AUTH_BIN" --iface "$IFACE" --cred "$CRED_DIR/cred" "$@"
+        ;;
+    *)
+        echo "hustnet-run: unsupported backend: $BACKEND" >&2
+        exit 1
+        ;;
+esac

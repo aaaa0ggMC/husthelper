@@ -2,14 +2,30 @@
 #
 # hustnet-cs — campus network credential manager (hustnet-cloudsafe)
 #
-# Credentials are encrypted with systemd-creds into /etc/hustnet/hustnet.cred:
-#   * the file itself is ciphertext; cat shows nothing useful;
-#   * without a TPM a host key is used (bound to
-#     /var/lib/systemd/credential.secret + machine-id), so it cannot be
-#     decrypted on another machine or disk;
-#   * this tool only writes/removes credentials, it never prints plaintext;
-#   * plaintext only exists in the service's $CREDENTIALS_DIRECTORY (tmpfs)
-#     for the lifetime of the process.
+# Credential storage is chosen by a backend (see also install.sh):
+#
+#   backend systemd-creds (systemd hosts, needs systemd >= 250)
+#     Encrypted with systemd-creds into /etc/hustnet/hustnet.cred:
+#       * the file itself is ciphertext; cat shows nothing useful;
+#       * without a TPM a host key is used (bound to
+#         /var/lib/systemd/credential.secret + machine-id), so it cannot be
+#         decrypted on another machine or disk;
+#       * this tool only writes/removes credentials, it never prints plaintext;
+#       * plaintext only exists in the service's $CREDENTIALS_DIRECTORY
+#         (tmpfs) for the lifetime of the process.
+#
+#   backend hostkey (default on sysvinit hosts when openssl is available)
+#     AES-256-CBC ciphertext in /etc/hustnet/cred.enc, key derived from
+#     this machine's /etc/machine-id. Copying the disk to another machine
+#     does not reveal the password, but root on this machine can still
+#     decrypt it (there is no TPM binding).
+#
+#   backend plaintext (last resort, no openssl)
+#     Two-line file /etc/hustnet/cred (0600): username, then password.
+#     No encryption at all.
+#
+# Force a backend with HUSTNET_CRED_BACKEND=systemd-creds|hostkey|plaintext,
+# or via /etc/hustnet/env (written by install.sh). Default is auto-detection.
 #
 # Usage:
 #   hustnet-cs set <username> [password]   store credentials (prompts if omitted)
@@ -22,18 +38,58 @@
 set -eu
 
 CRED_DIR=/etc/hustnet
-CRED_FILE=$CRED_DIR/hustnet.cred
 IFACE=enp7s0
 _env_iface=${HUSTNET_IFACE:-}
+_env_init=${HUSTNET_INIT:-}
+_env_backend=${HUSTNET_CRED_BACKEND:-}
 [ -r /etc/hustnet/env ] && . /etc/hustnet/env
 IFACE=${_env_iface:-${HUSTNET_IFACE:-$IFACE}}
 AUTH_BIN=/usr/local/libexec/hustnet-auth
+CRON_FILE=/etc/cron.d/hustnet
 AUTOUNIT=hustnet-auth.service
 TIMER=hustnet-auth.timer
 
+detect_init() {
+    case "${_env_init:-${HUSTNET_INIT:-auto}}" in
+        systemd|sysvinit)
+            echo "${_env_init:-${HUSTNET_INIT}}"
+            ;;
+        *)
+            if [ -d /run/systemd/system ]; then
+                echo systemd
+            else
+                echo sysvinit
+            fi
+            ;;
+    esac
+}
+
+INIT=$(detect_init)
+CRED_BACKEND=${_env_backend:-${HUSTNET_CRED_BACKEND:-auto}}
+case "$CRED_BACKEND" in
+    auto)
+        if [ "$INIT" = systemd ] && command -v systemd-creds >/dev/null 2>&1; then
+            CRED_BACKEND=systemd-creds
+        elif command -v openssl >/dev/null 2>&1; then
+            CRED_BACKEND=hostkey
+        else
+            CRED_BACKEND=plaintext
+        fi
+        ;;
+esac
+case "$CRED_BACKEND" in
+    systemd-creds) CRED_FILE=$CRED_DIR/hustnet.cred ;;
+    hostkey)       CRED_FILE=$CRED_DIR/cred.enc ;;
+    plaintext)     CRED_FILE=$CRED_DIR/cred ;;
+    *)
+        echo "error: unsupported credential backend: $CRED_BACKEND" >&2
+        exit 1
+        ;;
+esac
+
 usage() {
     cat <<'EOF'
-hustnet-cs — campus network credential manager (encrypted, write-only)
+hustnet-cs — campus network credential manager
 
 Usage:
   hustnet-cs set <username> [password]  store credentials (prompt if omitted)
@@ -43,9 +99,17 @@ Usage:
   hustnet-cs install                    install and enable boot autologin
   hustnet-cs help                       show this help
 
+Environment:
+  HUSTNET_INIT          systemd | sysvinit (default: auto-detect)
+  HUSTNET_CRED_BACKEND  systemd-creds | hostkey | plaintext (default: auto)
+  HUSTNET_IFACE         uplink interface override
+
 Notes:
-  Credentials are encrypted with systemd-creds into
-  /etc/hustnet/hustnet.cred. There is no command to read them back.
+  systemd-creds  encrypted with systemd-creds into /etc/hustnet/hustnet.cred;
+                 there is no command to read them back.
+  hostkey        AES-256-CBC, key derived from /etc/machine-id, stored in
+                 /etc/hustnet/cred.enc; safe to copy the disk off this box.
+  plaintext      /etc/hustnet/cred (0600), no encryption.
   Passing the password on the command line leaves it in shell history and
   in the process list; omit it to enter it interactively.
 EOF
@@ -86,26 +150,50 @@ cmd_set() {
     umask 077
     mkdir -p "$CRED_DIR"
     chmod 700 "$CRED_DIR"
-    printf '%s\n%s\n' "$username" "$password" |
-        systemd-creds encrypt --name=hustnet --with-key=auto - "$CRED_FILE"
-    chmod 600 "$CRED_FILE"
 
-    if [ ! -s "$CRED_FILE" ]; then
-        echo "error: credential file is empty" >&2
-        exit 1
-    fi
-    echo "Stored credentials for: $username"
-    echo "Encrypted into $CRED_FILE (write-only; cannot be read back)"
+    case "$CRED_BACKEND" in
+        systemd-creds)
+            printf '%s\n%s\n' "$username" "$password" |
+                systemd-creds encrypt --name=hustnet --with-key=auto - "$CRED_FILE"
+            chmod 600 "$CRED_FILE"
+            if [ ! -s "$CRED_FILE" ]; then
+                echo "error: credential file is empty" >&2
+                exit 1
+            fi
+            echo "Stored credentials for: $username"
+            echo "Encrypted into $CRED_FILE (write-only; cannot be read back)"
+            ;;
+        hostkey)
+            printf '%s\n%s\n' "$username" "$password" |
+                openssl enc -aes-256-cbc -pbkdf2 -salt -pass file:/etc/machine-id > "$CRED_FILE"
+            chmod 600 "$CRED_FILE"
+            chown root:root "$CRED_FILE"
+            rm -f "$CRED_DIR/cred"
+            echo "Stored credentials for: $username"
+            echo "Encrypted into $CRED_FILE (key = /etc/machine-id; safe to copy off-box)"
+            ;;
+        plaintext)
+            printf '%s\n%s\n' "$username" "$password" > "$CRED_FILE"
+            chmod 600 "$CRED_FILE"
+            chown root:root "$CRED_FILE"
+            rm -f "$CRED_DIR/cred.enc"
+            echo "Stored credentials for: $username"
+            echo "Stored as plaintext in $CRED_FILE (0600, no encryption)"
+            ;;
+    esac
 }
 
 cmd_unset() {
     require_root
-    if [ -f "$CRED_FILE" ]; then
-        rm -f "$CRED_FILE"
-        echo "Removed credentials: $CRED_FILE"
-    else
-        echo "No stored credentials."
-    fi
+    removed=0
+    for f in "$CRED_DIR/hustnet.cred" "$CRED_DIR/cred"; do
+        if [ -f "$f" ]; then
+            rm -f "$f"
+            echo "Removed credentials: $f"
+            removed=1
+        fi
+    done
+    [ "$removed" -eq 1 ] || echo "No stored credentials."
 }
 
 cmd_status() {
@@ -132,8 +220,14 @@ cmd_login() {
         echo "error: no credentials stored; run 'hustnet-cs set <username>'" >&2
         exit 1
     fi
-    systemctl start "$AUTOUNIT"
-    echo "Authentication triggered (see: journalctl -u $AUTOUNIT -n 20)"
+    if [ "$CRED_BACKEND" = systemd-creds ]; then
+        systemctl start "$AUTOUNIT"
+        echo "Authentication triggered (see: journalctl -u $AUTOUNIT -n 20)"
+    elif [ "$CRED_BACKEND" = hostkey ]; then
+        /usr/local/libexec/hustnet-run
+    else
+        "$AUTH_BIN" --iface "$IFACE" --cred "$CRED_FILE"
+    fi
 }
 
 cmd_install() {
@@ -142,11 +236,32 @@ cmd_install() {
         echo "error: hustnet-auth is not installed" >&2
         exit 1
     fi
-    systemctl daemon-reload
-    systemctl enable --now "$TIMER"
-    systemctl enable "$AUTOUNIT" >/dev/null 2>&1 || true
-    echo "Boot autologin enabled: $TIMER"
-    systemctl --no-pager --lines=0 status "$TIMER" || true
+    if [ "$INIT" = systemd ]; then
+        systemctl daemon-reload
+        systemctl enable --now "$TIMER"
+        systemctl enable "$AUTOUNIT" >/dev/null 2>&1 || true
+        echo "Boot autologin enabled: $TIMER"
+        systemctl --no-pager --lines=0 status "$TIMER" || true
+    else
+        if [ "$CRED_BACKEND" = hostkey ]; then
+            CRON_CMD="/usr/local/libexec/hustnet-run --quiet"
+            CRON_DESC="host-key encrypted credential: $CRED_DIR/cred.enc"
+        else
+            CRON_CMD="/usr/local/libexec/hustnet-auth --iface $IFACE --cred $CRED_DIR/cred --quiet"
+            CRON_DESC="plaintext credential: $CRED_DIR/cred (0600)"
+        fi
+        cat > "$CRON_FILE" <<EOF
+# hustnet-cloudsafe: periodic campus network authentication (sysvinit mode)
+# $CRON_DESC
+*/2 * * * * root $CRON_CMD >>/var/log/hustnet.log 2>&1
+EOF
+        chmod 644 "$CRON_FILE"
+        touch /var/log/hustnet.log
+        chmod 640 /var/log/hustnet.log
+        service cron restart >/dev/null 2>&1 || service cron start >/dev/null 2>&1 || true
+        echo "Boot autologin enabled: $CRON_FILE (every 2 minutes)"
+        service cron status 2>&1 | head -1 || true
+    fi
 }
 
 command=${1:-help}
@@ -158,6 +273,7 @@ case $command in
     status)  cmd_status ;;
     login)   cmd_login ;;
     install) cmd_install ;;
+    init)    echo "$INIT" ;;
     help|-h|--help) usage ;;
     *)
         echo "unknown command: $command" >&2
